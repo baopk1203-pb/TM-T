@@ -1,11 +1,25 @@
-import { AdminPlaceholder } from '@/components/admin/admin-placeholder'
+import { getAdminProducts } from '@/server/actions/product'
+import { getAdminFarms } from '@/server/actions/farm'
+import { ProductManagement } from './product-management'
 
-export default function AdminProductsPage() {
+export const dynamic = 'force-dynamic'
+
+export default async function AdminProductsPage() {
+  const [products, farms] = await Promise.all([
+    getAdminProducts(),
+    getAdminFarms(),
+  ])
+
+  const farmOptions = farms.map((f) => ({
+    id: f.id,
+    name: f.name,
+    province: f.province,
+  }))
+
   return (
-    <AdminPlaceholder
-      title="Sản phẩm & Bảng giá bậc"
-      phase="Phase 2"
-      description="CRUD sản phẩm trái cây, thiết lập quy cách đóng gói (thùng/rổ/mẫu), cấu hình MOQ và quản lý bảng giá bậc theo kg."
+    <ProductManagement
+      initialProducts={products}
+      farms={farmOptions}
     />
   )
 }

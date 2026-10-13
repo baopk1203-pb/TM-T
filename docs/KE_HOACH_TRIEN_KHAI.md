@@ -497,17 +497,17 @@ flowchart LR
 **Mục tiêu:** Admin quản lý dữ liệu sản phẩm; khách duyệt catalog và xác minh nguồn gốc.
 
 **Admin**
-- [ ] `/admin/nha-vuon`: CRUD vườn (ảnh, tọa độ lat/lng, mô tả) và CRUD chứng nhận (ảnh, ngày hết hạn; hiện badge "Hết hạn").
-- [ ] `/admin/san-pham`: CRUD sản phẩm; quản lý quy cách (có gói mẫu với `samplePrice`); **trình sửa bậc giá** validate theo ràng buộc 3.2 bằng hàm `validatePriceTiers()` trong `pricing.ts` (có test); cấu hình pre-order.
-- [ ] `/admin/san-luong`: bảng sản phẩm × 4 tuần tới, nhập `maxGrams` (nhập theo kg).
-- [ ] `/admin/lo-hang`: CRUD lô, tự sinh mã lô, nút **Tải QR** (PNG qua route `/api/qr/[code]` dùng `qrcode`), trỏ tới `${APP_URL}/truy-xuat/{code}`.
-- [ ] `src/lib/storage.ts`: interface `saveUpload(file): Promise<url>` với bản cài lưu đĩa vào `public/uploads`. Giới hạn ảnh jpg/png/webp, ≤ 5MB.
+- [x] `/admin/nha-vuon`: CRUD vườn (ảnh, tọa độ lat/lng, mô tả) và CRUD chứng nhận (ảnh, ngày hết hạn; hiện badge "Hết hạn").
+- [x] `/admin/san-pham`: CRUD sản phẩm; quản lý quy cách (có gói mẫu với `samplePrice`); **trình sửa bậc giá** validate theo ràng buộc 3.2 bằng hàm `validatePriceTiers()` trong `pricing.ts` (có test); cấu hình pre-order.
+- [x] `/admin/san-luong`: bảng sản phẩm × 4 tuần tới, nhập `maxGrams` (nhập theo kg).
+- [x] `/admin/lo-hang`: CRUD lô, tự sinh mã lô, nút **Tải QR** (PNG qua route `/api/qr/[code]` dùng `qrcode`), trỏ tới `${APP_URL}/truy-xuat/{code}`.
+- [x] `src/lib/storage.ts`: interface `saveUpload(file): Promise<url>` với bản cài lưu đĩa vào `public/uploads`. Giới hạn ảnh jpg/png/webp, ≤ 5MB.
 
 **Storefront**
-- [ ] Trang chủ với các khối theo `seasonStatus` và `preorderOpen`.
-- [ ] `/san-pham`: lưới sản phẩm (ảnh, tên, vườn, "Giá từ X đ/kg" lấy từ bậc thấp nhất, MOQ), lọc và tìm kiếm.
-- [ ] `/san-pham/[slug]`: bảng giá bậc (ví dụ "50 – 199 kg: 80.000đ/kg; ≥ 200 kg: 75.000đ/kg"). Nếu đã đăng nhập thì thêm cột "Giá của bạn". Tab **Hồ sơ vườn**: ảnh, chứng nhận, Google Maps nhúng iframe `https://www.google.com/maps?q={lat},{lng}&output=embed`.
-- [ ] `/nha-vuon/[slug]` và `/truy-xuat/[code]` (trả 404 nếu mã sai).
+- [x] Trang chủ với các khối theo `seasonStatus` và `preorderOpen`.
+- [x] `/san-pham`: lưới sản phẩm (ảnh, tên, vườn, "Giá từ X đ/kg" lấy từ bậc thấp nhất, MOQ), lọc và tìm kiếm.
+- [x] `/san-pham/[slug]`: bảng giá bậc (ví dụ "50 – 199 kg: 80.000đ/kg; ≥ 200 kg: 75.000đ/kg"). Nếu đã đăng nhập thì thêm cột "Giá của bạn". Tab **Hồ sơ vườn**: ảnh, chứng nhận, Google Maps nhúng iframe `https://www.google.com/maps?q={lat},{lng}&output=embed`.
+- [x] `/nha-vuon/[slug]` và `/truy-xuat/[code]` (trả 404 nếu mã sai).
 
 **DoD:** Admin tạo được sản phẩm mới có bậc giá hợp lệ; nhập bậc giá sai thì báo lỗi rõ ràng. Quét QR (hoặc mở URL) ra đúng trang truy xuất. Test `validatePriceTiers` pass.
 
@@ -773,7 +773,7 @@ interface NotificationChannel { name: 'EMAIL' | 'ZNS'; send(msg: { to: string; t
 |---|---|---|
 | 0 – Khởi tạo | ✅ Hoàn thành | Đã thiết lập Next.js 16, shadcn/ui, Prisma 6, Vitest, money utilities, git repo; tất cả lệnh lint, typecheck, test, build đều PASS. |
 | 1 – Dữ liệu & Xác thực | ✅ Hoàn thành | Đã tạo và migrate schema Prisma lên Neon PostgreSQL; seed 3 nhóm, 4 user, 3 vườn, 8 SP, capacity & batch; Auth.js JWT + Middleware; trang Đăng ký, Đăng nhập (1-click demo), Quản lý hồ sơ & sổ địa chỉ; layout Admin dashboard; toàn bộ lint, typecheck, test, build PASS. |
-| 2 – Catalog, Vườn, Lô/QR | ⬜ | |
+| 2 – Catalog, Vườn, Lô/QR | ✅ Hoàn thành | Đã hoàn thành CRUD Nhà vườn & Chứng nhận GAP, CRUD Sản phẩm & Bậc giá với hàm validatePriceTiers, Ma trận sản lượng theo tuần, CRUD Lô hàng & API sinh mã QR PNG; Trang chủ hiển thị theo mùa vụ/pre-order, Catalog /san-pham, Chi tiết /san-pham/[slug] với bảng giá bậc & iframe Google Maps, Hồ sơ vườn /nha-vuon/[slug], Cổng truy xuất /truy-xuat/[code]; toàn bộ lint, typecheck, test, build PASS. |
 | 3 – Giỏ hàng & Engine giá | ⬜ | |
 | 4 – Checkout & Thanh toán | ⬜ | |
 | 5 – Vòng đời đơn & Quyết toán | ⬜ | |

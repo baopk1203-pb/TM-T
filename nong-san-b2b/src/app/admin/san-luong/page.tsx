@@ -1,11 +1,16 @@
-import { AdminPlaceholder } from '@/components/admin/admin-placeholder'
+import { getAdminWeeklyCapacities } from '@/server/actions/capacity'
+import { CapacityMatrix } from './capacity-matrix'
 
-export default function AdminCapacitiesPage() {
+export const dynamic = 'force-dynamic'
+
+export default async function AdminCapacitiesPage() {
+  const { weeks, products, capacities } = await getAdminWeeklyCapacities()
+
   return (
-    <AdminPlaceholder
-      title="Sản lượng khả dụng theo tuần (Weekly Capacity)"
-      phase="Phase 2"
-      description="Cập nhật giới hạn sản lượng có thể cung cấp theo từng tuần để kiểm soát nhận đơn cho hàng tươi sống thay vì tồn kho tĩnh."
+    <CapacityMatrix
+      weeks={weeks}
+      products={products}
+      initialCapacities={capacities}
     />
   )
 }

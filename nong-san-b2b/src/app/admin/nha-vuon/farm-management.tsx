@@ -160,7 +160,7 @@ export function FarmManagement({ initialFarms }: { initialFarms: FarmWithDetails
 
     const payload: FarmInput = {
       ...farmForm,
-      images: images.length > 0 ? images : ['https://images.unsplash.com/photo-1595231776515-ddffb1f4eb73?auto=format&fit=crop&w=800&q=80'],
+      images: images.length > 0 ? images : ['https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800&q=80'],
     }
 
     try {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { SeasonStatus, Packaging, PriceTier, Product } from '@prisma/client'
+import { SeasonStatus } from '@prisma/client'
 import {
   Plus,
   Edit2,
@@ -125,7 +125,7 @@ export function ProductManagement({
     setName('')
     setSlug('')
     setDescription('')
-    setImageUrls('https://images.unsplash.com/photo-1595231776515-ddffb1f4eb73?auto=format&fit=crop&w=800&q=80')
+    setImageUrls('https://images.unsplash.com/photo-1553279768-865429fa0078?auto=format&fit=crop&w=800&q=80')
     setFarmId(farms[0]?.id || '')
     setMoqKg(50)
     setLeadTimeDays(1)
@@ -248,7 +248,7 @@ export function ProductManagement({
       name: name.trim(),
       slug: slug.trim().toLowerCase(),
       description: description.trim(),
-      images: images.length > 0 ? images : ['https://images.unsplash.com/photo-1595231776515-ddffb1f4eb73?auto=format&fit=crop&w=800&q=80'],
+      images: images.length > 0 ? images : ['https://images.unsplash.com/photo-1553279768-865429fa0078?auto=format&fit=crop&w=800&q=80'],
       farmId,
       moqGrams: kgToGrams(moqKg),
       leadTimeDays,

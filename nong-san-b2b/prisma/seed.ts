@@ -166,7 +166,11 @@ async function main() {
   console.log('-> Tạo danh sách nhà vườn và chứng nhận...')
   const farm1 = await prisma.farm.upsert({
     where: { slug: 'htx-sau-rieng-ngu-hiep-tien-giang' },
-    update: {},
+    update: {
+      images: [
+        'https://images.unsplash.com/photo-1764232288881-a9293b590410?auto=format&fit=crop&w=800&q=80',
+      ],
+    },
     create: {
       slug: 'htx-sau-rieng-ngu-hiep-tien-giang',
       name: 'Hợp Tác Xã Sầu Riêng Ngũ Hiệp (Tiền Giang)',
@@ -178,7 +182,7 @@ async function main() {
       lat: 10.3394,
       lng: 106.0712,
       images: [
-        'https://images.unsplash.com/photo-1595231776515-ddffb1f4eb73?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1764232288881-a9293b590410?auto=format&fit=crop&w=800&q=80',
       ],
       certificates: {
         create: [
@@ -203,7 +207,11 @@ async function main() {
 
   const farm2 = await prisma.farm.upsert({
     where: { slug: 'vuon-buoi-da-xanh-mo-cay-nam-ben-tre' },
-    update: {},
+    update: {
+      images: [
+        'https://images.unsplash.com/photo-1527842891421-42eec6e703ea?auto=format&fit=crop&w=800&q=80',
+      ],
+    },
     create: {
       slug: 'vuon-buoi-da-xanh-mo-cay-nam-ben-tre',
       name: 'Vườn Bưởi Da Xanh Mỏ Cày Nam (Bến Tre)',
@@ -215,7 +223,7 @@ async function main() {
       lat: 10.1558,
       lng: 106.3275,
       images: [
-        'https://images.unsplash.com/photo-1615485290382-441e4d049cb5?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1527842891421-42eec6e703ea?auto=format&fit=crop&w=800&q=80',
       ],
       certificates: {
         create: [
@@ -233,7 +241,11 @@ async function main() {
 
   const farm3 = await prisma.farm.upsert({
     where: { slug: 'nong-truong-bo-sau-rieng-krong-pac-dak-lak' },
-    update: {},
+    update: {
+      images: [
+        'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800&q=80',
+      ],
+    },
     create: {
       slug: 'nong-truong-bo-sau-rieng-krong-pac-dak-lak',
       name: 'Nông Trường Bơ & Sầu Riêng Krông Pắc (Đắk Lắk)',
@@ -267,14 +279,20 @@ async function main() {
   // SP 1: Sầu riêng Ri6 (Farm 1) - Sản phẩm chuẩn test case
   const pRi6 = await prisma.product.upsert({
     where: { slug: 'sau-rieng-ri6' },
-    update: {},
+    update: {
+      images: [
+        'https://images.unsplash.com/photo-1519544442-93857b48665e?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1705915892545-e3403b80c34a?auto=format&fit=crop&w=800&q=80',
+      ],
+    },
     create: {
       slug: 'sau-rieng-ri6',
       name: 'Sầu Riêng Ri6 Cai Lậy (Cơm Vàng Hạt Lép)',
       description:
         'Sầu riêng Ri6 thu hoạch già đủ độ, cơm vàng ráo, vị ngọt béo đậm đà, mùi thơm nồng nàn. Hàng cắt tại vườn tuyển chọn loại 1, tỷ lệ sượng dưới 1%.',
       images: [
-        'https://images.unsplash.com/photo-1595231776515-ddffb1f4eb73?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1519544442-93857b48665e?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1705915892545-e3403b80c34a?auto=format&fit=crop&w=800&q=80',
       ],
       farmId: farm1.id,
       moqGrams: 50000, // 50kg
@@ -305,14 +323,20 @@ async function main() {
   // SP 2: Sầu riêng Monthong Dona (Farm 3)
   await prisma.product.upsert({
     where: { slug: 'sau-rieng-monthong-dona' },
-    update: {},
+    update: {
+      images: [
+        'https://images.unsplash.com/photo-1764232288881-a9293b590410?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1519544442-93857b48665e?auto=format&fit=crop&w=800&q=80',
+      ],
+    },
     create: {
       slug: 'sau-rieng-monthong-dona',
       name: 'Sầu Riêng Monthong Dona Tây Nguyên',
       description:
         'Trái to đều từ 3.5 - 5kg, cơm dày màu mỡ gà, vị béo ngọt thanh, thời gian bảo quản sau thu hoạch bền thích hợp vận chuyển xa và xuất bán siêu thị.',
       images: [
-        'https://images.unsplash.com/photo-1595231776515-ddffb1f4eb73?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1764232288881-a9293b590410?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1519544442-93857b48665e?auto=format&fit=crop&w=800&q=80',
       ],
       farmId: farm3.id,
       moqGrams: 50000,
@@ -337,14 +361,20 @@ async function main() {
   // SP 3: Bưởi Da Xanh Bến Tre (Farm 2)
   const pBuoi = await prisma.product.upsert({
     where: { slug: 'buoi-da-xanh-ben-tre' },
-    update: {},
+    update: {
+      images: [
+        'https://images.unsplash.com/photo-1517281920527-f3a1a53a9af3?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1523467179876-7108ea631145?auto=format&fit=crop&w=800&q=80',
+      ],
+    },
     create: {
       slug: 'buoi-da-xanh-ben-tre',
       name: 'Bưởi Da Xanh Ruột Hồng Bến Tre (Loại 1: 1.4kg - 1.8kg)',
       description:
         'Vỏ xanh mỏng, ruột hồng đỏ thắm, tép bưởi mọng nước giòn ngọt không the. Đạt chuẩn xuất khẩu và cung cấp cho các chuỗi siêu thị lớn.',
       images: [
-        'https://images.unsplash.com/photo-1615485290382-441e4d049cb5?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1517281920527-f3a1a53a9af3?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1523467179876-7108ea631145?auto=format&fit=crop&w=800&q=80',
       ],
       farmId: farm2.id,
       moqGrams: 40000, // 40kg
@@ -375,7 +405,11 @@ async function main() {
   // SP 4: Xoài Cát Hòa Lộc (Farm 1)
   await prisma.product.upsert({
     where: { slug: 'xoai-cat-hoa-loc' },
-    update: {},
+    update: {
+      images: [
+        'https://images.unsplash.com/photo-1553279768-865429fa0078?auto=format&fit=crop&w=800&q=80',
+      ],
+    },
     create: {
       slug: 'xoai-cat-hoa-loc',
       name: 'Xoài Cát Hòa Lộc Tiền Giang Chuẩn Xuất Khẩu',
@@ -407,7 +441,11 @@ async function main() {
   // SP 5: Bơ Sáp 034 Tây Nguyên (Farm 3)
   const pBo = await prisma.product.upsert({
     where: { slug: 'bo-034-tay-nguyen' },
-    update: {},
+    update: {
+      images: [
+        'https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&w=800&q=80',
+      ],
+    },
     create: {
       slug: 'bo-034-tay-nguyen',
       name: 'Bơ Sáp 034 Đắk Lắk (Quả Dài Cơm Vàng Dẻo)',
@@ -439,7 +477,11 @@ async function main() {
   // SP 6: Thanh Long Ruột Đỏ Chợ Gạo (Farm 1)
   await prisma.product.upsert({
     where: { slug: 'thanh-long-ruot-do' },
-    update: {},
+    update: {
+      images: [
+        'https://images.unsplash.com/photo-1527325678964-54921661f888?auto=format&fit=crop&w=800&q=80',
+      ],
+    },
     create: {
       slug: 'thanh-long-ruot-do',
       name: 'Thanh Long Ruột Đỏ Chợ Gạo (Tai Xanh Quả To)',
@@ -471,14 +513,20 @@ async function main() {
   // SP 7: Chôm Chôm Nhãn Tiền Giang (Farm 1)
   await prisma.product.upsert({
     where: { slug: 'chom-chom-nhan' },
-    update: {},
+    update: {
+      images: [
+        'https://images.unsplash.com/photo-1569914250931-6333143a8fca?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1760192541241-a8a3d900e389?auto=format&fit=crop&w=800&q=80',
+      ],
+    },
     create: {
       slug: 'chom-chom-nhan',
       name: 'Chôm Chôm Nhãn Đường Phù Sa (Tróc Vỏ Cùi Dày)',
       description:
         'Chôm chôm nhãn trái nhỏ tròn, râu ngắn, cơm dày róc hạt, vị ngọt đậm đà mùi thơm như đường thốt nốt. Đóng sọt tươi rói trong ngày.',
       images: [
-        'https://images.unsplash.com/photo-1587132137056-bfbf0166836e?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1569914250931-6333143a8fca?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1760192541241-a8a3d900e389?auto=format&fit=crop&w=800&q=80',
       ],
       farmId: farm1.id,
       moqGrams: 30000,
@@ -508,14 +556,18 @@ async function main() {
 
   await prisma.product.upsert({
     where: { slug: 'mang-cut-ben-tre' },
-    update: {},
+    update: {
+      images: [
+        'https://images.unsplash.com/photo-1558877398-9655d929c409?auto=format&fit=crop&w=800&q=80',
+      ],
+    },
     create: {
       slug: 'mang-cut-ben-tre',
       name: 'Măng Cụt Cổ Thụ Mỏ Cày (Mở Đặt Trước Vụ Mùa)',
       description:
         'Đặc sản măng cụt cây cổ thụ trên 30 năm tuổi, vỏ mỏng da cám, cơm trắng ngần không múi điếc, vị ngọt chua thanh tao danh bất hư truyền. Mở đặt trước vụ mùa thu hoạch tháng tới với ưu đãi giữ giá.',
       images: [
-        'https://images.unsplash.com/photo-1615485290382-441e4d049cb5?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1558877398-9655d929c409?auto=format&fit=crop&w=800&q=80',
       ],
       farmId: farm2.id,
       moqGrams: 50000,

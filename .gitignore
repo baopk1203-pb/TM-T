@@ -1,0 +1,7 @@
+node_modules/
+nong-san-b2b/node_modules/
+nong-san-b2b/.next/
+nong-san-b2b/.env
+nong-san-b2b/.env.local
+.DS_Store
+*.log

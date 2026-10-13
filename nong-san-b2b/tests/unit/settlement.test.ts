@@ -2,13 +2,15 @@ import { describe, it, expect } from 'vitest'
 import {
   computeDepositAmount,
   derivePaymentStatus,
+  computeCancellation,
+  computeWeightSettlement,
+  computeComplaintCompensation,
 } from '@/lib/domain/settlement'
-import { TxType, TxStatus, OrderStatus } from '@prisma/client'
+import { TxType, TxStatus, OrderStatus, CancelActor } from '@prisma/client'
 
-describe('Domain: settlement.ts (Mục 3.6 & Test Case S1)', () => {
+describe('Domain: settlement.ts (Mục 3.6, 3.8, 3.9 & Test Cases S1-S5, W1-W3, C1-C3)', () => {
   describe('computeDepositAmount', () => {
     it('Test Case S1: total 15.277.500 -> deposit 4.584.000 (làm tròn lên nghìn)', () => {
-      // 15.277.500 * 0.3 = 4.583.250 -> làm tròn lên nghìn: 4.584.000
       expect(computeDepositAmount(15277500)).toBe(4584000)
     })
 
@@ -17,7 +19,6 @@ describe('Domain: settlement.ts (Mục 3.6 & Test Case S1)', () => {
     })
 
     it('total lẻ: 1.234.567 -> deposit 371.000', () => {
-      // 1.234.567 * 0.3 = 370.370,1 -> 371.000
       expect(computeDepositAmount(1234567)).toBe(371000)
     })
   })
@@ -67,6 +68,189 @@ describe('Domain: settlement.ts (Mục 3.6 & Test Case S1)', () => {
       ])
       expect(result.status).toBe('REFUNDED')
       expect(result.paidAmount).toBe(0)
+    })
+  })
+
+  describe('computeCancellation (Mục 7.2 - S2 đến S5)', () => {
+    const processingOrder = {
+      status: OrderStatus.PROCESSING,
+      depositAmount: 4584000,
+    }
+
+    it('Test Case S2: FULL đã trả 15.277.500, khách hủy ở PROCESSING -> forfeit 4.584.000, hoàn 10.693.500', () => {
+      const result = computeCancellation(
+        processingOrder,
+        15277500,
+        CancelActor.CUSTOMER
+      )
+      expect(result.forfeitAmount).toBe(4584000)
+      expect(result.refundAmount).toBe(10693500)
+      expect(result.isDepositForfeited).toBe(true)
+    })
+
+    it('Test Case S3: DEPOSIT_30 đã trả 4.584.000, khách hủy ở PROCESSING -> hoàn 0 (mất cọc)', () => {
+      const result = computeCancellation(
+        processingOrder,
+        4584000,
+        CancelActor.CUSTOMER
+      )
+      expect(result.forfeitAmount).toBe(4584000)
+      expect(result.refundAmount).toBe(0)
+      expect(result.isDepositForfeited).toBe(true)
+    })
+
+    it('Test Case S4: Đã trả bất kỳ (15.277.500), bên bán hủy (SELLER) -> hoàn 100%', () => {
+      const result = computeCancellation(
+        processingOrder,
+        15277500,
+        CancelActor.SELLER
+      )
+      expect(result.forfeitAmount).toBe(0)
+      expect(result.refundAmount).toBe(15277500)
+      expect(result.isDepositForfeited).toBe(false)
+    })
+
+    it('Test Case S5: Khách hủy ở PENDING_CONFIRMATION -> hoàn 100%', () => {
+      const pendingOrder = {
+        status: OrderStatus.PENDING_CONFIRMATION,
+        depositAmount: 4584000,
+      }
+      const result = computeCancellation(
+        pendingOrder,
+        4584000,
+        CancelActor.CUSTOMER
+      )
+      expect(result.forfeitAmount).toBe(0)
+      expect(result.refundAmount).toBe(4584000)
+      expect(result.isDepositForfeited).toBe(false)
+    })
+  })
+
+  describe('computeWeightSettlement (Mục 7.3 - W1 đến W3)', () => {
+    it('Test Case W1: Đặt 210kg (72.750/kg), cọc 4.584.000, thực giao 205,5kg -> finalTotal 14.950.125, còn phải thu 10.366.125', () => {
+      const result = computeWeightSettlement({
+        lines: [
+          {
+            id: 'line-1',
+            orderedGrams: 210000,
+            actualGrams: 205500,
+            unitPricePerKg: 72750,
+          },
+        ],
+        shippingFee: 0,
+        paid: 4584000,
+      })
+
+      expect(result.finalSubtotal).toBe(14950125)
+      expect(result.finalTotal).toBe(14950125)
+      expect(result.customerToPay).toBe(10366125)
+      expect(result.refundAmount).toBe(0)
+      expect(result.balance).toBe(10366125)
+    })
+
+    it('Test Case W2: Như W1 nhưng đã trả FULL 15.277.500 -> hoàn 327.375', () => {
+      const result = computeWeightSettlement({
+        lines: [
+          {
+            id: 'line-1',
+            orderedGrams: 210000,
+            actualGrams: 205500,
+            unitPricePerKg: 72750,
+          },
+        ],
+        shippingFee: 0,
+        paid: 15277500,
+      })
+
+      expect(result.finalTotal).toBe(14950125)
+      expect(result.customerToPay).toBe(0)
+      expect(result.refundAmount).toBe(327375)
+      expect(result.balance).toBe(-327375)
+    })
+
+    it('Test Case W3: actualGrams = 221.000 (> 105% của 210.000 = 220.500) -> lỗi', () => {
+      expect(() =>
+        computeWeightSettlement({
+          lines: [
+            {
+              id: 'line-1',
+              orderedGrams: 210000,
+              actualGrams: 221000,
+              unitPricePerKg: 72750,
+            },
+          ],
+          shippingFee: 0,
+          paid: 4584000,
+        })
+      ).toThrow('vượt quá 105%')
+    })
+
+    it('Đơn hàng có gói mẫu giữ nguyên giá mẫu', () => {
+      const result = computeWeightSettlement({
+        lines: [
+          {
+            id: 'line-regular',
+            orderedGrams: 50000,
+            actualGrams: 50000,
+            unitPricePerKg: 80000,
+          },
+          {
+            id: 'line-sample',
+            orderedGrams: 2000,
+            actualGrams: 2000,
+            unitPricePerKg: 80000,
+            isSample: true,
+            lineTotal: 200000,
+          },
+        ],
+        shippingFee: 0,
+        paid: 4200000,
+      })
+
+      expect(result.finalSubtotal).toBe(4200000)
+      expect(result.customerToPay).toBe(0)
+    })
+  })
+
+  describe('computeComplaintCompensation (Mục 7.4 - C1 đến C3)', () => {
+    it('Test Case C1: actual 205.500g, hư 10.000g, 72.750/kg -> allowed 6.165g, excess 3.835g, bồi hoàn 278.996', () => {
+      const result = computeComplaintCompensation({
+        actualGrams: 205500,
+        damagedGrams: 10000,
+        unitPricePerKg: 72750,
+      })
+
+      expect(result.allowedGrams).toBe(6165)
+      expect(result.excessGrams).toBe(3835)
+      expect(result.compensation).toBe(278996)
+      expect(result.isExpired).toBe(false)
+    })
+
+    it('Test Case C2: hư 5.000g -> excess 0, bồi hoàn 0', () => {
+      const result = computeComplaintCompensation({
+        actualGrams: 205500,
+        damagedGrams: 5000,
+        unitPricePerKg: 72750,
+      })
+
+      expect(result.allowedGrams).toBe(6165)
+      expect(result.excessGrams).toBe(0)
+      expect(result.compensation).toBe(0)
+    })
+
+    it('Test Case C3: khiếu nại sau 24h kể từ deliveredAt -> bị từ chối', () => {
+      const deliveredAt = new Date('2026-10-10T08:00:00Z')
+      const submittedAt = new Date('2026-10-11T09:00:00Z') // 25h sau
+
+      expect(() =>
+        computeComplaintCompensation({
+          actualGrams: 205500,
+          damagedGrams: 10000,
+          unitPricePerKg: 72750,
+          deliveredAt,
+          submittedAt,
+        })
+      ).toThrow('quá thời hạn khiếu nại 24h')
     })
   })
 })

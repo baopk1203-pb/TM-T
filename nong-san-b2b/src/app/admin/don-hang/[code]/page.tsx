@@ -12,25 +12,44 @@ export default async function AdminOrderDetailPage({
 }) {
   const { code } = await params
 
-  const order = await db.order.findFirst({
-    where: {
-      OR: [{ code }, { id: code }],
-    },
-    include: {
-      user: {
-        include: {
-          group: true,
+  const [order, batches] = await Promise.all([
+    db.order.findFirst({
+      where: {
+        OR: [{ code }, { id: code }],
+      },
+      include: {
+        user: {
+          include: {
+            group: true,
+          },
+        },
+        items: {
+          include: {
+            batch: true,
+          },
+        },
+        transactions: {
+          orderBy: { createdAt: 'desc' },
+        },
+        events: {
+          orderBy: { createdAt: 'desc' },
+        },
+        complaints: {
+          orderBy: { createdAt: 'desc' },
         },
       },
-      items: true,
-      transactions: {
-        orderBy: { createdAt: 'desc' },
+    }),
+    db.batch.findMany({
+      select: {
+        id: true,
+        code: true,
+        productId: true,
+        harvestDate: true,
+        quantityGrams: true,
       },
-      events: {
-        orderBy: { createdAt: 'desc' },
-      },
-    },
-  })
+      orderBy: { harvestDate: 'desc' },
+    }),
+  ])
 
   if (!order) {
     notFound()
@@ -96,6 +115,7 @@ export default async function AdminOrderDetailPage({
     },
     items: order.items.map((item) => ({
       id: item.id,
+      productId: item.productId,
       productName: item.productName,
       packagingName: item.packagingName,
       isSample: item.isSample,
@@ -105,6 +125,8 @@ export default async function AdminOrderDetailPage({
       lineTotal: item.lineTotal,
       actualGrams: item.actualGrams,
       finalLineTotal: item.finalLineTotal,
+      batchId: item.batchId,
+      batchCode: item.batch?.code ?? null,
     })),
     transactions: order.transactions.map((tx) => ({
       id: tx.id,
@@ -127,10 +149,32 @@ export default async function AdminOrderDetailPage({
       createdAt: evt.createdAt.toISOString(),
       payload: evt.payload,
     })),
+    complaints: order.complaints.map((c) => ({
+      id: c.id,
+      orderItemId: c.orderItemId,
+      description: c.description,
+      photos: c.photos,
+      reportedGrams: c.reportedGrams,
+      verifiedGrams: c.verifiedGrams,
+      status: c.status,
+      resolution: c.resolution,
+      compensation: c.compensation,
+      adminNote: c.adminNote,
+      createdAt: c.createdAt.toISOString(),
+      resolvedAt: c.resolvedAt ? c.resolvedAt.toISOString() : null,
+    })),
     paidAmount: payment.paidAmount,
     remainingAmount: payment.remainingAmount,
     paymentStatus: payment.status,
   }
 
-  return <OrderDetailClient order={orderData} />
+  const mappedBatches = batches.map((b) => ({
+    id: b.id,
+    code: b.code,
+    productId: b.productId,
+    harvestDate: b.harvestDate.toISOString(),
+    quantityGrams: b.quantityGrams,
+  }))
+
+  return <OrderDetailClient order={orderData} availableBatches={mappedBatches} />
 }

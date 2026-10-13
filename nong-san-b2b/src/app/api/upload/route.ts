@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { saveUpload } from '@/lib/storage'
 import { getServerAuthSession } from '@/lib/auth'
-import { Role } from '@prisma/client'
 
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerAuthSession()
-    if (!session?.user || session.user.role !== Role.ADMIN) {
+    if (!session?.user) {
       return NextResponse.json(
-        { success: false, error: 'Chỉ quản trị viên mới có quyền tải ảnh lên' },
-        { status: 403 }
+        { success: false, error: 'Vui lòng đăng nhập để tải ảnh lên' },
+        { status: 401 }
       )
     }
 

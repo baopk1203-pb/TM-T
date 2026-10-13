@@ -563,16 +563,16 @@ flowchart LR
 
 **Mục tiêu:** cài máy trạng thái, hủy/hoàn cọc, chốt khối lượng thực, khiếu nại.
 
-- [ ] `src/lib/domain/order-state.ts`: bảng chuyển trạng thái (mục 3.7), hàm `canTransition(order, to, actor)` → `{ ok, reason }` và hàm áp dụng trả về các "tác động" (khoản hoàn cần tạo...) kèm test cho **mọi** dòng của bảng, cả các chuyển không hợp lệ.
-- [ ] `src/lib/domain/settlement.ts`: `computeCancellation()`, `computeWeightSettlement()`, `computeComplaintCompensation()`. Test theo mục 7.2–7.4.
-- [ ] Admin `/admin/don-hang`: danh sách lọc theo trạng thái, trạng thái thanh toán, ngày giao; tìm theo mã đơn hoặc tên khách; badge số đơn "Chờ xác nhận".
-- [ ] Admin chi tiết đơn:
+- [x] `src/lib/domain/order-state.ts`: bảng chuyển trạng thái (mục 3.7), hàm `canTransition(order, to, actor)` → `{ ok, reason }` và hàm áp dụng trả về các "tác động" (khoản hoàn cần tạo...) kèm test cho **mọi** dòng của bảng, cả các chuyển không hợp lệ.
+- [x] `src/lib/domain/settlement.ts`: `computeCancellation()`, `computeWeightSettlement()`, `computeComplaintCompensation()`. Test theo mục 7.2–7.4.
+- [x] Admin `/admin/don-hang`: danh sách lọc theo trạng thái, trạng thái thanh toán, ngày giao; tìm theo mã đơn hoặc tên khách; badge số đơn "Chờ xác nhận".
+- [x] Admin chi tiết đơn:
   - Timeline từ `OrderEvent`.
   - Các nút hành động **chỉ hiện khi hợp lệ**: Xác nhận đơn (cho đổi ngày giao), Chuyển "Đang giao", **Nhập khối lượng thực** (form theo từng dòng, nhập kg, xem trước quyết toán), Ghi nhận thanh toán phần còn lại, Xác nhận đã hoàn tiền, Hoàn thành, Hủy (bắt buộc chọn lý do).
   - Gán lô hàng cho từng dòng khi đơn ở `PROCESSING`.
-- [ ] Khách `/tai-khoan/don-hang/[code]`: timeline, chi tiết thanh toán (đã trả, còn lại, hoàn), nút **Hủy đơn** (hiện cảnh báo mất cọc nếu đang `PROCESSING`), nút **Khiếu nại** (trong 24h sau giao, upload ảnh), link truy xuất lô.
-- [ ] Admin `/admin/khieu-nai`: danh sách, xác minh `verifiedGrams`, xem trước bồi hoàn, chọn REFUND/REPLACE/REJECTED.
-- [ ] Trạng thái realtime ở mức đồ án: trang chi tiết đơn của khách tự refresh mỗi 30 giây (`router.refresh()`).
+- [x] Khách `/tai-khoan/don-hang/[code]`: timeline, chi tiết thanh toán (đã trả, còn lại, hoàn), nút **Hủy đơn** (hiện cảnh báo mất cọc nếu đang `PROCESSING`), nút **Khiếu nại** (trong 24h sau giao, upload ảnh), link truy xuất lô.
+- [x] Admin `/admin/khieu-nai`: danh sách, xác minh `verifiedGrams`, xem trước bồi hoàn, chọn REFUND/REPLACE/REJECTED.
+- [x] Trạng thái realtime ở mức đồ án: trang chi tiết đơn của khách tự refresh mỗi 30 giây (`router.refresh()`).
 
 **DoD:** đi hết các kịch bản (a) cọc 30% → giao 205,5kg → thu phần còn lại → hoàn thành; (b) trả 100% → khách hủy ở PROCESSING → hoàn 70%; (c) hết hàng → bên bán hủy → hoàn 100%; (d) khiếu nại vượt 3% → hoàn bồi thường. Số tiền khớp mục 7.
 
@@ -776,7 +776,7 @@ interface NotificationChannel { name: 'EMAIL' | 'ZNS'; send(msg: { to: string; t
 | 2 – Catalog, Vườn, Lô/QR | ✅ Hoàn thành | Đã hoàn thành CRUD Nhà vườn & Chứng nhận GAP, CRUD Sản phẩm & Bậc giá với hàm validatePriceTiers, Ma trận sản lượng theo tuần, CRUD Lô hàng & API sinh mã QR PNG; Trang chủ hiển thị theo mùa vụ/pre-order, Catalog /san-pham, Chi tiết /san-pham/[slug] với bảng giá bậc & iframe Google Maps, Hồ sơ vườn /nha-vuon/[slug], Cổng truy xuất /truy-xuat/[code]; toàn bộ lint, typecheck, test, build PASS. |
 | 3 – Giỏ hàng & Engine giá | ✅ Hoàn thành | Đã hoàn thành pure domain findTier & priceCart, toàn bộ bộ test case P1–P8 (100% PASS); Zustand cart store có persist localStorage; Server action quoteCart & checkSamplePurchased; Bộ chọn quy cách xem trước giá realtime & thanh tiến trình bậc giá tại /san-pham/[slug]; Trang giỏ hàng /gio-hang nhóm theo sản phẩm, kiểm tra MOQ & thanh toán; Cart badge động trên Header; toàn bộ lint, typecheck, test, build PASS. |
 | 4 – Checkout & Thanh toán | ✅ Hoàn thành | Đã hoàn thành earliestDeliveryDate (leadTime & cutoff 17h), checkCapacity & weekly Monday, zeroShippingCalculator mock (chờ Phase 8), recordOrderEvent (chờ Phase 9), computeDepositAmount (làm tròn lên nghìn đồng test case S1) & derivePaymentStatus; Server action placeOrder trong 1 transaction an toàn (tính lại giá server-side, kiểm tra MOQ/sample/capacity, snapshot địa chỉ & sản phẩm, sinh mã DH-YYMMDD-XXXX); Giao diện checkout 5 bước /thanh-toan; Trang thanh toán VietQR /thanh-toan/[code] với đếm ngược 24h & mã QR động; Trang Admin quản lý đơn /admin/don-hang với lọc/tìm kiếm & nút quét quá hạn; Trang Admin chi tiết /admin/don-hang/[code] với modal xác nhận đã nhận tiền; Cron /api/cron/expire-orders bảo vệ bằng CRON_SECRET; Trang chi tiết đơn khách /tai-khoan/don-hang/[code]; Toàn bộ 54 unit tests, lint, typecheck, build 100% PASS. |
-| 5 – Vòng đời đơn & Quyết toán | ⬜ | |
+| 5 – Vòng đời đơn & Quyết toán | ✅ Hoàn thành | Đã hoàn thành máy trạng thái order-state.ts (canTransition, applyTransition với 23 unit tests); computeCancellation (S2-S5), computeWeightSettlement (W1-W3 với validate 105%), computeComplaintCompensation (C1-C3 với hao hụt 3% và hạn 24h); Server actions order-lifecycle.ts; UI Admin /admin/don-hang/[code] hiển thị nút theo trạng thái, modal bàn giao vận chuyển kèm gán lô, modal nhập khối lượng thực & quyết toán live, modal hủy đơn (100% hoàn tiền), xác nhận hoàn tiền; UI Admin /admin/khieu-nai xử lý khiếu nại (xác minh kg, bồi hoàn tiền hoặc bù hàng); UI Khách /tai-khoan/don-hang/[code] tự refresh 30s, cảnh báo mất cọc khi hủy ở PROCESSING, form gửi khiếu nại kèm upload ảnh; Toàn bộ 88 tests, lint, typecheck, build 100% PASS. |
 | 6 – Định kỳ, Pre-order, Dashboard | ⬜ | |
 | 7 – CRM & Báo cáo | ⬜ | |
 | 8 – Vận chuyển | ⬜ | |

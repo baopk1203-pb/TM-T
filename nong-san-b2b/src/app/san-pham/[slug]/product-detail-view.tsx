@@ -11,9 +11,7 @@ import {
   Award,
   Sparkles,
   ShieldCheck,
-  Package,
   Layers,
-  ArrowRight,
   ExternalLink,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -30,6 +28,7 @@ import {
 } from '@/components/ui/table'
 import { formatVND, gramsToKg } from '@/lib/money'
 import { calculateCustomerUnitPrice } from '@/lib/domain/pricing'
+import { ProductOrderBox } from './product-order-box'
 
 interface ProductDetailProps {
   product: {
@@ -69,9 +68,14 @@ interface ProductDetailProps {
     role: string
     groupName?: string
   } | null
+  hasPurchasedSample?: boolean
 }
 
-export function ProductDetailView({ product, user }: ProductDetailProps) {
+export function ProductDetailView({
+  product,
+  user,
+  hasPurchasedSample = false,
+}: ProductDetailProps) {
   const [activeImage, setActiveImage] = useState(product.images[0] || '')
   const [nowTimestamp] = useState(() => Date.now())
   const userDiscount = user?.discountPercent || 0
@@ -257,36 +261,12 @@ export function ProductDetailView({ product, user }: ProductDetailProps) {
             </div>
           </div>
 
-          {/* QUY CÁCH ĐÓNG GÓI SẴN CÓ */}
-          <div className="space-y-3 pt-2">
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <Package className="w-4 h-4 text-emerald-600" /> Quy Cách Đóng Gói
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {product.packagings.map((pkg) => (
-                <div
-                  key={pkg.id}
-                  className={`p-3.5 rounded-xl border text-xs flex items-center justify-between ${
-                    pkg.isSample
-                      ? 'border-amber-300 bg-amber-50/60 text-amber-900'
-                      : 'border-slate-200 bg-white text-slate-800'
-                  }`}
-                >
-                  <div>
-                    <strong className="block text-sm font-semibold">{pkg.name}</strong>
-                    <span className="text-slate-500">Khối lượng: {gramsToKg(pkg.weightGrams)} kg</span>
-                  </div>
-                  {pkg.isSample ? (
-                    <Badge className="bg-amber-600 text-white font-bold">
-                      Gói mẫu: {formatVND(pkg.samplePrice || 0)}
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-slate-600">Quy cách sỉ</Badge>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* BỘ CHỌN QUY CÁCH & ĐẶT HÀNG / XEM GIÁ REALTIME */}
+          <ProductOrderBox
+            product={product}
+            user={user}
+            hasPurchasedSample={hasPurchasedSample}
+          />
 
           {/* PRE-ORDER BANNER (IF APPLICABLE) */}
           {product.preorderOpen && (
@@ -304,16 +284,11 @@ export function ProductDetailView({ product, user }: ProductDetailProps) {
             </div>
           )}
 
-          {/* Action Callout */}
-          <div className="pt-2 flex flex-col sm:flex-row gap-3">
-            <Link href="/san-pham" className="flex-1">
-              <Button variant="outline" className="w-full text-xs">
+          {/* Back link */}
+          <div className="pt-1">
+            <Link href="/san-pham">
+              <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900 text-xs">
                 ← Quay lại danh mục sỉ
-              </Button>
-            </Link>
-            <Link href="/dang-ky" className="flex-1">
-              <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 shadow-sm">
-                Đăng ký mở tài khoản đặt sỉ <ArrowRight className="w-3.5 h-3.5" />
               </Button>
             </Link>
           </div>

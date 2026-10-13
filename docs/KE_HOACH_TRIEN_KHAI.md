@@ -517,15 +517,15 @@ flowchart LR
 
 **Mục tiêu:** tính giá chính xác, trải nghiệm "giá nhảy theo sản lượng".
 
-- [ ] `src/lib/domain/pricing.ts` gồm các hàm thuần:
+- [x] `src/lib/domain/pricing.ts` gồm các hàm thuần:
   - `findTier(tiers, totalGrams)`
   - `priceCart({ lines, products, groupDiscountPercent }) → { productSummaries[{ productId, totalGrams, meetsMoq, missingGramsForMoq, basePricePerKg, unitPricePerKg, nextTier?: { minGrams, pricePerKg, missingGrams } }], lines[{…, lineTotal}], sampleLines[], subtotal, errors[] }`
   - Đủ toàn bộ test case ở mục 7.1.
-- [ ] Store giỏ hàng `zustand` (persist): `lines: { productId, packagingId, quantity }[]`. Có add/update/remove/clear.
-- [ ] Server action `quoteCart(lines)`: đọc DB, áp chiết khấu nhóm nếu đã đăng nhập (khách vãng lai dùng 0%), trả kết quả `priceCart`. UI chỉ hiển thị kết quả này, không tự tính.
-- [ ] Trang sản phẩm: chọn quy cách × số lượng, **xem trước giá realtime** (gọi `quoteCart` có debounce), thanh tiến trình, nút "Thêm vào giỏ". Nút "Mua mẫu" thì ẩn/disable nếu khách đã mua mẫu sản phẩm đó.
-- [ ] `/gio-hang`: nhóm dòng theo sản phẩm, hiện tổng kg, MOQ, bậc đang áp dụng và thanh tiến trình cho từng sản phẩm; sửa số lượng; nút "Thanh toán" bị disable nếu có sản phẩm chưa đạt MOQ.
-- [ ] Đăng nhập rồi thì giỏ giữ nguyên (localStorage), giá tự tính lại theo nhóm.
+- [x] Store giỏ hàng `zustand` (persist): `lines: { productId, packagingId, quantity }[]`. Có add/update/remove/clear.
+- [x] Server action `quoteCart(lines)`: đọc DB, áp chiết khấu nhóm nếu đã đăng nhập (khách vãng lai dùng 0%), trả kết quả `priceCart`. UI chỉ hiển thị kết quả này, không tự tính.
+- [x] Trang sản phẩm: chọn quy cách × số lượng, **xem trước giá realtime** (gọi `quoteCart` có debounce), thanh tiến trình, nút "Thêm vào giỏ". Nút "Mua mẫu" thì ẩn/disable nếu khách đã mua mẫu sản phẩm đó.
+- [x] `/gio-hang`: nhóm dòng theo sản phẩm, hiện tổng kg, MOQ, bậc đang áp dụng và thanh tiến trình cho từng sản phẩm; sửa số lượng; nút "Thanh toán" bị disable nếu có sản phẩm chưa đạt MOQ.
+- [x] Đăng nhập rồi thì giỏ giữ nguyên (localStorage), giá tự tính lại theo nhóm.
 
 **DoD:** test pricing pass toàn bộ. Demo Ri6 210kg với tài khoản Siêu thị hiển thị **72.750đ/kg**, thành tiền **15.277.500đ**.
 
@@ -774,7 +774,7 @@ interface NotificationChannel { name: 'EMAIL' | 'ZNS'; send(msg: { to: string; t
 | 0 – Khởi tạo | ✅ Hoàn thành | Đã thiết lập Next.js 16, shadcn/ui, Prisma 6, Vitest, money utilities, git repo; tất cả lệnh lint, typecheck, test, build đều PASS. |
 | 1 – Dữ liệu & Xác thực | ✅ Hoàn thành | Đã tạo và migrate schema Prisma lên Neon PostgreSQL; seed 3 nhóm, 4 user, 3 vườn, 8 SP, capacity & batch; Auth.js JWT + Middleware; trang Đăng ký, Đăng nhập (1-click demo), Quản lý hồ sơ & sổ địa chỉ; layout Admin dashboard; toàn bộ lint, typecheck, test, build PASS. |
 | 2 – Catalog, Vườn, Lô/QR | ✅ Hoàn thành | Đã hoàn thành CRUD Nhà vườn & Chứng nhận GAP, CRUD Sản phẩm & Bậc giá với hàm validatePriceTiers, Ma trận sản lượng theo tuần, CRUD Lô hàng & API sinh mã QR PNG; Trang chủ hiển thị theo mùa vụ/pre-order, Catalog /san-pham, Chi tiết /san-pham/[slug] với bảng giá bậc & iframe Google Maps, Hồ sơ vườn /nha-vuon/[slug], Cổng truy xuất /truy-xuat/[code]; toàn bộ lint, typecheck, test, build PASS. |
-| 3 – Giỏ hàng & Engine giá | ⬜ | |
+| 3 – Giỏ hàng & Engine giá | ✅ Hoàn thành | Đã hoàn thành pure domain findTier & priceCart, toàn bộ bộ test case P1–P8 (100% PASS); Zustand cart store có persist localStorage; Server action quoteCart & checkSamplePurchased; Bộ chọn quy cách xem trước giá realtime & thanh tiến trình bậc giá tại /san-pham/[slug]; Trang giỏ hàng /gio-hang nhóm theo sản phẩm, kiểm tra MOQ & thanh toán; Cart badge động trên Header; toàn bộ lint, typecheck, test, build PASS. |
 | 4 – Checkout & Thanh toán | ⬜ | |
 | 5 – Vòng đời đơn & Quyết toán | ⬜ | |
 | 6 – Định kỳ, Pre-order, Dashboard | ⬜ | |

@@ -3,6 +3,7 @@ import { Leaf, User, Shield } from 'lucide-react'
 import { getServerAuthSession } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { CartButton } from '@/components/shop/cart-button'
 
 export async function StorefrontHeader() {
   const session = await getServerAuthSession()
@@ -41,6 +42,7 @@ export async function StorefrontHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <CartButton />
           {user ? (
             <div className="flex items-center gap-2">
               {user.role === 'ADMIN' && (

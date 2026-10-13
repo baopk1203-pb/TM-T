@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { StorefrontHeader } from '@/components/shop/storefront-header'
 import { getProductBySlug } from '@/server/actions/product'
 import { getServerAuthSession } from '@/lib/auth'
+import { checkSamplePurchased } from '@/actions/cart'
 import { ProductDetailView } from './product-detail-view'
 
 export const dynamic = 'force-dynamic'
@@ -21,6 +22,10 @@ export default async function ProductDetailPage({
     notFound()
   }
 
+  const hasPurchasedSample = session?.user?.id
+    ? await checkSamplePurchased(product.id)
+    : false
+
   const user = session?.user
     ? {
         name: session.user.name,
@@ -34,7 +39,11 @@ export default async function ProductDetailPage({
       <StorefrontHeader />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-        <ProductDetailView product={product} user={user} />
+        <ProductDetailView
+          product={product}
+          user={user}
+          hasPurchasedSample={hasPurchasedSample}
+        />
       </main>
 
       <footer className="bg-white border-t border-slate-200 py-8">

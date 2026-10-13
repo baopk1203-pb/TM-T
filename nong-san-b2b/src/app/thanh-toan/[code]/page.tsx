@@ -1,0 +1,71 @@
+import { Metadata } from 'next'
+import { notFound, redirect } from 'next/navigation'
+import { db } from '@/lib/db'
+import { getServerAuthSession } from '@/lib/auth'
+import { StorefrontHeader } from '@/components/shop/storefront-header'
+import { PaymentView } from './payment-view'
+
+export const metadata: Metadata = {
+  title: 'Thanh Toán Đơn Hàng | Nông Sản B2B',
+  description: 'Mã QR thanh toán chuyển khoản VietQR cho đơn hàng nông sản B2B.',
+}
+
+export const dynamic = 'force-dynamic'
+
+export default async function OrderPaymentPage({
+  params,
+}: {
+  params: Promise<{ code: string }>
+}) {
+  const { code } = await params
+  const session = await getServerAuthSession()
+
+  if (!session?.user?.id) {
+    redirect(`/dang-nhap?callbackUrl=/thanh-toan/${code}`)
+  }
+
+  const order = await db.order.findUnique({
+    where: { code },
+    include: {
+      items: true,
+    },
+  })
+
+  if (!order) {
+    notFound()
+  }
+
+  // Khách chỉ được xem đơn của mình (Admin xem được tất cả)
+  if (order.userId !== session.user.id && session.user.role !== 'ADMIN') {
+    notFound()
+  }
+
+  const bankBin = process.env.VIETQR_BANK_BIN || '970422'
+  const accountNo = process.env.VIETQR_ACCOUNT_NO || '0901234567'
+  const accountName = process.env.VIETQR_ACCOUNT_NAME || 'CONG TY CP NONG SAN B2B'
+
+  const amountToPay =
+    order.paymentOption === 'DEPOSIT_30' ? order.depositAmount : order.total
+
+  const vietQrUrl = `https://img.vietqr.io/image/${bankBin}-${accountNo}-compact2.png?amount=${amountToPay}&addInfo=${order.code}&accountName=${encodeURIComponent(accountName)}`
+
+  return (
+    <div className="min-h-screen flex flex-col bg-slate-50/50">
+      <StorefrontHeader />
+
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+        <PaymentView
+          order={order}
+          vietQrUrl={vietQrUrl}
+          bankInfo={{ bankBin, accountNo, accountName }}
+        />
+      </main>
+
+      <footer className="bg-white border-t border-slate-200 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-500">
+          <p>© 2026 Nông Sản B2B - Đồ án môn Thương mại Điện tử</p>
+        </div>
+      </footer>
+    </div>
+  )
+}

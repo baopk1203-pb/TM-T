@@ -535,25 +535,25 @@ flowchart LR
 
 **Mục tiêu:** tạo đơn an toàn, thanh toán VietQR, Admin xác nhận tiền.
 
-- [ ] `src/lib/domain/delivery-date.ts`: `earliestDeliveryDate(now, leadTimes[])` (múi giờ VN, giờ chốt 17h) kèm test.
-- [ ] `src/lib/domain/capacity.ts`: `checkCapacity(existingGramsByWeek, newGrams, capacity?)` kèm test.
-- [ ] `src/lib/domain/shipping/index.ts`: **chỉ** interface + `zeroShippingCalculator` (mục 3.13).
-- [ ] `src/lib/events.ts`: `recordOrderEvent()` (mục 3.13).
-- [ ] `/thanh-toan`:
+- [x] `src/lib/domain/delivery-date.ts`: `earliestDeliveryDate(now, leadTimes[])` (múi giờ VN, giờ chốt 17h) kèm test.
+- [x] `src/lib/domain/capacity.ts`: `checkCapacity(existingGramsByWeek, newGrams, capacity?)` kèm test.
+- [x] `src/lib/domain/shipping/index.ts`: **chỉ** interface + `zeroShippingCalculator` (mục 3.13).
+- [x] `src/lib/events.ts`: `recordOrderEvent()` (mục 3.13).
+- [x] `/thanh-toan`:
   1. Chọn hoặc thêm địa chỉ.
   2. Chọn ngày (calendar disable các ngày < ngày sớm nhất) và khung giờ.
   3. Phí vận chuyển lấy từ `getShippingCalculator().quote()`, hiện tại = 0, kèm ghi chú.
   4. Chọn `FULL` / `DEPOSIT_30`, hiển thị số tiền cần chuyển ngay.
   5. Ghi chú, rồi bấm **Đặt hàng**.
-- [ ] Server action `placeOrder(input)` chạy trong **một transaction Prisma**:
+- [x] Server action `placeOrder(input)` chạy trong **một transaction Prisma**:
   - Validate zod, tính lại giá (`priceCart`), kiểm MOQ, giới hạn hàng mẫu, capacity, ngày giao.
   - Snapshot địa chỉ, tên sản phẩm/quy cách, `groupDiscountPercent`.
   - Sinh `code` (`DH-YYMMDD-XXXX`, không trùng), `status = PENDING_CONFIRMATION`, `paymentDueAt = now + 24h`, ghi `ORDER_CREATED`.
   - Xong thì xóa giỏ ở client và chuyển tới `/thanh-toan/[code]`.
-- [ ] `/thanh-toan/[code]`: popup "Đặt hàng thành công", ảnh VietQR (số tiền và nội dung = mã đơn), đồng hồ đếm hạn thanh toán, nút "Xem đơn hàng".
-- [ ] Admin `/admin/don-hang/[code]`: nút **Xác nhận đã nhận tiền** (nhập số tiền, phương thức, mã tham chiếu), tạo `PaymentTransaction(PAYMENT, DONE)` và ghi `PAYMENT_CONFIRMED`.
-- [ ] Hàm suy ra trạng thái thanh toán `derivePaymentStatus(order, transactions)` trong `settlement.ts` kèm test.
-- [ ] Route `/api/cron/expire-orders` (bảo vệ bằng header `Authorization: Bearer ${CRON_SECRET}`) và nút trong Admin: hủy các đơn `PENDING_CONFIRMATION` quá `paymentDueAt` mà `paid = 0`, ghi `PAYMENT_EXPIRED`.
+- [x] `/thanh-toan/[code]`: popup "Đặt hàng thành công", ảnh VietQR (số tiền và nội dung = mã đơn), đồng hồ đếm hạn thanh toán, nút "Xem đơn hàng".
+- [x] Admin `/admin/don-hang/[code]`: nút **Xác nhận đã nhận tiền** (nhập số tiền, phương thức, mã tham chiếu), tạo `PaymentTransaction(PAYMENT, DONE)` và ghi `PAYMENT_CONFIRMED`.
+- [x] Hàm suy ra trạng thái thanh toán `derivePaymentStatus(order, transactions)` trong `settlement.ts` kèm test.
+- [x] Route `/api/cron/expire-orders` (bảo vệ bằng header `Authorization: Bearer ${CRON_SECRET}`) và nút trong Admin: hủy các đơn `PENDING_CONFIRMATION` quá `paymentDueAt` mà `paid = 0`, ghi `PAYMENT_EXPIRED`.
 
 **DoD:** đặt đơn thành công, DB có đúng snapshot. Sửa giá ở client (giả lập) không ảnh hưởng tổng tiền ở server. Vượt capacity thì bị chặn. Đơn quá hạn bị hủy khi chạy quét.
 
@@ -775,7 +775,7 @@ interface NotificationChannel { name: 'EMAIL' | 'ZNS'; send(msg: { to: string; t
 | 1 – Dữ liệu & Xác thực | ✅ Hoàn thành | Đã tạo và migrate schema Prisma lên Neon PostgreSQL; seed 3 nhóm, 4 user, 3 vườn, 8 SP, capacity & batch; Auth.js JWT + Middleware; trang Đăng ký, Đăng nhập (1-click demo), Quản lý hồ sơ & sổ địa chỉ; layout Admin dashboard; toàn bộ lint, typecheck, test, build PASS. |
 | 2 – Catalog, Vườn, Lô/QR | ✅ Hoàn thành | Đã hoàn thành CRUD Nhà vườn & Chứng nhận GAP, CRUD Sản phẩm & Bậc giá với hàm validatePriceTiers, Ma trận sản lượng theo tuần, CRUD Lô hàng & API sinh mã QR PNG; Trang chủ hiển thị theo mùa vụ/pre-order, Catalog /san-pham, Chi tiết /san-pham/[slug] với bảng giá bậc & iframe Google Maps, Hồ sơ vườn /nha-vuon/[slug], Cổng truy xuất /truy-xuat/[code]; toàn bộ lint, typecheck, test, build PASS. |
 | 3 – Giỏ hàng & Engine giá | ✅ Hoàn thành | Đã hoàn thành pure domain findTier & priceCart, toàn bộ bộ test case P1–P8 (100% PASS); Zustand cart store có persist localStorage; Server action quoteCart & checkSamplePurchased; Bộ chọn quy cách xem trước giá realtime & thanh tiến trình bậc giá tại /san-pham/[slug]; Trang giỏ hàng /gio-hang nhóm theo sản phẩm, kiểm tra MOQ & thanh toán; Cart badge động trên Header; toàn bộ lint, typecheck, test, build PASS. |
-| 4 – Checkout & Thanh toán | ⬜ | |
+| 4 – Checkout & Thanh toán | ✅ Hoàn thành | Đã hoàn thành earliestDeliveryDate (leadTime & cutoff 17h), checkCapacity & weekly Monday, zeroShippingCalculator mock (chờ Phase 8), recordOrderEvent (chờ Phase 9), computeDepositAmount (làm tròn lên nghìn đồng test case S1) & derivePaymentStatus; Server action placeOrder trong 1 transaction an toàn (tính lại giá server-side, kiểm tra MOQ/sample/capacity, snapshot địa chỉ & sản phẩm, sinh mã DH-YYMMDD-XXXX); Giao diện checkout 5 bước /thanh-toan; Trang thanh toán VietQR /thanh-toan/[code] với đếm ngược 24h & mã QR động; Trang Admin quản lý đơn /admin/don-hang với lọc/tìm kiếm & nút quét quá hạn; Trang Admin chi tiết /admin/don-hang/[code] với modal xác nhận đã nhận tiền; Cron /api/cron/expire-orders bảo vệ bằng CRON_SECRET; Trang chi tiết đơn khách /tai-khoan/don-hang/[code]; Toàn bộ 54 unit tests, lint, typecheck, build 100% PASS. |
 | 5 – Vòng đời đơn & Quyết toán | ⬜ | |
 | 6 – Định kỳ, Pre-order, Dashboard | ⬜ | |
 | 7 – CRM & Báo cáo | ⬜ | |

@@ -474,19 +474,19 @@ flowchart LR
 
 **Mục tiêu:** schema đầy đủ (trừ các model Phase 8/9), đăng ký/đăng nhập, phân quyền, seed dữ liệu demo.
 
-- [ ] Viết `prisma/schema.prisma` theo mục 4, rồi `npx prisma migrate dev --name init`.
-- [ ] `prisma/seed.ts`:
+- [x] Viết `prisma/schema.prisma` theo mục 4, rồi `npx prisma migrate dev --name init`.
+- [x] `prisma/seed.ts`:
   - 3 nhóm khách (mục 3.1) và 1 Admin lấy từ `ADMIN_EMAIL/ADMIN_PASSWORD`.
   - 3 khách demo, mỗi nhóm một người, mật khẩu `Demo@123`.
   - 3 nhà vườn (Tiền Giang, Bến Tre, Đắk Lắk) có tọa độ thật, mỗi vườn có chứng nhận VietGAP hoặc GlobalGAP.
   - ≥8 sản phẩm, ví dụ: Sầu riêng Ri6 (MOQ 50kg; 50kg → 80.000, 200kg → 75.000), Sầu riêng Monthong, Xoài cát Hòa Lộc, Bưởi da xanh, Thanh long ruột đỏ, Chôm chôm, Măng cụt, Bơ 034. Mỗi sản phẩm có 2–3 quy cách và 2–3 bậc giá; ít nhất 2 sản phẩm có gói mẫu; 1 sản phẩm `UPCOMING` có mở pre-order.
   - Capacity cho tuần hiện tại và tuần sau; 3 lô hàng.
-- [ ] Auth.js: Credentials provider, mật khẩu bcrypt, chiến lược JWT. Session chứa `id`, `role`, `groupId`, `discountPercent`.
-- [ ] `middleware.ts`: chặn `/admin/**` (chỉ ADMIN), `/tai-khoan/**` và `/thanh-toan/**` (phải đăng nhập, chuyển về `/dang-nhap?callbackUrl=`).
-- [ ] Trang `/dang-ky` (zod validate; email không được trùng; gán nhóm mặc định) và `/dang-nhap`.
-- [ ] Helper `requireUser()`, `requireAdmin()` dùng trong server actions.
-- [ ] Trang `/tai-khoan/ho-so` và `/tai-khoan/dia-chi` (CRUD địa chỉ, chọn địa chỉ mặc định).
-- [ ] Khung layout Admin (sidebar với các mục ở mục 5; các trang chưa làm hiển thị "Đang phát triển").
+- [x] Auth.js: Credentials provider, mật khẩu bcrypt, chiến lược JWT. Session chứa `id`, `role`, `groupId`, `discountPercent`.
+- [x] `middleware.ts`: chặn `/admin/**` (chỉ ADMIN), `/tai-khoan/**` và `/thanh-toan/**` (phải đăng nhập, chuyển về `/dang-nhap?callbackUrl=`).
+- [x] Trang `/dang-ky` (zod validate; email không được trùng; gán nhóm mặc định) và `/dang-nhap`.
+- [x] Helper `requireUser()`, `requireAdmin()` dùng trong server actions.
+- [x] Trang `/tai-khoan/ho-so` và `/tai-khoan/dia-chi` (CRUD địa chỉ, chọn địa chỉ mặc định).
+- [x] Khung layout Admin (sidebar với các mục ở mục 5; các trang chưa làm hiển thị "Đang phát triển").
 
 **DoD:** đăng ký khách mới thì nhóm là `SMALL_SHOP`. Khách vào `/admin` bị chặn, Admin vào được. Seed chạy lại (`db:reset`) không lỗi.
 
@@ -772,7 +772,7 @@ interface NotificationChannel { name: 'EMAIL' | 'ZNS'; send(msg: { to: string; t
 | Phase | Trạng thái | Ghi chú / Giả định đã đưa ra |
 |---|---|---|
 | 0 – Khởi tạo | ✅ Hoàn thành | Đã thiết lập Next.js 16, shadcn/ui, Prisma 6, Vitest, money utilities, git repo; tất cả lệnh lint, typecheck, test, build đều PASS. |
-| 1 – Dữ liệu & Xác thực | ⬜ | |
+| 1 – Dữ liệu & Xác thực | ✅ Hoàn thành | Đã tạo và migrate schema Prisma lên Neon PostgreSQL; seed 3 nhóm, 4 user, 3 vườn, 8 SP, capacity & batch; Auth.js JWT + Middleware; trang Đăng ký, Đăng nhập (1-click demo), Quản lý hồ sơ & sổ địa chỉ; layout Admin dashboard; toàn bộ lint, typecheck, test, build PASS. |
 | 2 – Catalog, Vườn, Lô/QR | ⬜ | |
 | 3 – Giỏ hàng & Engine giá | ⬜ | |
 | 4 – Checkout & Thanh toán | ⬜ | |

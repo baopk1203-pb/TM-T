@@ -6,3 +6,357 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum SeasonStatus {
+  HARVESTING
+  UPCOMING
+  OFF_SEASON
+}
+
+enum OrderType {
+  STANDARD
+  SAMPLE
+  RECURRING
+  PREORDER
+}
+
+enum OrderStatus {
+  DRAFT
+  PREORDER_WAITING
+  PENDING_CONFIRMATION
+  PROCESSING
+  SHIPPING
+  DELIVERED
+  COMPLAINT
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentOption {
+  FULL
+  DEPOSIT_30
+}
+
+enum TxType {
+  PAYMENT
+  REFUND
+}
+
+enum TxStatus {
+  PENDING
+  DONE
+}
+
+enum TxMethod {
+  BANK_TRANSFER
+  CASH
+}
+
+enum CancelActor {
+  CUSTOMER
+  SELLER
+  SYSTEM
+}
+
+enum TimeSlot {
+  MORNING
+  AFTERNOON
+  EVENING
+}
+
+enum CertType {
+  VIETGAP
+  GLOBALGAP
+  ORGANIC
+  OTHER
+}
+
+enum ComplaintStatus {
+  OPEN
+  RESOLVED
+  REJECTED
+}
+
+enum Resolution {
+  REFUND
+  REPLACE
+}
+
+model CustomerGroup {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  name            String
+  discountPercent Int
+  isDefault       Boolean  @default(false)
+  users           User[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model User {
+  id                 String              @id @default(cuid())
+  email              String              @unique
+  passwordHash       String
+  role               Role                @default(CUSTOMER)
+  fullName           String
+  phone              String
+  companyName        String?
+  taxCode            String?
+  groupId            String?
+  group              CustomerGroup?      @relation(fields: [groupId], references: [id])
+  addresses          Address[]
+  orders             Order[]
+  recurringSchedules RecurringSchedule[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+}
+
+model Address {
+  id        String   @id @default(cuid())
+  userId    String
+  label     String
+  recipient String
+  phone     String
+  line      String
+  ward      String
+  district  String
+  province  String
+  isDefault Boolean  @default(false)
+  lat       Float?
+  lng       Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Farm {
+  id           String        @id @default(cuid())
+  slug         String        @unique
+  name         String
+  ownerName    String?
+  province     String
+  addressText  String
+  description  String
+  lat          Float
+  lng          Float
+  images       String[]
+  certificates Certificate[]
+  products     Product[]
+  batches      Batch[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Certificate {
+  id        String   @id @default(cuid())
+  farmId    String
+  type      CertType
+  code      String
+  issuedAt  DateTime
+  expiresAt DateTime
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  farm      Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+}
+
+model Product {
+  id                  String           @id @default(cuid())
+  slug                String           @unique
+  name                String
+  description         String
+  images              String[]
+  farmId              String
+  farm                Farm             @relation(fields: [farmId], references: [id])
+  moqGrams            Int
+  leadTimeDays        Int              @default(1)
+  seasonStatus        SeasonStatus
+  requiresCold        Boolean          @default(false)
+  isActive            Boolean          @default(true)
+  preorderOpen        Boolean          @default(false)
+  preorderPricePerKg  Int?
+  preorderBandPercent Int              @default(10)
+  expectedHarvestFrom DateTime?
+  expectedHarvestTo   DateTime?
+  packagings          Packaging[]
+  priceTiers          PriceTier[]
+  capacities          WeeklyCapacity[]
+  batches             Batch[]
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+}
+
+model Packaging {
+  id          String      @id @default(cuid())
+  productId   String
+  name        String
+  weightGrams Int
+  isSample    Boolean     @default(false)
+  samplePrice Int?
+  isActive    Boolean     @default(true)
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems  OrderItem[]
+}
+
+model PriceTier {
+  id         String   @id @default(cuid())
+  productId  String
+  minGrams   Int
+  pricePerKg Int
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, minGrams])
+}
+
+model WeeklyCapacity {
+  id         String   @id @default(cuid())
+  productId  String
+  weekStart  DateTime @db.Date
+  maxGrams   Int
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, weekStart])
+}
+
+model Batch {
+  id            String      @id @default(cuid())
+  code          String      @unique
+  productId     String
+  farmId        String
+  harvestDate   DateTime    @db.Date
+  quantityGrams Int
+  note          String?
+  product       Product     @relation(fields: [productId], references: [id])
+  farm          Farm        @relation(fields: [farmId], references: [id])
+  orderItems    OrderItem[]
+  createdAt     DateTime    @default(now())
+}
+
+model Order {
+  id                       String               @id @default(cuid())
+  code                     String               @unique
+  userId                   String
+  user                     User                 @relation(fields: [userId], references: [id])
+  type                     OrderType
+  status                   OrderStatus
+  paymentOption            PaymentOption
+  groupDiscountPercent     Int
+  addressSnapshot          Json
+  deliveryDate             DateTime?            @db.Date
+  timeSlot                 TimeSlot?
+  subtotal                 Int
+  shippingFee              Int                  @default(0)
+  total                    Int
+  depositAmount            Int
+  finalSubtotal            Int?
+  finalTotal               Int?
+  paymentDueAt             DateTime?
+  deliveredAt              DateTime?
+  cancelledBy              CancelActor?
+  cancelReason             String?
+  customerNote             String?
+  recurringScheduleId      String?
+  recurringSchedule        RecurringSchedule?   @relation(fields: [recurringScheduleId], references: [id])
+  preorderFinalPricePerKg  Int?
+  preorderFulfilledGrams   Int?
+  preorderCustomerDecision String?
+  items                    OrderItem[]
+  transactions             PaymentTransaction[]
+  events                   OrderEvent[]
+  complaints               Complaint[]
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+}
+
+model OrderItem {
+  id             String    @id @default(cuid())
+  orderId        String
+  productId      String
+  packagingId    String
+  productName    String
+  packagingName  String
+  isSample       Boolean
+  quantity       Int
+  orderedGrams   Int
+  unitPricePerKg Int
+  lineTotal      Int
+  actualGrams    Int?
+  finalLineTotal Int?
+  batchId        String?
+  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  batch          Batch?    @relation(fields: [batchId], references: [id])
+  packaging      Packaging @relation(fields: [packagingId], references: [id])
+}
+
+model PaymentTransaction {
+  id          String    @id @default(cuid())
+  orderId     String
+  type        TxType
+  status      TxStatus
+  method      TxMethod
+  amount      Int
+  reference   String?
+  note        String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model OrderEvent {
+  id         String       @id @default(cuid())
+  orderId    String
+  type       String
+  fromStatus OrderStatus?
+  toStatus   OrderStatus?
+  actorId    String?
+  note       String?
+  payload    Json?
+  createdAt  DateTime     @default(now())
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Complaint {
+  id            String          @id @default(cuid())
+  orderId       String
+  orderItemId   String
+  description   String
+  photos        String[]
+  reportedGrams Int
+  verifiedGrams Int?
+  status        ComplaintStatus @default(OPEN)
+  resolution    Resolution?
+  compensation  Int?
+  adminNote     String?
+  createdAt     DateTime        @default(now())
+  resolvedAt    DateTime?
+  order         Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model RecurringSchedule {
+  id            String          @id @default(cuid())
+  userId        String
+  name          String
+  weekdays      Int[]
+  timeSlot      TimeSlot
+  addressId     String
+  paymentOption PaymentOption
+  isActive      Boolean         @default(true)
+  items         RecurringItem[]
+  orders        Order[]
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model RecurringItem {
+  id          String            @id @default(cuid())
+  scheduleId  String
+  productId   String
+  packagingId String
+  quantity    Int
+  schedule    RecurringSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+}

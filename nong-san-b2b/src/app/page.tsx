@@ -3,63 +3,18 @@ import {
   ShieldCheck,
   TrendingDown,
   Truck,
-  Leaf,
   ArrowRight,
   BadgeCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { StorefrontHeader } from '@/components/shop/storefront-header'
 
 export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-sm">
-              <Leaf className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-xl font-bold tracking-tight text-slate-900">
-                NÔNG SẢN <span className="text-emerald-600">B2B</span>
-              </span>
-              <span className="block text-[11px] font-medium text-slate-500 uppercase tracking-wider">
-                Phân phối sỉ trái cây chuẩn vườn
-              </span>
-            </div>
-          </div>
-
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
-            <Link href="/" className="text-emerald-600 hover:text-emerald-700">
-              Trang chủ
-            </Link>
-            <Link href="/san-pham" className="hover:text-slate-900 transition-colors">
-              Sản phẩm vụ mùa
-            </Link>
-            <Link href="/nha-vuon" className="hover:text-slate-900 transition-colors">
-              Hồ sơ nhà vườn
-            </Link>
-            <Link href="/truy-xuat" className="hover:text-slate-900 transition-colors">
-              Truy xuất QR lô
-            </Link>
-          </nav>
-
-          <div className="flex items-center gap-3">
-            <Link href="/dang-nhap">
-              <Button variant="outline" size="sm">
-                Đăng nhập
-              </Button>
-            </Link>
-            <Link href="/dang-ky">
-              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                Đăng ký sỉ
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </header>
+      <StorefrontHeader />
 
       {/* Hero Section */}
       <main className="flex-1">

@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { Role } from '@prisma/client'
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || 'nong-san-b2b-super-secret-key-change-in-production-123456',
   session: {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 ngày

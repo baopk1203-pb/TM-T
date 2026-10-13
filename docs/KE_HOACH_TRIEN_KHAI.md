@@ -456,15 +456,15 @@ flowchart LR
 
 **Mục tiêu:** khung dự án chạy được, có công cụ kiểm tra chất lượng.
 
-- [ ] Tạo app trong `nong-san-b2b/`: `npx create-next-app@latest nong-san-b2b --ts --tailwind --eslint --app --src-dir --import-alias "@/*" --use-npm`
-- [ ] Cài shadcn/ui (`npx shadcn@latest init`) cùng các component: button, input, label, card, table, dialog, sheet, select, tabs, badge, form, toast/sonner, dropdown-menu, calendar, popover, textarea, skeleton.
-- [ ] Cài: `prisma @prisma/client zod zustand bcryptjs qrcode next-auth date-fns date-fns-tz` và dev deps `vitest @vitest/coverage-v8 tsx @types/bcryptjs @types/qrcode`.
-- [ ] PostgreSQL: tạo `docker-compose.yml` (postgres:16, port 5432). Nếu máy không có Docker thì hỏi người dùng chuỗi kết nối Neon/Supabase.
-- [ ] Tạo `.env.example`: `DATABASE_URL`, `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `VIETQR_BANK_BIN`, `VIETQR_ACCOUNT_NO`, `VIETQR_ACCOUNT_NAME`, `CRON_SECRET`, `APP_URL`. Thêm `.env` vào `.gitignore`.
-- [ ] Scripts trong `package.json`: `typecheck` (`tsc --noEmit`), `test` (`vitest run`), `db:migrate`, `db:seed`, `db:reset`.
-- [ ] `src/lib/db.ts` (Prisma singleton) và `src/lib/money.ts` (`formatVND`, `gramsToKgText`, `kgToGrams`) kèm test.
-- [ ] Layout gốc: font hỗ trợ tiếng Việt (Be Vietnam Pro hoặc Inter subset `vietnamese`), header/footer storefront.
-- [ ] `git init` và commit đầu tiên.
+- [x] Tạo app trong `nong-san-b2b/`: `npx create-next-app@latest nong-san-b2b --ts --tailwind --eslint --app --src-dir --import-alias "@/*" --use-npm`
+- [x] Cài shadcn/ui (`npx shadcn@latest init`) cùng các component: button, input, label, card, table, dialog, sheet, select, tabs, badge, form, toast/sonner, dropdown-menu, calendar, popover, textarea, skeleton.
+- [x] Cài: `prisma @prisma/client zod zustand bcryptjs qrcode next-auth date-fns date-fns-tz` và dev deps `vitest @vitest/coverage-v8 tsx @types/bcryptjs @types/qrcode`.
+- [x] PostgreSQL: tạo `docker-compose.yml` (postgres:16, port 5432). Nếu máy không có Docker thì hỏi người dùng chuỗi kết nối Neon/Supabase.
+- [x] Tạo `.env.example`: `DATABASE_URL`, `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `VIETQR_BANK_BIN`, `VIETQR_ACCOUNT_NO`, `VIETQR_ACCOUNT_NAME`, `CRON_SECRET`, `APP_URL`. Thêm `.env` vào `.gitignore`.
+- [x] Scripts trong `package.json`: `typecheck` (`tsc --noEmit`), `test` (`vitest run`), `db:migrate`, `db:seed`, `db:reset`.
+- [x] `src/lib/db.ts` (Prisma singleton) và `src/lib/money.ts` (`formatVND`, `gramsToKgText`, `kgToGrams`) kèm test.
+- [x] Layout gốc: font hỗ trợ tiếng Việt (Be Vietnam Pro hoặc Inter subset `vietnamese`), header/footer storefront.
+- [x] `git init` và commit đầu tiên.
 
 **DoD:** `npm run dev` mở được trang chủ. `lint`, `typecheck`, `test`, `build` đều pass.
 
@@ -771,7 +771,7 @@ interface NotificationChannel { name: 'EMAIL' | 'ZNS'; send(msg: { to: string; t
 
 | Phase | Trạng thái | Ghi chú / Giả định đã đưa ra |
 |---|---|---|
-| 0 – Khởi tạo | ⬜ Chưa bắt đầu | |
+| 0 – Khởi tạo | ✅ Hoàn thành | Đã thiết lập Next.js 16, shadcn/ui, Prisma 6, Vitest, money utilities, git repo; tất cả lệnh lint, typecheck, test, build đều PASS. |
 | 1 – Dữ liệu & Xác thực | ⬜ | |
 | 2 – Catalog, Vườn, Lô/QR | ⬜ | |
 | 3 – Giỏ hàng & Engine giá | ⬜ | |

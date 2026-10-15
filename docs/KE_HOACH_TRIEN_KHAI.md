@@ -52,7 +52,7 @@
 |---|---|
 | Framework | **Next.js** (App Router, TypeScript, Server Actions), bản ổn định mới nhất |
 | UI | Tailwind CSS + **shadcn/ui**, icon `lucide-react` |
-| CSDL | **PostgreSQL** (local qua Docker, hoặc Neon/Supabase free) |
+| CSDL | **PostgreSQL** (chạy 100% offline tự động qua `embedded-postgres`, hoặc Neon/Supabase cloud) |
 | ORM | **Prisma** |
 | Xác thực | **Auth.js** (gói `next-auth`), Credentials provider + `bcryptjs` |
 | Validate | `zod` (dùng chung client/server) |

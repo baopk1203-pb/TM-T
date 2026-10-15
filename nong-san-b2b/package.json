@@ -8,6 +8,7 @@
     "dev:online": "next dev",
     "build": "next build",
     "start": "next start",
+    "start:offline": "tsx scripts/local-db.ts start-prod",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

@@ -49,6 +49,7 @@ interface PaymentViewProps {
 
 export function PaymentView({ order, vietQrUrl, bankInfo }: PaymentViewProps) {
   const [timeLeft, setTimeLeft] = useState('')
+  const [qrSrc, setQrSrc] = useState(vietQrUrl)
 
   // Số tiền cần chuyển ngay: nếu cọc 30% thì depositAmount, nếu FULL thì total
   const amountToPay =
@@ -115,12 +116,16 @@ export function PaymentView({ order, vietQrUrl, bankInfo }: PaymentViewProps) {
             </div>
 
             <CardContent className="p-6 text-center space-y-5">
-              {/* Ảnh VietQR động */}
+              {/* Ảnh VietQR động kèm cơ chế fallback offline */}
               <div className="w-64 h-64 mx-auto bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-center">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={vietQrUrl}
+                  src={qrSrc}
                   alt={`VietQR-${order.code}`}
+                  onError={() => {
+                    // Nếu mạng offline hoặc img.vietqr.io không tải được, tự động chuyển sang API QR nội bộ
+                    setQrSrc(`/api/qr/payment/${order.code}`)
+                  }}
                   className="w-full h-full object-contain"
                 />
               </div>

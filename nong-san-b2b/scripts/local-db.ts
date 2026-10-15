@@ -15,6 +15,31 @@ export const LOCAL_DATABASE_URL = `postgresql://${USER}:${PASSWORD}@localhost:${
 let activePgInstance: EmbeddedPostgres | null = null;
 
 /**
+ * Gets path to executable in node_modules/.bin, with system fallback
+ */
+function getBinPath(name: string): string {
+  const ext = process.platform === 'win32' ? '.cmd' : '';
+  const localBin = path.resolve(process.cwd(), 'node_modules', '.bin', `${name}${ext}`);
+  if (fs.existsSync(localBin)) {
+    return localBin;
+  }
+  return process.platform === 'win32' ? `${name}.cmd` : name;
+}
+
+/**
+ * Ensures .env file exists for seamless offline startup
+ */
+export function ensureEnvFile(): void {
+  const envPath = path.resolve(process.cwd(), '.env');
+  const envExamplePath = path.resolve(process.cwd(), '.env.example');
+
+  if (!fs.existsSync(envPath) && fs.existsSync(envExamplePath)) {
+    console.log('[Local DB] Tạo file .env từ .env.example cấu hình cho môi trường cục bộ...');
+    fs.copyFileSync(envExamplePath, envPath);
+  }
+}
+
+/**
  * Checks if a TCP port is currently open/listening
  */
 function isPortInUse(port: number): Promise<boolean> {
@@ -40,6 +65,7 @@ function isPortInUse(port: number): Promise<boolean> {
  * Starts local PostgreSQL server if not already running
  */
 export async function startLocalPostgres(): Promise<{ pg: EmbeddedPostgres | null; isExisting: boolean; url: string }> {
+  ensureEnvFile();
   const inUse = await isPortInUse(PORT);
 
   if (inUse) {
@@ -127,7 +153,8 @@ export async function ensureSchemaAndSeed(): Promise<void> {
 
   if (tableCount === 0) {
     console.log('[Local DB] Cơ sở dữ liệu trống. Đang đồng bộ cấu trúc bảng (prisma db push)...');
-    execSync('npx.cmd prisma db push --skip-generate', {
+    const cmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    execSync(`${cmd} prisma db push --skip-generate`, {
       stdio: 'inherit',
       env: {
         ...process.env,
@@ -136,7 +163,7 @@ export async function ensureSchemaAndSeed(): Promise<void> {
     });
 
     console.log('[Local DB] Đang nạp dữ liệu mẫu ban đầu (seed data)...');
-    execSync('npx.cmd tsx prisma/seed.ts', {
+    execSync(`${cmd} tsx prisma/seed.ts`, {
       stdio: 'inherit',
       env: {
         ...process.env,
@@ -164,21 +191,22 @@ export async function stopLocalPostgres(): Promise<void> {
 /**
  * Runs Next.js dev server with local offline PostgreSQL
  */
-export async function runDevOffline(): Promise<void> {
+export async function runDevOffline(mode: 'dev' | 'start' = 'dev'): Promise<void> {
   console.log('='.repeat(60));
-  console.log('🌱 KHỞI CHẠY HỆ THỐNG NÔNG SẢN B2B - CHẾ ĐỘ 100% OFFLINE');
+  console.log(`🌱 KHỞI CHẠY HỆ THỐNG NÔNG SẢN B2B - CHẾ ĐỘ 100% OFFLINE (${mode.toUpperCase()})`);
   console.log('='.repeat(60));
 
   const { pg, isExisting } = await startLocalPostgres();
   await ensureSchemaAndSeed();
 
-  console.log('\n🚀 Đang khởi động Next.js dev server...');
+  const cmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  console.log(`\n🚀 Đang khởi động Next.js ${mode} server...`);
   console.log(`🌐 Ứng dụng: http://localhost:3000`);
   console.log(`💾 Dữ liệu lưu tại: ${DB_DIR}\n`);
 
-  const nextProcess: ChildProcess = spawn('npx.cmd', ['next', 'dev'], {
-    stdio: 'inherit',
+  const nextProcess: ChildProcess = spawn(`${cmd} next ${mode}`, {
     shell: true,
+    stdio: 'inherit',
     env: {
       ...process.env,
       DATABASE_URL: LOCAL_DATABASE_URL,
@@ -219,7 +247,8 @@ if (command === 'start') {
 } else if (command === 'push') {
   startLocalPostgres().then(async ({ pg, isExisting }) => {
     try {
-      execSync('npx.cmd prisma db push --skip-generate', {
+      const cmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+      execSync(`${cmd} prisma db push --skip-generate`, {
         stdio: 'inherit',
         env: { ...process.env, DATABASE_URL: LOCAL_DATABASE_URL },
       });
@@ -230,7 +259,8 @@ if (command === 'start') {
 } else if (command === 'seed') {
   startLocalPostgres().then(async ({ pg, isExisting }) => {
     try {
-      execSync('npx.cmd tsx prisma/seed.ts', {
+      const cmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+      execSync(`${cmd} tsx prisma/seed.ts`, {
         stdio: 'inherit',
         env: { ...process.env, DATABASE_URL: LOCAL_DATABASE_URL },
       });
@@ -238,8 +268,13 @@ if (command === 'start') {
       if (pg && !isExisting) await stopLocalPostgres();
     }
   });
-} else if (command === 'dev') {
-  runDevOffline().catch((err) => {
+} else if (command === 'start-prod') {
+  runDevOffline('start').catch((err) => {
+    console.error('Lỗi khởi động production offline:', err);
+    process.exit(1);
+  });
+} else if (command === 'dev' || !command) {
+  runDevOffline('dev').catch((err) => {
     console.error('Lỗi khởi động offline:', err);
     process.exit(1);
   });

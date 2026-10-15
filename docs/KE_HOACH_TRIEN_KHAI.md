@@ -64,10 +64,10 @@
 | Phase 9 | `nodemailer` (SMTP), Zalo ZNS (HTTP API, có chế độ mock) |
 
 > [!WARNING]
-> Đường dẫn workspace `d:\TMĐT Website` chứa **dấu cách và ký tự có dấu (Đ)**, nên một số công cụ (npm package name, Prisma engine, Playwright) có thể lỗi. Vì vậy mã nguồn đặt trong thư mục con `nong-san-b2b/`. Nếu vẫn lỗi đường dẫn, báo người dùng để chuyển sang đường dẫn ASCII (ví dụ `D:\nong-san-b2b`).
+> Đường dẫn workspace `D:\TDTU\TMĐT Website` chứa **dấu cách và ký tự có dấu (Đ)**, nên một số công cụ (npm package name, Prisma engine, Playwright) có thể lỗi. Vì vậy mã nguồn đặt trong thư mục con `nong-san-b2b/`. Nếu vẫn lỗi đường dẫn, báo người dùng để chuyển sang đường dẫn ASCII (ví dụ `D:\nong-san-b2b`).
 
 ```
-d:\TMĐT Website\
+D:\TDTU\TMĐT Website\
 ├─ GEMINI.md                       # quy tắc cho agent (đọc trước)
 ├─ docs\KE_HOACH_TRIEN_KHAI.md     # file này
 └─ nong-san-b2b\                   # mã nguồn Next.js

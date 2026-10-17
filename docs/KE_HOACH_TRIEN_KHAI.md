@@ -43,6 +43,11 @@
 8. **Khi tài liệu này mâu thuẫn hoặc chưa rõ:** hỏi người dùng, không tự suy đoán. Nếu buộc phải giả định, ghi lại vào mục *Giả định đã đưa ra* của phase đó.
 9. **Không tự ý đổi stack** hay thêm thư viện lớn ngoài danh sách ở mục 2 khi chưa hỏi.
 10. API của thư viện thay đổi theo phiên bản (Next.js, Prisma, Auth.js). **Đọc tài liệu chính thức đúng phiên bản đã cài** trước khi viết cấu hình.
+11. **Chiến lược nhánh Git (Branching Workflow):**
+    - Mọi tác vụ fix lỗi (bugfix/hotfix), phát triển tính năng/phase mới hay refactor **BẮT BUỘC thực hiện, kiểm tra và commit trên nhánh `beta` trước**.
+    - Sau khi hoàn thành trên nhánh `beta`, phải chạy nghiệm thu đủ 4 lệnh: `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`. Tất cả phải PASS.
+    - Dừng lại, báo cáo kết quả kèm bằng chứng cho người dùng và **chỉ khi người dùng đồng ý mới được đưa lên nhánh `main`**.
+    - Khi được người dùng phê duyệt lên `main`: Agent tự động checkout sang `main`, merge từ `beta`, push lên `origin/main`, sau đó checkout quay lại nhánh `beta` để sẵn sàng cho tác vụ tiếp theo.
 
 ---
 

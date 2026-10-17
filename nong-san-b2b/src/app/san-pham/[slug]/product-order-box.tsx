@@ -55,6 +55,7 @@ export function ProductOrderBox({
 }: ProductOrderBoxProps) {
   const router = useRouter()
   const addItem = useCartStore((state) => state.addItem)
+  const items = useCartStore((state) => state.items)
   const userDiscount = user?.discountPercent || 0
 
   // Tách quy cách thường và mẫu
@@ -171,8 +172,17 @@ export function ProductOrderBox({
       return
     }
 
+    const isAlreadyInCart = items.some(
+      (item) => item.productId === product.id && item.packagingId === samplePackaging.id
+    )
+
+    if (isAlreadyInCart) {
+      toast.info(`Gói mẫu thử "${samplePackaging.name}" đã có trong giỏ hàng (quy định tối đa 1 gói).`)
+      return
+    }
+
     startTransition(() => {
-      addItem(product.id, samplePackaging.id, 1)
+      addItem(product.id, samplePackaging.id, 1, true)
       toast.success(`Đã thêm gói mẫu thử "${samplePackaging.name}" vào giỏ hàng`, {
         action: {
           label: 'Xem giỏ hàng',

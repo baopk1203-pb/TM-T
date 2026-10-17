@@ -62,12 +62,35 @@ export function CatalogBrowser({
     setSelectedFarm('ALL')
   }
 
+  const seasonLabels: Record<string, string> = {
+    ALL: 'Tất cả vụ mùa',
+    [SeasonStatus.HARVESTING]: 'Đang thu hoạch',
+    [SeasonStatus.UPCOMING]: 'Sắp vào vụ',
+    [SeasonStatus.OFF_SEASON]: 'Hết vụ mùa',
+  }
+
+  const farmLabels: Record<string, string> = {
+    ALL: 'Tất cả nhà vườn',
+    ...Object.fromEntries(farms.map((f) => [f.id, `${f.name} (${f.province})`])),
+  }
+
+  const normalizeText = (text: string): string => {
+    return text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'd')
+      .trim()
+  }
+
   const filtered = products.filter((p) => {
+    const query = normalizeText(search)
     const matchSearch =
-      search.trim() === '' ||
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.farm.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.farm.province.toLowerCase().includes(search.toLowerCase())
+      query === '' ||
+      normalizeText(p.name).includes(query) ||
+      normalizeText(p.farm.name).includes(query) ||
+      normalizeText(p.farm.province).includes(query)
 
     const matchSeason =
       selectedSeason === 'ALL' || p.seasonStatus === selectedSeason
@@ -100,26 +123,30 @@ export function CatalogBrowser({
               }}
             >
               <SelectTrigger className="bg-slate-50 border-slate-200 text-xs">
-                <SelectValue placeholder="Mùa vụ" />
+                <SelectValue placeholder="Mùa vụ">
+                  {seasonLabels[selectedSeason] || 'Mùa vụ'}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Tất cả vụ mùa</SelectItem>
                 <SelectItem value={SeasonStatus.HARVESTING}>Đang thu hoạch</SelectItem>
-                <SelectItem value={SeasonStatus.UPCOMING}>Sắp vào vụ (Pre-order)</SelectItem>
-                <SelectItem value={SeasonStatus.OFF_SEASON}>Hết mùa</SelectItem>
+                <SelectItem value={SeasonStatus.UPCOMING}>Sắp vào vụ</SelectItem>
+                <SelectItem value={SeasonStatus.OFF_SEASON}>Hết vụ mùa</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          <div className="w-full sm:w-52">
+          <div className="w-full sm:w-56">
             <Select
               value={selectedFarm}
               onValueChange={(val) => {
                 if (val) setSelectedFarm(val)
               }}
             >
-              <SelectTrigger className="bg-slate-50 border-slate-200 text-xs">
-                <SelectValue placeholder="Nhà vườn" />
+              <SelectTrigger className="bg-slate-50 border-slate-200 text-xs truncate">
+                <SelectValue placeholder="Nhà vườn">
+                  {farmLabels[selectedFarm] || 'Nhà vườn'}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Tất cả nhà vườn</SelectItem>

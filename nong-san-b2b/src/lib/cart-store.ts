@@ -5,11 +5,12 @@ export interface CartItem {
   productId: string
   packagingId: string
   quantity: number
+  isSample?: boolean
 }
 
 interface CartState {
   items: CartItem[]
-  addItem: (productId: string, packagingId: string, quantity?: number) => void
+  addItem: (productId: string, packagingId: string, quantity?: number, isSample?: boolean) => void
   updateQuantity: (productId: string, packagingId: string, quantity: number) => void
   removeItem: (productId: string, packagingId: string) => void
   clearCart: () => void
@@ -21,7 +22,7 @@ export const useCartStore = create<CartState>()(
     (set, get) => ({
       items: [],
 
-      addItem: (productId: string, packagingId: string, quantity = 1) => {
+      addItem: (productId: string, packagingId: string, quantity = 1, isSample = false) => {
         if (quantity <= 0) return
         set((state) => {
           const existingIndex = state.items.findIndex(
@@ -30,6 +31,17 @@ export const useCartStore = create<CartState>()(
 
           if (existingIndex > -1) {
             const updatedItems = [...state.items]
+            const wasSample = isSample || updatedItems[existingIndex].isSample
+            // Nếu là hàng mẫu thử, mỗi khách chỉ được 1 gói: giữ nguyên 1
+            if (wasSample) {
+              updatedItems[existingIndex] = {
+                ...updatedItems[existingIndex],
+                quantity: 1,
+                isSample: true,
+              }
+              return { items: updatedItems }
+            }
+
             updatedItems[existingIndex] = {
               ...updatedItems[existingIndex],
               quantity: updatedItems[existingIndex].quantity + quantity,
@@ -38,7 +50,10 @@ export const useCartStore = create<CartState>()(
           }
 
           return {
-            items: [...state.items, { productId, packagingId, quantity }],
+            items: [
+              ...state.items,
+              { productId, packagingId, quantity: isSample ? 1 : quantity, isSample },
+            ],
           }
         })
       },

@@ -124,7 +124,7 @@ export function ProductCard({
             <div className="bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-100 flex items-baseline justify-between">
               <div>
                 <span className="text-[11px] text-emerald-800 block">
-                  {preorderOpen && preorderPricePerKg ? 'Giá giữ chỗ vụ mới:' : 'Giá sỉ từ:'}
+                  {preorderOpen && preorderPricePerKg ? 'Giá giữ chỗ vụ mới:' : 'Giá sỉ tại MOQ:'}
                 </span>
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-base font-extrabold text-emerald-700">

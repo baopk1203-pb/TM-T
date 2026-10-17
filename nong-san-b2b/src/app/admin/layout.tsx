@@ -16,12 +16,12 @@ import {
   BarChart3,
   Truck,
   Bell,
-  LogOut,
   ExternalLink,
   ShieldCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { SignOutButton } from '@/components/auth/sign-out-button'
 
 const navItems = [
   { label: 'Bảng điều khiển', href: '/admin', icon: LayoutDashboard },
@@ -105,15 +105,13 @@ export default async function AdminLayout({
               <ExternalLink className="w-3.5 h-3.5 mr-2" /> Xem Website Storefront
             </Button>
           </Link>
-          <Link href="/api/auth/signout">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-xs justify-start"
-            >
-              <LogOut className="w-3.5 h-3.5 mr-2" /> Đăng xuất Admin
-            </Button>
-          </Link>
+          <SignOutButton
+            variant="ghost"
+            size="sm"
+            className="w-full text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-xs justify-start"
+          >
+            Đăng xuất Admin
+          </SignOutButton>
         </div>
       </aside>
 

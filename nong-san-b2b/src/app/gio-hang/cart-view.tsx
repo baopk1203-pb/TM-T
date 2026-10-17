@@ -315,6 +315,8 @@ export function CartView() {
                                 updateQuantity(line.productId, line.packagingId, line.quantity - 1)
                               }
                               className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors"
+                              aria-label={`Giảm số lượng ${line.packagingName}`}
+                              title="Giảm số lượng"
                             >
                               <Minus className="w-3.5 h-3.5" />
                             </button>
@@ -327,6 +329,8 @@ export function CartView() {
                                 updateQuantity(line.productId, line.packagingId, line.quantity + 1)
                               }
                               className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors"
+                              aria-label={`Tăng số lượng ${line.packagingName}`}
+                              title="Tăng số lượng"
                             >
                               <Plus className="w-3.5 h-3.5" />
                             </button>
@@ -347,6 +351,7 @@ export function CartView() {
                             type="button"
                             onClick={() => removeItem(line.productId, line.packagingId)}
                             className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                            aria-label={`Xóa ${line.packagingName} khỏi giỏ hàng`}
                             title="Xóa quy cách này"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -376,21 +381,40 @@ export function CartView() {
                       </div>
 
                       <div className="flex items-center justify-between sm:justify-end gap-6">
-                        <span className="text-xs text-amber-900 font-semibold">
-                          Số lượng: 1 gói (Tối đa)
-                        </span>
+                        <div className="text-left sm:text-right">
+                          <span className="text-xs text-amber-900 font-semibold block">
+                            Số lượng: {sample.quantity} gói {sample.quantity === 1 ? '(Tối đa)' : ''}
+                          </span>
+                          {sample.quantity > 1 && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-[11px] font-semibold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">
+                                Vượt quá tối đa 1 gói
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => updateQuantity(sample.productId, sample.packagingId, 1)}
+                                className="text-[11px] text-emerald-700 underline hover:text-emerald-900 font-bold"
+                              >
+                                [Giảm về 1 gói]
+                              </button>
+                            </div>
+                          )}
+                        </div>
 
                         <div className="text-right min-w-[120px]">
                           <div className="text-sm font-extrabold text-amber-900">
                             {formatVND(sample.lineTotal)}
                           </div>
-                          <div className="text-[11px] text-amber-700">Giá trọn gói</div>
+                          <div className="text-[11px] text-amber-700">
+                            {sample.quantity > 1 ? `${formatVND(sample.samplePrice)} × ${sample.quantity}` : 'Giá trọn gói'}
+                          </div>
                         </div>
 
                         <button
                           type="button"
                           onClick={() => removeItem(sample.productId, sample.packagingId)}
                           className="text-amber-600 hover:text-rose-600 transition-colors p-1"
+                          aria-label={`Xóa gói mẫu ${sample.packagingName} khỏi giỏ hàng`}
                           title="Xóa gói mẫu"
                         >
                           <Trash2 className="w-4 h-4" />

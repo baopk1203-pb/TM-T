@@ -479,7 +479,7 @@ async function main() {
     where: { slug: 'thanh-long-ruot-do' },
     update: {
       images: [
-        'https://images.unsplash.com/photo-1527325678964-54921661f888?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1550258987-190a2d41a8ba?auto=format&fit=crop&w=800&q=80',
       ],
     },
     create: {
@@ -488,7 +488,7 @@ async function main() {
       description:
         'Vỏ đỏ tươi, tai xanh dày chắc, ruột đỏ thẩm ngọt lịm hàm lượng dinh dưỡng cao. Thu hoạch cắt tai chuẩn kỹ thuật cho siêu thị.',
       images: [
-        'https://images.unsplash.com/photo-1527325678964-54921661f888?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1550258987-190a2d41a8ba?auto=format&fit=crop&w=800&q=80',
       ],
       farmId: farm1.id,
       moqGrams: 50000,

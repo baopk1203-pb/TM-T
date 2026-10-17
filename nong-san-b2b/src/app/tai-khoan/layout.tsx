@@ -7,13 +7,12 @@ import {
   Package,
   CalendarDays,
   LayoutDashboard,
-  LogOut,
   Building2,
   Sparkles,
   Leaf,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { SignOutButton } from '@/components/auth/sign-out-button'
 
 export default async function AccountLayout({
   children,
@@ -53,11 +52,7 @@ export default async function AccountLayout({
             <span className="hidden sm:inline text-xs text-slate-500">
               Đăng nhập: <strong>{user.name}</strong>
             </span>
-            <Link href="/api/auth/signout">
-              <Button variant="ghost" size="sm" className="text-slate-600 hover:text-rose-600">
-                <LogOut className="w-4 h-4 mr-1.5" /> Đăng xuất
-              </Button>
-            </Link>
+            <SignOutButton />
           </div>
         </div>
       </header>

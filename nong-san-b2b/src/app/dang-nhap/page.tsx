@@ -126,10 +126,13 @@ function LoginForm() {
 
             {/* Quick Demo Login Helper Box */}
             <div className="mt-8 pt-6 border-t border-slate-200">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
                 <Sparkles className="w-4 h-4 text-amber-500" />
-                Tài khoản trải nghiệm đồ án (1-Click)
+                Điền nhanh tài khoản trải nghiệm
               </div>
+              <p className="text-[11px] text-slate-500 mb-3">
+                Bấm vào một tài khoản mẫu để tự động điền thông tin, sau đó bấm nút Đăng nhập.
+              </p>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <Button
                   type="button"

@@ -80,6 +80,17 @@ export const authOptions: NextAuthOptions = {
       }
       return session
     },
+    async redirect({ url, baseUrl }) {
+      // Cho phép relative callback URLs
+      if (url.startsWith('/')) return `${baseUrl}${url}`
+      // Cho phép callback URLs trên cùng host/origin
+      try {
+        const parsedUrl = new URL(url)
+        const parsedBase = new URL(baseUrl)
+        if (parsedUrl.origin === parsedBase.origin) return url
+      } catch {}
+      return baseUrl
+    },
   },
 }
 

@@ -14,6 +14,9 @@ import {
   XCircle,
   ShieldAlert,
   ExternalLink,
+  CalendarDays,
+  CheckCircle2,
+  ArrowRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -31,8 +34,12 @@ import {
 } from '@/components/ui/dialog'
 import { formatVND } from '@/lib/money'
 import { cancelOrder, submitComplaint } from '@/actions/order-lifecycle'
+import { confirmRecurringDraft, createRecurringFromOrder } from '@/actions/recurring'
+import { quoteCart } from '@/actions/cart'
+import { PriceCartResult } from '@/lib/domain/pricing'
+import { computeDepositAmount } from '@/lib/domain/settlement'
 import { toast } from 'sonner'
-import { OrderStatus, ComplaintStatus } from '@prisma/client'
+import { OrderStatus, ComplaintStatus, PaymentOption } from '@prisma/client'
 
 export interface CustomerOrderData {
   id: string
@@ -52,6 +59,7 @@ export interface CustomerOrderData {
   createdAt: string
   cancelledBy: string | null
   cancelReason: string | null
+  customerNote?: string | null
   addressSnapshot: {
     recipient?: string
     phone?: string
@@ -62,6 +70,8 @@ export interface CustomerOrderData {
   }
   items: {
     id: string
+    productId: string
+    packagingId: string
     productName: string
     packagingName: string
     isSample: boolean
@@ -130,6 +140,118 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
   const [complaintDesc, setComplaintDesc] = useState('')
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
+
+  // State cho xác nhận đơn nháp (OrderStatus.DRAFT)
+  const [draftLines, setDraftLines] = useState(() =>
+    order.items
+      .filter((i) => !i.isSample)
+      .map((i) => ({
+        productId: i.productId,
+        packagingId: i.packagingId,
+        productName: i.productName,
+        packagingName: i.packagingName,
+        quantity: i.quantity,
+      }))
+  )
+  const [draftPaymentOption, setDraftPaymentOption] = useState<PaymentOption>(
+    order.paymentOption === 'FULL' ? PaymentOption.FULL : PaymentOption.DEPOSIT_30
+  )
+  const [draftNote, setDraftNote] = useState(order.customerNote ?? '')
+  const [draftQuote, setDraftQuote] = useState<PriceCartResult | null>(null)
+  const [isQuotingDraft, setIsQuotingDraft] = useState(false)
+
+  // State cho tạo lịch định kỳ từ đơn COMPLETED
+  const [recurringDialogOpen, setRecurringDialogOpen] = useState(false)
+  const [recurringName, setRecurringName] = useState(`Lịch định kỳ từ đơn ${order.code}`)
+  const [recurringWeekdays, setRecurringWeekdays] = useState<number[]>([1, 4])
+
+  useEffect(() => {
+    if (order.status !== OrderStatus.DRAFT || draftLines.length === 0) return
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      if (!cancelled) setIsQuotingDraft(true)
+      try {
+        const res = await quoteCart(
+          draftLines
+            .filter((i) => i.quantity > 0)
+            .map((i) => ({
+              productId: i.productId,
+              packagingId: i.packagingId,
+              quantity: i.quantity,
+            }))
+        )
+        if (!cancelled) {
+          setDraftQuote(res.quote)
+        }
+      } catch {
+        if (!cancelled) setDraftQuote(null)
+      } finally {
+        if (!cancelled) setIsQuotingDraft(false)
+      }
+    }, 200)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [order.status, draftLines])
+
+  const handleConfirmDraftOrder = () => {
+    const validLines = draftLines.filter((l) => l.quantity > 0)
+    if (validLines.length === 0) {
+      toast.error('Đơn hàng phải có ít nhất 1 sản phẩm với số lượng lớn hơn 0')
+      return
+    }
+
+    startTransition(async () => {
+      const res = await confirmRecurringDraft({
+        orderId: order.id,
+        paymentOption: draftPaymentOption,
+        items: validLines.map((l) => ({
+          productId: l.productId,
+          packagingId: l.packagingId,
+          quantity: l.quantity,
+        })),
+        customerNote: draftNote,
+      })
+
+      if (!res.success || !res.orderCode) {
+        toast.error(res.error || 'Không thể xác nhận đơn nháp')
+        return
+      }
+
+      toast.success('Đã xác nhận đơn nháp! Đang chuyển tới trang thanh toán VietQR...')
+      router.push(`/thanh-toan/${res.orderCode}`)
+    })
+  }
+
+  const handleCreateRecurringFromThisOrder = () => {
+    if (!recurringName.trim()) {
+      toast.error('Vui lòng nhập tên lịch định kỳ')
+      return
+    }
+    if (recurringWeekdays.length === 0) {
+      toast.error('Vui lòng chọn ít nhất 1 thứ giao hàng trong tuần')
+      return
+    }
+
+    startTransition(async () => {
+      const res = await createRecurringFromOrder({
+        orderId: order.id,
+        name: recurringName.trim(),
+        weekdays: recurringWeekdays,
+      })
+
+      if (!res.success) {
+        toast.error(res.error || 'Không thể tạo lịch định kỳ từ đơn này')
+        return
+      }
+
+      toast.success('Đã tạo lịch giao định kỳ thành công!')
+      setRecurringDialogOpen(false)
+      router.push('/tai-khoan/dinh-ky')
+    })
+  }
 
   // Handlers
   const handleCancelOrder = () => {
@@ -238,6 +360,11 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
       ? order.depositAmount
       : Math.ceil((order.total * 30) / 100 / 1000) * 1000
 
+  const draftPreviewSubtotal = draftQuote?.subtotal ?? order.subtotal
+  const draftPreviewTotal = draftPreviewSubtotal + order.shippingFee
+  const draftPreviewDeposit = computeDepositAmount(draftPreviewTotal)
+  const hasRegularItems = order.items.some((i) => !i.isSample)
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-12">
       {/* Header */}
@@ -258,7 +385,9 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
                 {order.code}
               </h1>
               <CustomerStatusBadge status={order.status} />
-              <CustomerPaymentBadge status={order.paymentStatus} />
+              {order.status !== OrderStatus.DRAFT && (
+                <CustomerPaymentBadge status={order.paymentStatus} />
+              )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
               Ngày đặt: {new Date(order.createdAt).toLocaleString('vi-VN')}
@@ -268,6 +397,16 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
 
         {/* Customer Actions */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Đặt định kỳ từ đơn COMPLETED */}
+          {order.status === OrderStatus.COMPLETED && hasRegularItems && (
+            <Button
+              onClick={() => setRecurringDialogOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-sm"
+            >
+              <CalendarDays className="w-4 h-4" /> Đặt định kỳ từ đơn này
+            </Button>
+          )}
+
           {/* VietQR button if unpaid */}
           {isUnpaid && order.status === OrderStatus.PENDING_CONFIRMATION && (
             <Link href={`/thanh-toan/${order.code}`}>
@@ -301,6 +440,126 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
           )}
         </div>
       </div>
+
+      {/* Khối xác nhận đơn nháp định kỳ (DRAFT -> PENDING_CONFIRMATION) */}
+      {order.status === OrderStatus.DRAFT && (
+        <Card className="border-amber-300 bg-amber-50/40 shadow-sm">
+          <CardHeader className="pb-3 border-b border-amber-200/70">
+            <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2 text-slate-900">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              Đơn nháp định kỳ chờ bạn kiểm tra & xác nhận thanh toán
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-5 space-y-4 text-xs sm:text-sm">
+            <p className="text-slate-600 text-xs">
+              Bạn có thể điều chỉnh số lượng từng mặt hàng bên dưới, chọn hình thức thanh toán (Cọc
+              30% hoặc Thanh toán 100%) rồi bấm <strong>Xác nhận và Thanh toán</strong> để nhận mã
+              VietQR. Hệ thống không bao giờ tự trừ tiền khi bạn chưa xác nhận.
+            </p>
+
+            <div className="space-y-2">
+              <Label className="font-bold text-xs">Điều chỉnh số lượng sản phẩm</Label>
+              {draftLines.map((line, idx) => (
+                <div
+                  key={`${line.productId}-${line.packagingId}`}
+                  className="flex items-center justify-between gap-3 bg-white p-3 rounded-xl border border-amber-200"
+                >
+                  <div>
+                    <div className="font-bold text-slate-900">{line.productName}</div>
+                    <div className="text-xs text-slate-500">Quy cách: {line.packagingName}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Số lượng:</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={line.quantity}
+                      onChange={(e) => {
+                        const val = Math.max(1, parseInt(e.target.value, 10) || 1)
+                        setDraftLines((prev) =>
+                          prev.map((it, i) => (i === idx ? { ...it, quantity: val } : it))
+                        )
+                      }}
+                      className="w-20 h-8 text-center text-xs bg-white"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setDraftPaymentOption(PaymentOption.DEPOSIT_30)}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  draftPaymentOption === PaymentOption.DEPOSIT_30
+                    ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600'
+                    : 'border-slate-200 bg-white'
+                }`}
+              >
+                <div className="font-bold text-slate-900 text-xs">Đặt cọc 30% trước khi giao</div>
+                <div className="text-emerald-700 font-extrabold text-sm mt-0.5">
+                  Cần chuyển: {formatVND(draftPreviewDeposit)}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDraftPaymentOption(PaymentOption.FULL)}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  draftPaymentOption === PaymentOption.FULL
+                    ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600'
+                    : 'border-slate-200 bg-white'
+                }`}
+              >
+                <div className="font-bold text-slate-900 text-xs">Thanh toán 100% giá trị đơn</div>
+                <div className="text-emerald-700 font-extrabold text-sm mt-0.5">
+                  Cần chuyển: {formatVND(draftPreviewTotal)}
+                </div>
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Ghi chú giao hàng (tùy chọn)</Label>
+              <Input
+                value={draftNote}
+                onChange={(e) => setDraftNote(e.target.value)}
+                placeholder="Ghi chú thêm cho chuyến giao định kỳ này..."
+                className="bg-white text-xs"
+              />
+            </div>
+
+            {draftQuote && draftQuote.errors.length > 0 && (
+              <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-xs text-rose-700 font-medium">
+                {draftQuote.errors.map((err, i) => (
+                  <div key={i}>• {err}</div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-amber-200/70">
+              <div className="text-xs text-slate-700">
+                Tổng giá trị đơn mới:{' '}
+                <strong className="text-base text-emerald-700 font-extrabold">
+                  {isQuotingDraft ? 'Đang tính...' : formatVND(draftPreviewTotal)}
+                </strong>
+              </div>
+              <Button
+                onClick={handleConfirmDraftOrder}
+                disabled={
+                  isPending ||
+                  isQuotingDraft ||
+                  Boolean(draftQuote && draftQuote.errors.length > 0)
+                }
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5"
+              >
+                {isPending ? 'Đang xác nhận...' : 'Xác nhận và Thanh toán'}
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Cancellation Notice if cancelled */}
       {order.status === OrderStatus.CANCELLED && (
@@ -697,12 +956,100 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog Đặt định kỳ từ đơn COMPLETED */}
+      <Dialog open={recurringDialogOpen} onOpenChange={setRecurringDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <CalendarDays className="w-5 h-5 text-emerald-600" />
+              Đặt định kỳ từ đơn {order.code}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Hệ thống sẽ lưu danh sách sản phẩm thương mại của đơn này vào lịch giao định kỳ hàng
+              tuần và tự động tạo đơn nháp trước mỗi kỳ giao.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-xs">
+            <div className="space-y-1.5">
+              <Label className="font-semibold">Tên lịch định kỳ</Label>
+              <Input
+                value={recurringName}
+                onChange={(e) => setRecurringName(e.target.value)}
+                className="text-xs"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="font-semibold">Chọn các thứ giao hàng trong tuần</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { value: 1, label: 'Thứ 2' },
+                  { value: 2, label: 'Thứ 3' },
+                  { value: 3, label: 'Thứ 4' },
+                  { value: 4, label: 'Thứ 5' },
+                  { value: 5, label: 'Thứ 6' },
+                  { value: 6, label: 'Thứ 7' },
+                  { value: 7, label: 'Chủ Nhật' },
+                ].map((day) => {
+                  const selected = recurringWeekdays.includes(day.value)
+                  return (
+                    <button
+                      key={day.value}
+                      type="button"
+                      onClick={() =>
+                        setRecurringWeekdays((prev) =>
+                          prev.includes(day.value)
+                            ? prev.filter((d) => d !== day.value)
+                            : [...prev, day.value].sort((a, b) => a - b)
+                        )
+                      }
+                      className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                        selected
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-white text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {day.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setRecurringDialogOpen(false)}
+              disabled={isPending}
+              className="text-xs"
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleCreateRecurringFromThisOrder}
+              disabled={isPending}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+            >
+              {isPending ? 'Đang tạo...' : 'Xác nhận tạo lịch định kỳ'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
 function CustomerStatusBadge({ status }: { status: OrderStatus }) {
   switch (status) {
+    case 'DRAFT':
+      return <Badge className="bg-amber-100 text-amber-900 border-amber-300">Đơn nháp định kỳ</Badge>
     case 'PENDING_CONFIRMATION':
       return <Badge className="bg-amber-100 text-amber-800 border-amber-200">Chờ xác nhận</Badge>
     case 'PROCESSING':

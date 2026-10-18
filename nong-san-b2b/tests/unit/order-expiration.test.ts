@@ -283,6 +283,95 @@ describe('Service & Server Action: Order Expiration & Concurrency Safety (Revisi
       expect(txMock.order.updateMany).not.toHaveBeenCalled()
       expect(recordOrderEvent).not.toHaveBeenCalled()
     })
+
+    it('7. Phase 6A — Hủy đơn nháp định kỳ (DRAFT) đã quá hạn xác nhận (today > deliveryDate - leadTimeDays), cancelledBy = SYSTEM', async () => {
+      // fixedNow = 2026-10-18T12:00:00Z (ngày 2026-10-18 giờ VN)
+      // deliveryDate = 2026-10-19, leadTimeDays = 2 -> hạn cuối xác nhận là 2026-10-17 -> đã quá hạn!
+      const overdueDraft = {
+        id: 'draft-overdue-1',
+        status: OrderStatus.DRAFT,
+        paymentDueAt: null,
+        deliveryDate: new Date('2026-10-19T00:00:00.000Z'),
+        transactions: [],
+        items: [
+          {
+            packaging: {
+              product: { leadTimeDays: 2 },
+            },
+          },
+        ],
+      }
+
+      vi.mocked(db.order.findMany).mockResolvedValue(
+        [overdueDraft] as unknown as Awaited<ReturnType<typeof db.order.findMany>>
+      )
+
+      const txMock = {
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        order: {
+          findUnique: vi.fn().mockResolvedValue(overdueDraft),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+      }
+
+      vi.mocked(db.$transaction).mockImplementation(async (callback) => {
+        return await (callback as unknown as (tx: typeof txMock) => unknown)(txMock)
+      })
+
+      const result = await processExpiredOrders(fixedNow)
+
+      expect(result.success).toBe(true)
+      expect(result.expiredCount).toBe(1)
+      expect(result.expiredDraftCount).toBe(1)
+      expect(txMock.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'draft-overdue-1',
+          status: OrderStatus.DRAFT,
+        },
+        data: expect.objectContaining({
+          status: OrderStatus.CANCELLED,
+          cancelledBy: 'SYSTEM',
+        }),
+      })
+      expect(recordOrderEvent).toHaveBeenCalledWith(
+        txMock,
+        expect.objectContaining({
+          orderId: 'draft-overdue-1',
+          type: 'DRAFT_EXPIRED',
+          fromStatus: OrderStatus.DRAFT,
+          toStatus: OrderStatus.CANCELLED,
+        })
+      )
+    })
+
+    it('8. Phase 6A — KHÔNG hủy đơn nháp định kỳ (DRAFT) chưa quá hạn xác nhận (today <= deliveryDate - leadTimeDays)', async () => {
+      // fixedNow = 2026-10-18, deliveryDate = 2026-10-22, leadTimeDays = 2 -> hạn cuối là 2026-10-20 -> chưa quá hạn
+      const validDraft = {
+        id: 'draft-valid-1',
+        status: OrderStatus.DRAFT,
+        paymentDueAt: null,
+        deliveryDate: new Date('2026-10-22T00:00:00.000Z'),
+        transactions: [],
+        items: [
+          {
+            packaging: {
+              product: { leadTimeDays: 2 },
+            },
+          },
+        ],
+      }
+
+      vi.mocked(db.order.findMany).mockResolvedValue(
+        [validDraft] as unknown as Awaited<ReturnType<typeof db.order.findMany>>
+      )
+
+      const result = await processExpiredOrders(fixedNow)
+
+      expect(result.success).toBe(true)
+      expect(result.expiredCount).toBe(0)
+      expect(db.$transaction).not.toHaveBeenCalled()
+      expect(recordOrderEvent).not.toHaveBeenCalled()
+    })
   })
 
   describe('Server Action: expireOrdersJob() - Phân quyền Admin (SRC-SEC-07)', () => {

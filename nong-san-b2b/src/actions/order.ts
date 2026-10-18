@@ -229,7 +229,7 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
                 productId: summary.productId,
                 isSample: false,
                 order: {
-                  status: { not: OrderStatus.CANCELLED },
+                  status: { notIn: [OrderStatus.CANCELLED, OrderStatus.DRAFT] },
                   deliveryDate: {
                     gte: weekStart,
                     lt: weekEnd,

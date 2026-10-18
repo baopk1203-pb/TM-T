@@ -63,6 +63,7 @@ interface OrderListClientProps {
 
 const statusTabs = [
   { value: 'ALL', label: 'Tất cả' },
+  { value: 'DRAFT', label: 'Đơn nháp' },
   { value: 'PENDING_CONFIRMATION', label: 'Chờ xác nhận' },
   { value: 'PROCESSING', label: 'Đang xử lý' },
   { value: 'SHIPPING', label: 'Đang giao' },
@@ -84,7 +85,7 @@ export function OrderListClient({ initialOrders }: OrderListClientProps) {
         const res = await expireOrdersJob()
         if (res.success) {
           toast.success(
-            `Quét thành công: Đã hủy ${res.expiredCount} đơn quá hạn 24h chưa thanh toán!`
+            `Quét thành công: Đã hủy ${res.expiredCount} đơn quá hạn (thanh toán 24h / đơn nháp định kỳ)!`
           )
           router.refresh()
         } else {

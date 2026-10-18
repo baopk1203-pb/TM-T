@@ -205,7 +205,21 @@ export default async function CustomerOrdersPage() {
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {order.status === OrderStatus.DRAFT && (
+                        <Link href={`/tai-khoan/don-hang/${order.code}`}>
+                          <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white text-xs gap-1">
+                            Xác nhận đơn nháp <ArrowRight className="w-3.5 h-3.5" />
+                          </Button>
+                        </Link>
+                      )}
+                      {order.status === OrderStatus.COMPLETED && order.items.some((i) => !i.isSample) && (
+                        <Link href={`/tai-khoan/dinh-ky?fromOrder=${order.code}`}>
+                          <Button size="sm" variant="outline" className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-xs gap-1">
+                            Đặt định kỳ từ đơn này
+                          </Button>
+                        </Link>
+                      )}
                       {payment.status === 'AWAITING_PAYMENT' && order.status === OrderStatus.PENDING_CONFIRMATION && (
                         <Link href={`/thanh-toan/${order.code}`}>
                           <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1">

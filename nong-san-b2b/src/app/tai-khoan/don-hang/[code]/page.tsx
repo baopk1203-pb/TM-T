@@ -88,6 +88,7 @@ export default async function CustomerOrderDetailPage({
     createdAt: order.createdAt.toISOString(),
     cancelledBy: order.cancelledBy,
     cancelReason: order.cancelReason,
+    customerNote: order.customerNote,
     addressSnapshot: {
       recipient: address.recipient,
       phone: address.phone,
@@ -98,6 +99,8 @@ export default async function CustomerOrderDetailPage({
     },
     items: order.items.map((item) => ({
       id: item.id,
+      productId: item.productId,
+      packagingId: item.packagingId,
       productName: item.productName,
       packagingName: item.packagingName,
       isSample: item.isSample,

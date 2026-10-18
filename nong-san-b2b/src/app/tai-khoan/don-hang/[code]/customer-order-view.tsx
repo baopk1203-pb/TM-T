@@ -537,7 +537,7 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
                 </div>
               </div>
 
-              {order.preorderCustomerDecision ? (
+              {order.preorderCustomerDecision === 'ACCEPT' || order.preorderCustomerDecision === 'CANCEL' ? (
                 <div
                   className={`p-3.5 rounded-xl border font-semibold flex items-center gap-2 text-xs ${
                     order.preorderCustomerDecision === 'ACCEPT'

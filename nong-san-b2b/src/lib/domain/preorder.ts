@@ -1,3 +1,4 @@
+import { OrderStatus, OrderType } from '@prisma/client'
 import { computeDepositAmount } from './settlement'
 
 export interface PriceBandResult {
@@ -145,4 +146,40 @@ export function computeOutOfBandCancellationRefund({
   }
   const remainingRefund = Math.max(0, paidAmount - shortfallRefundAmount)
   return remainingRefund
+}
+
+export interface PreorderDecisionCheckInput {
+  type?: OrderType | string | null
+  status: OrderStatus
+  preorderFinalPricePerKg?: number | null
+  preorderCustomerDecision?: string | null
+}
+
+/**
+ * Kiểm tra xem đơn hàng Pre-order có đang chờ khách hàng phản hồi về giá chốt vụ hay không (Mục 3.10)
+ * - Đơn phải là loại PREORDER
+ * - Trạng thái phải là PREORDER_WAITING
+ * - preorderFinalPricePerKg > 0 (nhà vườn/admin đã công bố đơn giá thu hoạch thực tế)
+ * - preorderCustomerDecision chưa hoàn tất ('PENDING' hoặc null/undefined)
+ * - Nếu preorderCustomerDecision là 'ACCEPT' hoặc 'CANCEL' -> Đã quyết định xong, trả về false
+ */
+export function isPreorderAwaitingCustomerDecision(
+  order: PreorderDecisionCheckInput
+): boolean {
+  const isPreorderType =
+    order.type === OrderType.PREORDER || order.type === 'PREORDER'
+  if (!isPreorderType) return false
+  if (order.status !== OrderStatus.PREORDER_WAITING) return false
+  if (!order.preorderFinalPricePerKg || order.preorderFinalPricePerKg <= 0) return false
+
+  // Nếu khách hàng đã chấp nhận hoặc từ chối đơn hàng thì không còn ở trạng thái chờ quyết định
+  if (
+    order.preorderCustomerDecision === 'ACCEPT' ||
+    order.preorderCustomerDecision === 'CANCEL'
+  ) {
+    return false
+  }
+
+  // Cả 'PENDING' lẫn null / undefined đều thể hiện đang chờ khách quyết định
+  return true
 }

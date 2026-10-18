@@ -12,6 +12,7 @@ import {
   calculatePreorderPricing,
   computeOutOfBandCancellationRefund,
 } from '@/lib/domain/preorder'
+import { earliestDeliveryDate, isDeliveryDateValid } from '@/lib/domain/delivery-date'
 import { canTransition } from '@/lib/domain/order-state'
 import {
   OrderStatus,
@@ -459,12 +460,20 @@ export async function adminProcessHarvest(
         }
 
         // B. Ngoài biên độ (> bandPercent, mặc định 10%) -> Chờ khách hàng quyết định
+        let outOfBandDeliveryDate: Date | null = null
+        if (validated.deliveryDate) {
+          const [year, month, day] = validated.deliveryDate.split('-').map(Number)
+          outOfBandDeliveryDate = new Date(Date.UTC(year, month - 1, day))
+        }
+
         await tx.order.update({
           where: { id: order.id },
           data: {
             preorderFinalPricePerKg: validated.finalPricePerKg,
             preorderFulfilledGrams: validated.fulfilledGrams,
-            preorderCustomerDecision: null, // Reset nếu admin chốt lại
+            preorderCustomerDecision: 'PENDING',
+            ...(outOfBandDeliveryDate ? { deliveryDate: outOfBandDeliveryDate } : {}),
+            ...(validated.timeSlot ? { timeSlot: validated.timeSlot } : {}),
           },
         })
 
@@ -549,7 +558,15 @@ export async function customerDecidePreorder(
         const order = await tx.order.findUnique({
           where: { id: validated.orderId },
           include: {
-            items: true,
+            items: {
+              include: {
+                packaging: {
+                  include: {
+                    product: true,
+                  },
+                },
+              },
+            },
             transactions: true,
           },
         })
@@ -596,6 +613,16 @@ export async function customerDecidePreorder(
           )
           const finalTotal = finalLineTotal + order.shippingFee
 
+          // Đảm bảo deliveryDate và timeSlot hợp lệ khi chuyển sang PROCESSING (Integration Check B & Sanity Check)
+          const leadTime = firstItem.packaging?.product?.leadTimeDays ?? 1
+          const now = new Date()
+          const minDeliveryDate = earliestDeliveryDate(now, [leadTime])
+          const deliveryDate =
+            order.deliveryDate && isDeliveryDateValid(order.deliveryDate, minDeliveryDate)
+              ? order.deliveryDate
+              : minDeliveryDate
+          const timeSlot = order.timeSlot ?? TimeSlot.MORNING
+
           await tx.orderItem.update({
             where: { id: firstItem.id },
             data: {
@@ -609,6 +636,8 @@ export async function customerDecidePreorder(
             where: { id: order.id },
             data: {
               status: OrderStatus.PROCESSING,
+              deliveryDate,
+              timeSlot,
               preorderCustomerDecision: 'ACCEPT',
               finalSubtotal: finalLineTotal,
               finalTotal,

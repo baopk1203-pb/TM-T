@@ -233,6 +233,11 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
 
   const isUnpaid = order.paymentStatus === 'AWAITING_PAYMENT'
 
+  const policyDeposit =
+    order.depositAmount > 0 && order.depositAmount < order.total
+      ? order.depositAmount
+      : Math.ceil((order.total * 30) / 100 / 1000) * 1000
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-12">
       {/* Header */}
@@ -542,7 +547,7 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
             <DialogDescription className="text-xs text-slate-500">
               {order.status === OrderStatus.PROCESSING ? (
                 <span className="text-rose-700 font-semibold block">
-                  CẢNH BÁO MẤT CỌC: Đơn hàng đang được nhà vườn chuẩn bị (PROCESSING). Nếu bạn hủy đơn lúc này, bạn sẽ BỊ PHẠT MẤT TIỀN CỌC 30% ({formatVND(order.depositAmount)}). Số tiền còn lại đã trả sẽ được hoàn qua chuyển khoản.
+                  CẢNH BÁO MẤT CỌC: Đơn hàng đang được nhà vườn chuẩn bị (PROCESSING). Nếu bạn hủy đơn lúc này, bạn sẽ BỊ PHẠT MẤT TIỀN CỌC 30% ({formatVND(policyDeposit)}). Số tiền còn lại đã trả sẽ được hoàn qua chuyển khoản.
                 </span>
               ) : (
                 <span>

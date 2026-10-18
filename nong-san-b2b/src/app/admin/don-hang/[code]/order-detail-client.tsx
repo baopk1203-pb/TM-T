@@ -144,6 +144,9 @@ export interface OrderDetailData {
   }[]
   paidAmount: number
   remainingAmount: number
+  grossPaid?: number
+  netPaid?: number
+  refundedAmount?: number
   paymentStatus: 'AWAITING_PAYMENT' | 'DEPOSIT_PAID' | 'PAID' | 'REFUND_PENDING' | 'PARTIALLY_REFUNDED' | 'REFUNDED'
 }
 
@@ -179,17 +182,24 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
 
   // Payment form state
-  const defaultAmount =
-    order.paidAmount < order.depositAmount
-      ? order.depositAmount - order.paidAmount
-      : order.remainingAmount > 0
-      ? order.remainingAmount
-      : order.total
+  const targetTotal = order.finalTotal ?? order.total
+  const isFullPayment = order.paymentOption === 'FULL'
+
+  const defaultAmount = isFullPayment
+    ? Math.max(0, targetTotal - order.paidAmount)
+    : order.paidAmount < order.depositAmount
+    ? order.depositAmount - order.paidAmount
+    : Math.max(0, order.remainingAmount)
 
   const [paymentAmount, setPaymentAmount] = useState(defaultAmount)
   const [paymentMethod, setPaymentMethod] = useState<TxMethod>(TxMethod.BANK_TRANSFER)
   const [referenceCode, setReferenceCode] = useState('')
   const [paymentNote, setPaymentNote] = useState('')
+
+  const handleOpenPaymentDialog = () => {
+    setPaymentAmount(defaultAmount)
+    setPaymentDialogOpen(true)
+  }
 
   // Batch assignments state for SHIPPING
   const [batchAssignments, setBatchAssignments] = useState<Record<string, string>>(() => {
@@ -406,10 +416,16 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
     (t) => t.type === TxType.REFUND && t.status === TxStatus.PENDING
   )
 
+  const isSettled =
+    !pendingRefundTx &&
+    order.remainingAmount === 0 &&
+    (order.grossPaid !== undefined
+      ? order.grossPaid >= targetTotal
+      : order.paidAmount === targetTotal || (order.paymentStatus === 'PARTIALLY_REFUNDED' && order.remainingAmount === 0))
+
   const isEligibleToComplete =
     (order.status === OrderStatus.DELIVERED || order.status === OrderStatus.COMPLAINT) &&
-    order.paidAmount === (order.finalTotal ?? order.total) &&
-    !pendingRefundTx &&
+    isSettled &&
     order.complaints.every((c) => c.status !== ComplaintStatus.OPEN)
 
   return (
@@ -447,7 +463,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
             order.status !== OrderStatus.COMPLETED &&
             order.remainingAmount > 0 && (
               <Button
-                onClick={() => setPaymentDialogOpen(true)}
+                onClick={handleOpenPaymentDialog}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-sm"
               >
                 <CheckCircle2 className="w-4 h-4" />
@@ -885,12 +901,21 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                   </span>
                 </div>
 
-                <div className="flex justify-between text-slate-700">
-                  <span>Tiền cọc tối thiểu (30%):</span>
-                  <span className="font-bold font-mono text-amber-800">
-                    {formatVND(order.depositAmount)}
-                  </span>
-                </div>
+                {order.paymentOption === 'DEPOSIT_30' ? (
+                  <div className="flex justify-between text-slate-700">
+                    <span>Tiền cọc tối thiểu (30%):</span>
+                    <span className="font-bold font-mono text-amber-800">
+                      {formatVND(order.depositAmount)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between text-slate-700">
+                    <span>Yêu cầu thanh toán (100%):</span>
+                    <span className="font-bold font-mono text-amber-800">
+                      {formatVND(targetTotal)}
+                    </span>
+                  </div>
+                )}
 
                 <div className="flex justify-between text-emerald-800 font-bold border-t border-slate-200 pt-2">
                   <span>Đã thanh toán thực tế:</span>
@@ -918,7 +943,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
               <div className="pt-3 space-y-2">
                 {order.remainingAmount > 0 && order.status !== OrderStatus.CANCELLED && (
                   <Button
-                    onClick={() => setPaymentDialogOpen(true)}
+                    onClick={handleOpenPaymentDialog}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-sm"
                   >
                     <CheckCircle2 className="w-4 h-4" />
@@ -970,7 +995,10 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
               Xác nhận giao dịch thanh toán
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500">
-              Ghi nhận tiền thanh toán cho đơn hàng <strong className="font-mono">{order.code}</strong>.
+              Ghi nhận tiền thanh toán cho đơn hàng <strong className="font-mono">{order.code}</strong>
+              {isFullPayment
+                ? ' (Khách hàng chọn thanh toán 100% giá trị đơn hàng).'
+                : ' (Khách hàng chọn hình thức đặt cọc 30%).'}
             </DialogDescription>
           </DialogHeader>
 
@@ -989,9 +1017,20 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                 className="mt-1 font-mono font-bold text-sm"
               />
               <div className="text-[11px] text-slate-500 mt-1 flex justify-between">
-                <span>Cọc tối thiểu: {formatVND(order.depositAmount)}</span>
+                {isFullPayment ? (
+                  <span>
+                    {order.paidAmount > 0
+                      ? `Đã nhận: ${formatVND(order.paidAmount)} / ${formatVND(targetTotal)}`
+                      : `Yêu cầu thanh toán (100%): ${formatVND(targetTotal)}`}
+                  </span>
+                ) : (
+                  <span>Cọc tối thiểu (30%): {formatVND(order.depositAmount)}</span>
+                )}
                 <span>Còn lại: {formatVND(order.remainingAmount)}</span>
               </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                * Số tiền mặc định là gợi ý theo nghĩa vụ thanh toán; Admin vẫn phải xác nhận số tiền thực tế nhận được.
+              </p>
             </div>
 
             <div>

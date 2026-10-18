@@ -165,6 +165,9 @@ export default async function AdminOrderDetailPage({
     })),
     paidAmount: payment.paidAmount,
     remainingAmount: payment.remainingAmount,
+    grossPaid: payment.grossPaid,
+    netPaid: payment.netPaid,
+    refundedAmount: payment.refundedAmount,
     paymentStatus: payment.status,
   }
 

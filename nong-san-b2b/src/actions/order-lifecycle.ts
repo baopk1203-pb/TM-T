@@ -506,6 +506,8 @@ export async function completeOrder(input: { orderId: string }) {
       'SELLER',
       {
         paidAmount: paymentCalc.paidAmount,
+        grossPaid: paymentCalc.grossPaid,
+        refundedAmount: paymentCalc.refundedAmount,
         hasPendingRefund,
         complaintResolved: !openComplaint,
         now: new Date(),

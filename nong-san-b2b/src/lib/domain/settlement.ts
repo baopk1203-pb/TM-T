@@ -1,4 +1,4 @@
-import { TxType, TxStatus, OrderStatus, CancelActor } from '@prisma/client'
+import { TxType, TxStatus, OrderStatus, CancelActor, PaymentOption } from '@prisma/client'
 
 export type DerivedPaymentStatus =
   | 'AWAITING_PAYMENT'
@@ -20,6 +20,18 @@ export interface PaymentTransactionData {
   amount: number
 }
 
+export interface DerivedPaymentResult {
+  status: DerivedPaymentStatus
+  paidAmount: number // Doanh thu thực thu ròng (netPaid = grossPaid - refundedAmount)
+  grossPaid: number // Tổng tiền khách đã thanh toán
+  netPaid: number // Doanh thu thực thu ròng
+  refundedAmount: number // Tổng tiền đã hoàn trả cho khách
+  targetTotal: number
+  remainingAmount: number // Nghĩa vụ nợ còn lại của khách (Math.max(0, targetTotal - grossPaid))
+  isSettled: boolean // Khách đã hoàn thành nghĩa vụ thanh toán đơn hàng
+  hasPendingRefund: boolean
+}
+
 /**
  * Tính số tiền cọc 30% làm tròn lên tới nghìn đồng (Mục 3.6 & Test Case S1)
  * Công thức: ceil(total * 30 / 100 / 1000) * 1000
@@ -31,18 +43,16 @@ export function computeDepositAmount(total: number): number {
 
 /**
  * Suy ra trạng thái thanh toán từ các giao dịch thực tế (Mục 3.6)
- * - paid = Σ PAYMENT(DONE) - Σ REFUND(DONE)
+ * - grossPaid = Σ PAYMENT(DONE)
+ * - refundedAmount = Σ REFUND(DONE)
+ * - netPaid = grossPaid - refundedAmount
  * - targetTotal = finalTotal ?? total
+ * - remainingAmount = max(0, targetTotal - grossPaid)
  */
 export function derivePaymentStatus(
   order: OrderPaymentTarget,
   transactions: PaymentTransactionData[]
-): {
-  status: DerivedPaymentStatus
-  paidAmount: number
-  targetTotal: number
-  remainingAmount: number
-} {
+): DerivedPaymentResult {
   const targetTotal = order.finalTotal ?? order.total
 
   let totalPaymentDone = 0
@@ -61,61 +71,98 @@ export function derivePaymentStatus(
     }
   }
 
-  const paidAmount = Math.max(0, totalPaymentDone - totalRefundDone)
-  const remainingAmount = Math.max(0, targetTotal - paidAmount)
+  const grossPaid = totalPaymentDone
+  const refundedAmount = totalRefundDone
+  const netPaid = Math.max(0, grossPaid - refundedAmount)
+  const paidAmount = netPaid
+
+  // Nghĩa vụ thanh toán còn lại của khách: khách chỉ nợ nếu tổng đã trả chưa đủ targetTotal.
+  // Tiền bồi hoàn khiếu nại (refundedAmount) không làm phát sinh nợ giả cho khách.
+  const remainingAmount = Math.max(0, targetTotal - grossPaid)
+  const isSettled = remainingAmount === 0 && !hasPendingRefund
 
   // Nếu có giao dịch hoàn tiền đang chờ
   if (hasPendingRefund) {
     return {
       status: 'REFUND_PENDING',
       paidAmount,
+      grossPaid,
+      netPaid,
+      refundedAmount,
       targetTotal,
       remainingAmount,
+      isSettled: false,
+      hasPendingRefund: true,
     }
   }
 
   // Đã từng có hoàn tiền thành công
-  if (totalRefundDone > 0) {
-    if (paidAmount === 0) {
+  if (refundedAmount > 0) {
+    if (netPaid === 0) {
       return {
         status: 'REFUNDED',
         paidAmount,
+        grossPaid,
+        netPaid,
+        refundedAmount,
         targetTotal,
         remainingAmount,
+        isSettled,
+        hasPendingRefund: false,
       }
     }
     return {
       status: 'PARTIALLY_REFUNDED',
       paidAmount,
+      grossPaid,
+      netPaid,
+      refundedAmount,
       targetTotal,
       remainingAmount,
+      isSettled,
+      hasPendingRefund: false,
     }
   }
 
   // Luồng thanh toán thông thường
-  if (paidAmount === 0) {
+  if (grossPaid === 0) {
     return {
       status: 'AWAITING_PAYMENT',
       paidAmount,
+      grossPaid,
+      netPaid,
+      refundedAmount,
       targetTotal,
       remainingAmount,
+      isSettled: false,
+      hasPendingRefund: false,
     }
   }
 
-  if (paidAmount >= targetTotal) {
+  if (grossPaid >= targetTotal) {
     return {
       status: 'PAID',
       paidAmount,
+      grossPaid,
+      netPaid,
+      refundedAmount,
       targetTotal,
       remainingAmount: 0,
+      isSettled: true,
+      hasPendingRefund: false,
     }
   }
 
   return {
     status: 'DEPOSIT_PAID',
     paidAmount,
+    grossPaid,
+    netPaid,
+    refundedAmount,
     targetTotal,
     remainingAmount,
+    isSettled: false,
+    hasPendingRefund: false,
   }
 }
 
@@ -126,7 +173,12 @@ export function derivePaymentStatus(
  * - Khách hủy ở PENDING_CONFIRMATION: Hoàn 100%
  */
 export function computeCancellation(
-  order: { status: OrderStatus; depositAmount: number },
+  order: {
+    status: OrderStatus
+    depositAmount: number
+    total?: number
+    paymentOption?: PaymentOption | string
+  },
   paid: number,
   cancelledBy: CancelActor | 'CUSTOMER' | 'SELLER' | 'SYSTEM'
 ): {
@@ -142,12 +194,26 @@ export function computeCancellation(
     }
   }
 
+  // Xác định mức tiền cọc chính sách 30%
+  // Tương thích ngược: Đơn cũ có depositAmount = total hoặc paymentOption = FULL mà depositAmount chưa tính 30%
+  let policyDeposit = order.depositAmount
+  if (
+    order.total &&
+    order.total > 0 &&
+    (order.depositAmount >= order.total || order.paymentOption === 'FULL' || order.paymentOption === PaymentOption.FULL)
+  ) {
+    const calculatedDeposit = computeDepositAmount(order.total)
+    if (order.depositAmount > calculatedDeposit) {
+      policyDeposit = calculatedDeposit
+    }
+  }
+
   // Khách hủy khi đơn đang ở trạng thái PROCESSING
   if (
     cancelledBy === CancelActor.CUSTOMER &&
     order.status === OrderStatus.PROCESSING
   ) {
-    const forfeit = Math.min(paid, order.depositAmount)
+    const forfeit = Math.min(paid, policyDeposit)
     const refund = Math.max(0, paid - forfeit)
     return {
       forfeitAmount: forfeit,
@@ -161,7 +227,7 @@ export function computeCancellation(
     cancelledBy === CancelActor.CUSTOMER &&
     order.status === OrderStatus.PREORDER_WAITING
   ) {
-    const forfeit = Math.min(paid, order.depositAmount)
+    const forfeit = Math.min(paid, policyDeposit)
     const refund = Math.max(0, paid - forfeit)
     return {
       forfeitAmount: forfeit,

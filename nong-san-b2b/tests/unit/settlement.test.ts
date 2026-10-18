@@ -69,6 +69,40 @@ describe('Domain: settlement.ts (Mục 3.6, 3.8, 3.9 & Test Cases S1-S5, W1-W3, 
       expect(result.status).toBe('REFUNDED')
       expect(result.paidAmount).toBe(0)
     })
+
+    it('Test Case C1: Khách trả đủ 14.950.125, hoàn bồi thường khiếu nại 278.996 (DONE) -> PARTIALLY_REFUNDED, nợ còn lại = 0 (không nợ giả)', () => {
+      const deliveredOrder = {
+        total: 15277500,
+        finalTotal: 14950125,
+        status: OrderStatus.COMPLAINT,
+      }
+      const result = derivePaymentStatus(deliveredOrder, [
+        { type: TxType.PAYMENT, status: TxStatus.DONE, amount: 14950125 },
+        { type: TxType.REFUND, status: TxStatus.DONE, amount: 278996 },
+      ])
+      expect(result.status).toBe('PARTIALLY_REFUNDED')
+      expect(result.grossPaid).toBe(14950125)
+      expect(result.refundedAmount).toBe(278996)
+      expect(result.netPaid).toBe(14671129)
+      expect(result.paidAmount).toBe(14671129)
+      expect(result.remainingAmount).toBe(0) // Khách không phát sinh nợ giả sau bồi thường!
+      expect(result.isSettled).toBe(true)
+    })
+
+    it('Đơn có hoàn tiền bồi thường PENDING -> REFUND_PENDING, isSettled = false', () => {
+      const deliveredOrder = {
+        total: 15277500,
+        finalTotal: 14950125,
+        status: OrderStatus.COMPLAINT,
+      }
+      const result = derivePaymentStatus(deliveredOrder, [
+        { type: TxType.PAYMENT, status: TxStatus.DONE, amount: 14950125 },
+        { type: TxType.REFUND, status: TxStatus.PENDING, amount: 278996 },
+      ])
+      expect(result.status).toBe('REFUND_PENDING')
+      expect(result.hasPendingRefund).toBe(true)
+      expect(result.isSettled).toBe(false)
+    })
   })
 
   describe('computeCancellation (Mục 7.2 - S2 đến S5)', () => {
@@ -85,6 +119,23 @@ describe('Domain: settlement.ts (Mục 3.6, 3.8, 3.9 & Test Cases S1-S5, W1-W3, 
       )
       expect(result.forfeitAmount).toBe(4584000)
       expect(result.refundAmount).toBe(10693500)
+      expect(result.isDepositForfeited).toBe(true)
+    })
+
+    it('Test Case S2 (Legacy FULL order): Đơn cũ lưu nhầm depositAmount = 15.277.500 -> tự động bảo vệ chỉ phạt cọc 30%', () => {
+      const legacyOrder = {
+        status: OrderStatus.PROCESSING,
+        depositAmount: 15277500, // lưu nhầm bằng 100% total
+        total: 15277500,
+        paymentOption: 'FULL',
+      }
+      const result = computeCancellation(
+        legacyOrder,
+        15277500,
+        CancelActor.CUSTOMER
+      )
+      expect(result.forfeitAmount).toBe(4584000) // 30% cọc chuẩn
+      expect(result.refundAmount).toBe(10693500) // Hoàn 70%
       expect(result.isDepositForfeited).toBe(true)
     })
 

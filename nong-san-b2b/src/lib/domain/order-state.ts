@@ -14,6 +14,8 @@ export interface OrderStateSnapshot {
 
 export interface TransitionContext {
   paidAmount?: number
+  grossPaid?: number
+  refundedAmount?: number
   hasPendingRefund?: boolean
   hasComplaint?: boolean
   complaintResolved?: boolean
@@ -29,6 +31,17 @@ export interface TransitionImpact {
   requiresRefund: boolean
   isDepositForfeited: boolean
   note: string
+}
+
+/**
+ * Ngưỡng tiền tối thiểu cần thanh toán để đơn hàng đủ điều kiện duyệt sang PROCESSING (Mục 3.7)
+ * - FULL: phải thanh toán 100% tổng tiền (order.total)
+ * - DEPOSIT_30: phải thanh toán tối thiểu tiền cọc 30% (order.depositAmount)
+ */
+export function getRequiredConfirmationPayment(
+  order: Pick<OrderStateSnapshot, 'paymentOption' | 'total' | 'depositAmount'>
+): number {
+  return order.paymentOption === PaymentOption.FULL ? order.total : order.depositAmount
 }
 
 /**
@@ -93,8 +106,7 @@ export function canTransition(
         if (actor !== 'SELLER') {
           return { ok: false, reason: 'Chỉ ban quản trị (SELLER) mới có quyền duyệt đơn sang PROCESSING' }
         }
-        const requiredAmount =
-          order.paymentOption === PaymentOption.FULL ? order.total : order.depositAmount
+        const requiredAmount = getRequiredConfirmationPayment(order)
         if (paid < requiredAmount) {
           return {
             ok: false,
@@ -171,15 +183,22 @@ export function canTransition(
         if (actor !== 'SELLER') {
           return { ok: false, reason: 'Chỉ ban quản trị mới có quyền hoàn thành đơn hàng' }
         }
+        if (context?.hasPendingRefund) {
+          return { ok: false, reason: 'Đơn hàng còn khoản hoàn tiền đang chờ xử lý' }
+        }
         const targetTotal = order.finalTotal ?? order.total
-        if (paid !== targetTotal) {
+        const grossPaid =
+          context?.grossPaid ??
+          (context?.refundedAmount !== undefined ? paid + context.refundedAmount : paid)
+        const isSettled =
+          paid === targetTotal ||
+          (grossPaid >= targetTotal && !context?.hasPendingRefund)
+
+        if (!isSettled) {
           return {
             ok: false,
             reason: `Chưa tất toán đủ giá trị đơn hàng (${paid.toLocaleString('vi-VN')} đ !== ${targetTotal.toLocaleString('vi-VN')} đ)`,
           }
-        }
-        if (context?.hasPendingRefund) {
-          return { ok: false, reason: 'Đơn hàng còn khoản hoàn tiền đang chờ xử lý' }
         }
         if (order.deliveredAt) {
           const diffMs = now.getTime() - order.deliveredAt.getTime()
@@ -202,15 +221,22 @@ export function canTransition(
         if (context?.complaintResolved === false) {
           return { ok: false, reason: 'Khiếu nại chưa được xử lý xong' }
         }
+        if (context?.hasPendingRefund) {
+          return { ok: false, reason: 'Đơn hàng còn khoản hoàn tiền đang chờ xử lý' }
+        }
         const targetTotal = order.finalTotal ?? order.total
-        if (paid !== targetTotal) {
+        const grossPaid =
+          context?.grossPaid ??
+          (context?.refundedAmount !== undefined ? paid + context.refundedAmount : paid)
+        const isSettled =
+          paid === targetTotal ||
+          (grossPaid >= targetTotal && !context?.hasPendingRefund)
+
+        if (!isSettled) {
           return {
             ok: false,
             reason: `Chưa tất toán đủ giá trị đơn hàng (${paid.toLocaleString('vi-VN')} đ !== ${targetTotal.toLocaleString('vi-VN')} đ)`,
           }
-        }
-        if (context?.hasPendingRefund) {
-          return { ok: false, reason: 'Đơn hàng còn khoản hoàn tiền đang chờ xử lý' }
         }
         return { ok: true }
       }

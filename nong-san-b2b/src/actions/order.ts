@@ -275,11 +275,10 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
         const subtotal = quote.subtotal
         const total = subtotal + shippingFee
 
-        // 9. Tính số tiền cọc (depositAmount)
-        const depositAmount =
-          validated.paymentOption === PaymentOption.DEPOSIT_30
-            ? computeDepositAmount(total)
-            : total
+        // 9. Tính số tiền cọc theo chính sách (30% làm tròn lên nghìn đồng - Mục 3.6)
+        // depositAmount luôn đại diện cho mức cọc 30% theo chính sách cho cả FULL và DEPOSIT_30.
+        // Số tiền khách thanh toán đợt đầu (amountToPay) được tính toán riêng: FULL = total, DEPOSIT_30 = depositAmount.
+        const depositAmount = computeDepositAmount(total)
 
         // 10. Sinh mã đơn hàng duy nhất không trùng
         let code = generateOrderCode(now)

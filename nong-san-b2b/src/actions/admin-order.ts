@@ -11,6 +11,10 @@ import {
   TxMethod,
   CancelActor,
 } from '@prisma/client'
+import {
+  canTransition,
+  getRequiredConfirmationPayment,
+} from '@/lib/domain/order-state'
 
 export interface ConfirmPaymentInput {
   orderId: string
@@ -81,26 +85,35 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
         .filter((t) => t.type === TxType.PAYMENT && t.status === TxStatus.DONE)
         .reduce((sum, t) => sum + t.amount, 0)
 
-      // Nếu đơn đang PENDING_CONFIRMATION và đã nhận đủ tiền cọc (hoặc 100%)
-      const requiredThreshold = order.depositAmount
+      // Nếu đơn đang PENDING_CONFIRMATION, kiểm tra điều kiện chuyển PROCESSING theo domain order-state
       let statusChanged = false
 
-      if (order.status === OrderStatus.PENDING_CONFIRMATION && totalPaid >= requiredThreshold) {
-        await tx.order.update({
-          where: { id: order.id },
-          data: { status: OrderStatus.PROCESSING },
-        })
+      if (order.status === OrderStatus.PENDING_CONFIRMATION) {
+        const transitionCheck = canTransition(
+          order,
+          OrderStatus.PROCESSING,
+          'SELLER',
+          { paidAmount: totalPaid }
+        )
 
-        await recordOrderEvent(tx, {
-          orderId: order.id,
-          type: 'STATUS_CHANGED',
-          fromStatus: OrderStatus.PENDING_CONFIRMATION,
-          toStatus: OrderStatus.PROCESSING,
-          actorId: admin.id,
-          note: `Đã nhận đủ tiền thanh toán/cọc (${totalPaid.toLocaleString('vi-VN')} đ ≥ ${requiredThreshold.toLocaleString('vi-VN')} đ) -> Chuyển sang Đang xử lý`,
-        })
+        if (transitionCheck.ok) {
+          const requiredThreshold = getRequiredConfirmationPayment(order)
+          await tx.order.update({
+            where: { id: order.id },
+            data: { status: OrderStatus.PROCESSING },
+          })
 
-        statusChanged = true
+          await recordOrderEvent(tx, {
+            orderId: order.id,
+            type: 'STATUS_CHANGED',
+            fromStatus: OrderStatus.PENDING_CONFIRMATION,
+            toStatus: OrderStatus.PROCESSING,
+            actorId: admin.id,
+            note: `Đã nhận đủ tiền thanh toán (${totalPaid.toLocaleString('vi-VN')} đ ≥ ${requiredThreshold.toLocaleString('vi-VN')} đ, hình thức: ${order.paymentOption}) -> Chuyển sang Đang xử lý`,
+          })
+
+          statusChanged = true
+        }
       }
 
       return {

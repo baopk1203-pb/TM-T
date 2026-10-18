@@ -183,3 +183,37 @@ export function isPreorderAwaitingCustomerDecision(
   // Cả 'PENDING' lẫn null / undefined đều thể hiện đang chờ khách quyết định
   return true
 }
+
+export interface PackagingLabelInput {
+  name: string
+  weightGrams: number
+}
+
+/**
+ * Định dạng nhãn hiển thị cho quy cách đóng gói (QW04-01)
+ * Ví dụ: "Rổ nhựa 20kg (20 kg/thùng)"
+ */
+export function formatPackagingLabel(pkg?: PackagingLabelInput | null): string {
+  if (!pkg) return ''
+  return `${pkg.name} (${pkg.weightGrams / 1000} kg/thùng)`
+}
+
+export interface AddressLabelInput {
+  label?: string | null
+  recipient: string
+  phone: string
+  line: string
+  ward: string
+  district: string
+  province: string
+}
+
+/**
+ * Định dạng nhãn hiển thị cho địa chỉ nhận hàng (QW04-01)
+ * Ví dụ: "[Kho Thủ Đức] Nguyễn Văn A (0901234567) - 123 Đường A, Phường B, Quận C, TPHCM"
+ */
+export function formatAddressLabel(addr?: AddressLabelInput | null): string {
+  if (!addr) return ''
+  const prefix = addr.label ? `[${addr.label}] ` : ''
+  return `${prefix}${addr.recipient} (${addr.phone}) - ${addr.line}, ${addr.ward}, ${addr.district}, ${addr.province}`
+}

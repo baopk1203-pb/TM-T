@@ -4,6 +4,8 @@ import {
   computePreorderShortfallRefund,
   calculatePreorderPricing,
   computeOutOfBandCancellationRefund,
+  formatPackagingLabel,
+  formatAddressLabel,
 } from '@/lib/domain/preorder'
 import { canTransition } from '@/lib/domain/order-state'
 import { computeCancellation } from '@/lib/domain/settlement'
@@ -274,6 +276,66 @@ describe('Pre-order Domain Logic (Batch 6B - Mục 3.10)', () => {
       expect(impact.forfeitAmount).toBe(0)
       expect(impact.refundAmount).toBe(2100000)
       expect(impact.isDepositForfeited).toBe(false)
+    })
+  })
+
+  describe('7. QW04-01: Định dạng nhãn dropdown Pre-order (Select human-readable labels)', () => {
+    describe('formatPackagingLabel', () => {
+      it('Định dạng nhãn quy cách đóng gói rõ ràng, dễ đọc kèm khối lượng', () => {
+        const label20kg = formatPackagingLabel({
+          name: 'Rổ nhựa 20kg',
+          weightGrams: 20000,
+        })
+        expect(label20kg).toBe('Rổ nhựa 20kg (20 kg/thùng)')
+
+        const label10kg = formatPackagingLabel({
+          name: 'Thùng carton 10kg',
+          weightGrams: 10000,
+        })
+        expect(label10kg).toBe('Thùng carton 10kg (10 kg/thùng)')
+      })
+
+      it('Xử lý an toàn khi quy cách null hoặc undefined', () => {
+        expect(formatPackagingLabel(null)).toBe('')
+        expect(formatPackagingLabel(undefined)).toBe('')
+      })
+    })
+
+    describe('formatAddressLabel', () => {
+      it('Định dạng nhãn địa chỉ đầy đủ có gắn nhãn kho (label)', () => {
+        const label = formatAddressLabel({
+          label: 'Kho Thủ Đức',
+          recipient: 'Nguyễn Văn A',
+          phone: '0901234567',
+          line: '123 Đường Số 1',
+          ward: 'Linh Chiểu',
+          district: 'TP. Thủ Đức',
+          province: 'TP. Hồ Chí Minh',
+        })
+        expect(label).toBe(
+          '[Kho Thủ Đức] Nguyễn Văn A (0901234567) - 123 Đường Số 1, Linh Chiểu, TP. Thủ Đức, TP. Hồ Chí Minh'
+        )
+      })
+
+      it('Định dạng nhãn địa chỉ khi không có trường label (hoặc rỗng)', () => {
+        const label = formatAddressLabel({
+          label: null,
+          recipient: 'Trần Thị B',
+          phone: '0987654321',
+          line: '456 Lê Lợi',
+          ward: 'Bến Nghé',
+          district: 'Quận 1',
+          province: 'TP. Hồ Chí Minh',
+        })
+        expect(label).toBe(
+          'Trần Thị B (0987654321) - 456 Lê Lợi, Bến Nghé, Quận 1, TP. Hồ Chí Minh'
+        )
+      })
+
+      it('Xử lý an toàn khi địa chỉ null hoặc undefined', () => {
+        expect(formatAddressLabel(null)).toBe('')
+        expect(formatAddressLabel(undefined)).toBe('')
+      })
     })
   })
 })

@@ -29,7 +29,11 @@ import {
 import { formatVND } from '@/lib/money'
 import { placePreorder } from '@/actions/preorder'
 import { getUserAddresses } from '@/server/actions/user'
-import { calculatePreorderPricing } from '@/lib/domain/preorder'
+import {
+  calculatePreorderPricing,
+  formatPackagingLabel,
+  formatAddressLabel,
+} from '@/lib/domain/preorder'
 import { toast } from 'sonner'
 
 export interface PreorderPackagingItem {
@@ -117,6 +121,11 @@ export function PreorderBox({ product, user }: PreorderBoxProps) {
   }, [user])
 
   const selectedPackaging = regularPackagings.find((p) => p.id === selectedPackagingId)
+  const selectedAddress = addresses.find((a) => a.id === addressId)
+
+  const selectedPackagingLabel = formatPackagingLabel(selectedPackaging)
+  const selectedAddressLabel = formatAddressLabel(selectedAddress)
+
   const packagingWeightGrams = selectedPackaging?.weightGrams || 10000
   const userDiscount = user?.discountPercent || 0
   const preorderPrice = product.preorderPricePerKg || 0
@@ -271,7 +280,9 @@ export function PreorderBox({ product, user }: PreorderBoxProps) {
               }}
             >
               <SelectTrigger className="w-full text-xs sm:text-sm bg-white">
-                <SelectValue placeholder="Chọn quy cách..." />
+                <SelectValue placeholder="Chọn quy cách...">
+                  {selectedPackagingLabel || 'Chọn quy cách...'}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {regularPackagings.map((pkg) => (
@@ -369,12 +380,18 @@ export function PreorderBox({ product, user }: PreorderBoxProps) {
                 }}
               >
                 <SelectTrigger className="w-full text-xs sm:text-sm bg-white">
-                  <SelectValue placeholder="Chọn địa chỉ nhận hàng..." />
+                  <SelectValue placeholder="Chọn địa chỉ nhận hàng...">
+                    {selectedAddressLabel || 'Chọn địa chỉ nhận hàng...'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {addresses.map((addr) => (
                     <SelectItem key={addr.id} value={addr.id} className="text-xs sm:text-sm">
-                      <span className="font-semibold">{addr.recipient} ({addr.phone})</span>: {addr.line}, {addr.ward}, {addr.district}, {addr.province}
+                      <span className="font-semibold">
+                        {addr.label ? `[${addr.label}] ` : ''}
+                        {addr.recipient} ({addr.phone})
+                      </span>
+                      : {addr.line}, {addr.ward}, {addr.district}, {addr.province}
                     </SelectItem>
                   ))}
                 </SelectContent>

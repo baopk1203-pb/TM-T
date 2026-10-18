@@ -64,4 +64,67 @@ describe('Cart Store: Sample and Regular Items (BUG-11 verification)', () => {
     expect(items.find((i) => i.packagingId === 'pkg-thung-10kg')?.quantity).toBe(5)
     expect(items.find((i) => i.packagingId === 'pkg-mau-2kg')?.quantity).toBe(1)
   })
+
+  describe('WEB-POST-01: incrementQuantity and rapid clicks handling', () => {
+    it('thao tác click nhanh 3 lần liên tiếp: tăng chính xác 7 -> 8 -> 9 -> 10', () => {
+      const store = useCartStore.getState()
+      store.addItem('prod-xoai', 'pkg-10kg', 7, false)
+      expect(useCartStore.getState().items[0].quantity).toBe(7)
+
+      // Giả lập 3 click liên tiếp nhanh chóng không chờ quote
+      store.incrementQuantity('prod-xoai', 'pkg-10kg', 1)
+      store.incrementQuantity('prod-xoai', 'pkg-10kg', 1)
+      store.incrementQuantity('prod-xoai', 'pkg-10kg', 1)
+
+      const items = useCartStore.getState().items
+      expect(items).toHaveLength(1)
+      expect(items[0].quantity).toBe(10)
+    })
+
+    it('thao tác click nhanh 8 lần liên tiếp: tăng chính xác 2 -> 10', () => {
+      const store = useCartStore.getState()
+      store.addItem('prod-xoai', 'pkg-15kg', 2, false)
+      expect(useCartStore.getState().items[0].quantity).toBe(2)
+
+      // Giả lập 8 click liên tiếp
+      for (let i = 0; i < 8; i++) {
+        store.incrementQuantity('prod-xoai', 'pkg-15kg', 1)
+      }
+
+      const items = useCartStore.getState().items
+      expect(items).toHaveLength(1)
+      expect(items[0].quantity).toBe(10)
+    })
+
+    it('giảm số lượng về 0 thì tự động xóa dòng sản phẩm khỏi giỏ', () => {
+      const store = useCartStore.getState()
+      store.addItem('prod-xoai', 'pkg-10kg', 2, false)
+
+      store.incrementQuantity('prod-xoai', 'pkg-10kg', -1)
+      expect(useCartStore.getState().items[0].quantity).toBe(1)
+
+      store.incrementQuantity('prod-xoai', 'pkg-10kg', -1)
+      expect(useCartStore.getState().items).toHaveLength(0)
+    })
+
+    it('hàng mẫu thử không cho tăng quá 1 qua incrementQuantity', () => {
+      const store = useCartStore.getState()
+      store.addItem('prod-xoai', 'pkg-mau-1kg', 1, true)
+
+      // Cố tình gọi increment +1
+      store.incrementQuantity('prod-xoai', 'pkg-mau-1kg', 1)
+      expect(useCartStore.getState().items[0].quantity).toBe(1)
+
+      // Nhưng cho phép giảm về 0 để xóa
+      store.incrementQuantity('prod-xoai', 'pkg-mau-1kg', -1)
+      expect(useCartStore.getState().items).toHaveLength(0)
+    })
+
+    it('gọi incrementQuantity cho sản phẩm chưa có trong giỏ với delta > 0 sẽ thêm mới', () => {
+      const store = useCartStore.getState()
+      store.incrementQuantity('prod-new', 'pkg-new', 3)
+      expect(useCartStore.getState().items).toHaveLength(1)
+      expect(useCartStore.getState().items[0].quantity).toBe(3)
+    })
+  })
 })

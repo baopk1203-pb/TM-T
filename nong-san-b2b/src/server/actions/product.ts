@@ -100,7 +100,7 @@ export async function getProductBySlug(slug: string) {
       farm: {
         include: {
           certificates: {
-            where: { expiresAt: { gt: new Date() } },
+            orderBy: { expiresAt: 'asc' },
           },
         },
       },

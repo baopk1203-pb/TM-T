@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Layers,
   ExternalLink,
+  AlertTriangle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -372,50 +373,61 @@ export function ProductDetailView({
 
           {/* Tab 2: Certificates */}
           <TabsContent value="certs" className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {product.farm.certificates.length === 0 ? (
-                <div className="p-6 rounded-2xl border border-slate-200 text-center text-slate-500 text-xs col-span-2 bg-slate-50">
-                  Chưa có chứng nhận nào được ghi nhận cho nhà vườn này.
+            {product.farm.certificates.length === 0 ? (
+              <div className="p-6 rounded-2xl border border-slate-200 text-center text-slate-500 text-xs col-span-2 bg-slate-50">
+                Chưa có chứng nhận nào được ghi nhận cho nhà vườn này.
+              </div>
+            ) : (
+              <>
+                {filterActiveCertificates(product.farm.certificates).length === 0 && (
+                  <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-xs flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      Nhà vườn này hiện chưa có chứng nhận nào còn hiệu lực. Danh sách chứng nhận đã từng được cấp hiển thị bên dưới.
+                    </span>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {product.farm.certificates.map((cert) => {
+                    const isExpired = new Date(cert.expiresAt).getTime() < nowTimestamp
+                    return (
+                      <Card key={cert.id} className="border-slate-200">
+                        <CardContent className="p-4 flex items-start gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                            <Award className="w-5 h-5" />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant="outline"
+                                className={
+                                  isExpired
+                                    ? 'border-rose-300 text-rose-700 bg-rose-50'
+                                    : 'border-emerald-300 text-emerald-700 bg-emerald-50'
+                                }
+                              >
+                                {cert.type}: {cert.code}
+                              </Badge>
+                              {isExpired ? (
+                                <span className="text-[10px] text-rose-600 font-bold">Hết hạn</span>
+                              ) : (
+                                <span className="text-[10px] text-emerald-600 font-medium">Còn hiệu lực</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              Cấp ngày: {new Date(cert.issuedAt).toLocaleDateString('vi-VN')}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              Hết hạn: {new Date(cert.expiresAt).toLocaleDateString('vi-VN')}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
-              ) : null}
-              {product.farm.certificates.map((cert) => {
-                const isExpired = new Date(cert.expiresAt).getTime() < nowTimestamp
-                return (
-                  <Card key={cert.id} className="border-slate-200">
-                    <CardContent className="p-4 flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                        <Award className="w-5 h-5" />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant="outline"
-                            className={
-                              isExpired
-                                ? 'border-rose-300 text-rose-700 bg-rose-50'
-                                : 'border-emerald-300 text-emerald-700 bg-emerald-50'
-                            }
-                          >
-                            {cert.type}: {cert.code}
-                          </Badge>
-                          {isExpired ? (
-                            <span className="text-[10px] text-rose-600 font-bold">Hết hạn</span>
-                          ) : (
-                            <span className="text-[10px] text-emerald-600 font-medium">Còn hiệu lực</span>
-                          )}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          Cấp ngày: {new Date(cert.issuedAt).toLocaleDateString('vi-VN')}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          Hết hạn: {new Date(cert.expiresAt).toLocaleDateString('vi-VN')}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>
+              </>
+            )}
           </TabsContent>
         </Tabs>
       </div>

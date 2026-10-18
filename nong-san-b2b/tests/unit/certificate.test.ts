@@ -93,4 +93,26 @@ describe('WEB-CERT-04: Certificate Expiration & Validity Logic', () => {
     expect(benTreSummary).not.toContain('Đang tái cấp')
     expect(benTreSummary).toBe('Chưa có chứng nhận còn hiệu lực')
   })
+
+  it('6. WEB-POST-02: Nhà vườn chỉ có chứng chỉ hết hạn (Bến Tre): tổng chứng nhận > 0 nhưng active = 0', () => {
+    const benTreCerts = [expiredCert]
+    expect(benTreCerts.length).toBe(1) // Hồ sơ nhà vườn & tab có 1 chứng nhận để lưu lịch sử
+
+    const activeCerts = filterActiveCertificates(benTreCerts, referenceDate)
+    expect(activeCerts.length).toBe(0) // Nhưng không có chứng nhận nào còn hiệu lực
+
+    const summary = formatActiveCertificatesSummary(benTreCerts, referenceDate)
+    expect(summary).toBe('Chưa có chứng nhận còn hiệu lực')
+  })
+
+  it('7. WEB-POST-02: Nhà vườn hoàn toàn không có chứng chỉ: cả tổng và active đều bằng 0', () => {
+    const emptyCerts: typeof validCert1[] = []
+    expect(emptyCerts.length).toBe(0)
+
+    const activeCerts = filterActiveCertificates(emptyCerts, referenceDate)
+    expect(activeCerts.length).toBe(0)
+
+    const summary = formatActiveCertificatesSummary(emptyCerts, referenceDate)
+    expect(summary).toBe('Chưa có chứng nhận còn hiệu lực')
+  })
 })

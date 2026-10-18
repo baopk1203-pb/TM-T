@@ -12,6 +12,7 @@ interface CartState {
   items: CartItem[]
   addItem: (productId: string, packagingId: string, quantity?: number, isSample?: boolean) => void
   updateQuantity: (productId: string, packagingId: string, quantity: number) => void
+  incrementQuantity: (productId: string, packagingId: string, delta: number) => void
   removeItem: (productId: string, packagingId: string) => void
   clearCart: () => void
   getTotalQuantity: () => number
@@ -71,10 +72,55 @@ export const useCartStore = create<CartState>()(
           return {
             items: state.items.map((item) =>
               item.productId === productId && item.packagingId === packagingId
-                ? { ...item, quantity }
+                ? { ...item, quantity: item.isSample ? 1 : quantity }
                 : item
             ),
           }
+        })
+      },
+
+      incrementQuantity: (productId: string, packagingId: string, delta: number) => {
+        set((state) => {
+          const existingIndex = state.items.findIndex(
+            (item) => item.productId === productId && item.packagingId === packagingId
+          )
+
+          if (existingIndex === -1) {
+            if (delta > 0) {
+              return {
+                items: [
+                  ...state.items,
+                  { productId, packagingId, quantity: delta, isSample: false },
+                ],
+              }
+            }
+            return state
+          }
+
+          const currentItem = state.items[existingIndex]
+
+          // Hàng mẫu thử: mỗi khách tối đa 1 gói, không cho tăng thêm
+          if (currentItem.isSample && delta > 0) {
+            return state
+          }
+
+          const newQuantity = currentItem.quantity + delta
+
+          // Giảm về <= 0 thì tự động xóa khỏi giỏ
+          if (newQuantity <= 0) {
+            return {
+              items: state.items.filter(
+                (item) => !(item.productId === productId && item.packagingId === packagingId)
+              ),
+            }
+          }
+
+          const updatedItems = [...state.items]
+          updatedItems[existingIndex] = {
+            ...currentItem,
+            quantity: currentItem.isSample ? 1 : newQuantity,
+          }
+          return { items: updatedItems }
         })
       },
 

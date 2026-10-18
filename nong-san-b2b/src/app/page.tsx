@@ -134,14 +134,14 @@ export default async function HomePage() {
               <div className="relative z-10 max-w-2xl mb-8">
                 <div className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-300 uppercase tracking-wider mb-2">
                   <Sparkles className="w-4 h-4 text-purple-400" />
-                  Chính sách giữ giá vụ mới
+                  Thông tin dự kiến vụ mới (Đang phát triển - Phase 6)
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-                  Mở Đặt Trước Vụ Mùa (Pre-order Cọc 30%)
+                  Tham Khảo Vụ Mùa Sắp Tới (Pre-order Demo)
                 </h2>
                 <p className="text-sm text-purple-200 mt-2 leading-relaxed">
-                  Đảm bảo nguồn cung trái cây loại 1 cho các chuỗi siêu thị và đại lý trước ngày thu hoạch rộ.
-                  Giữ mức giá trần trong biên độ an toàn, ưu tiên giao hàng đợt 1.
+                  Theo dõi sớm các giống trái cây sắp vào vụ thu hoạch từ nhà vườn liên kết.
+                  Tính năng đặt cọc giữ giá trần (Pre-order Cọc 30%) đang được hoàn thiện cho Phase 6. Hiện tại quý khách có thể tham khảo giá dự kiến và đặt mua sỉ theo các quy cách sẵn có.
                 </p>
               </div>
 

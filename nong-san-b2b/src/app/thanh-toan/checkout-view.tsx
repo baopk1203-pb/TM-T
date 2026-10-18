@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useCartStore } from '@/lib/cart-store'
 import { formatVND } from '@/lib/money'
+import { getCheckoutDiscountNotice, calculateCartSavings } from '@/lib/cart-summary'
 import { quoteCart, QuoteCartResponse } from '@/actions/cart'
 import { placeOrder } from '@/actions/order'
 import { computeDepositAmount } from '@/lib/domain/settlement'
@@ -193,7 +194,13 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
           Xác Nhận Đơn Hàng & Thanh Toán
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Khách hàng: <strong>{userName}</strong> • Chiết khấu đối tác đã được áp dụng tự động
+          Khách hàng: <strong>{userName}</strong>
+          {getCheckoutDiscountNotice({
+            userDiscount: quoteData?.userDiscountPercent || 0,
+            regularLineCount: quoteData?.quote.lines.length || 0,
+            sampleLineCount: quoteData?.quote.sampleLines.length || 0,
+            actualSavings: calculateCartSavings(quoteData?.quote),
+          })}
         </p>
       </div>
 

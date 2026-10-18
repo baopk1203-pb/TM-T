@@ -385,3 +385,115 @@ export function computeComplaintCompensation(input: {
     isExpired: false,
   }
 }
+
+export interface PayableAmountResult {
+  isPayable: boolean
+  amountToPay: number
+  grossPaid: number
+  reason?: string
+}
+
+/**
+ * Tính số tiền cần thanh toán hiện tại cho mã QR / cổng thanh toán (Mục 3.6 & 3.7)
+ * - Đơn CANCELLED: không thể thanh toán (trả về isPayable: false)
+ * - Đơn COMPLETED: đã hoàn tất, không còn nợ (trả về isPayable: false)
+ * - Đơn DRAFT / PREORDER_WAITING: chưa đến bước thanh toán (trả về isPayable: false)
+ * - Đơn PENDING_CONFIRMATION:
+ *     Mục tiêu: hoàn thành ngưỡng thanh toán để xác nhận đơn:
+ *     FULL: 100% (order.total)
+ *     DEPOSIT_30: 30% (order.depositAmount)
+ *     amountToPay = max(0, target - grossPaid)
+ *     Nếu grossPaid >= target: isPayable: false (đã thanh toán đủ ngưỡng xác nhận)
+ * - Đơn PROCESSING / SHIPPING / DELIVERED:
+ *     Mục tiêu: thanh toán phần còn lại của đơn hàng (sau cọc hoặc theo sản lượng):
+ *     targetTotal = finalTotal ?? total
+ *     amountToPay = max(0, targetTotal - grossPaid)
+ *     Nếu grossPaid >= targetTotal: isPayable: false (đã tất toán)
+ * - grossPaid tính từ tất cả giao dịch: type === PAYMENT && status === DONE
+ */
+export function computePayableAmount(
+  order: {
+    status: OrderStatus
+    paymentOption: PaymentOption
+    total: number
+    depositAmount: number
+    finalTotal?: number | null
+  },
+  transactions: PaymentTransactionData[]
+): PayableAmountResult {
+  let grossPaid = 0
+  for (const tx of transactions) {
+    if (tx.type === TxType.PAYMENT && tx.status === TxStatus.DONE) {
+      grossPaid += tx.amount
+    }
+  }
+
+  if (order.status === OrderStatus.CANCELLED) {
+    return {
+      isPayable: false,
+      amountToPay: 0,
+      grossPaid,
+      reason: 'Đơn hàng đã ở trạng thái hủy (CANCELLED), không thể thanh toán',
+    }
+  }
+
+  if (order.status === OrderStatus.COMPLETED) {
+    return {
+      isPayable: false,
+      amountToPay: 0,
+      grossPaid,
+      reason: 'Đơn hàng đã hoàn tất (COMPLETED), không còn khoản cần thanh toán',
+    }
+  }
+
+  if (
+    order.status === OrderStatus.DRAFT ||
+    order.status === OrderStatus.PREORDER_WAITING
+  ) {
+    return {
+      isPayable: false,
+      amountToPay: 0,
+      grossPaid,
+      reason: 'Đơn hàng chưa đến bước thanh toán xác nhận',
+    }
+  }
+
+  if (order.status === OrderStatus.PENDING_CONFIRMATION) {
+    const targetConfirmation =
+      order.paymentOption === PaymentOption.FULL ? order.total : order.depositAmount
+    const remaining = Math.max(0, targetConfirmation - grossPaid)
+
+    if (remaining === 0) {
+      return {
+        isPayable: false,
+        amountToPay: 0,
+        grossPaid,
+        reason: 'Đơn hàng đã thanh toán đủ khoản cần xác nhận',
+      }
+    }
+
+    return {
+      isPayable: true,
+      amountToPay: remaining,
+      grossPaid,
+    }
+  }
+
+  // PROCESSING, SHIPPING, DELIVERED, COMPLAINT
+  const targetTotal = order.finalTotal ?? order.total
+  const remaining = Math.max(0, targetTotal - grossPaid)
+
+  if (remaining === 0) {
+    return {
+      isPayable: false,
+      amountToPay: 0,
+      grossPaid,
+      reason: 'Đơn hàng đã thanh toán toàn bộ giá trị',
+    }
+  }
+  return {
+    isPayable: true,
+    amountToPay: remaining,
+    grossPaid,
+  }
+}

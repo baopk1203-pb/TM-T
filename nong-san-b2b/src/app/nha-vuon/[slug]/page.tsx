@@ -71,6 +71,9 @@ export default async function FarmDetailPage({
                   Chứng nhận chất lượng ({farm.certificates.length}):
                 </span>
                 <div className="flex flex-wrap gap-2">
+                  {farm.certificates.length === 0 ? (
+                    <span className="text-xs text-slate-500 italic">Chưa có chứng nhận còn hiệu lực</span>
+                  ) : null}
                   {farm.certificates.map((cert) => {
                     const isExpired = new Date(cert.expiresAt) < currentDate
                     return (

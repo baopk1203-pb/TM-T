@@ -84,7 +84,7 @@ export function ProductCard({
 
             {preorderOpen && (
               <Badge className="bg-purple-600 text-white text-[10px] shadow-sm flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> Đặt trước
+                <Sparkles className="w-3 h-3" /> Vụ mới (Phase 6)
               </Badge>
             )}
 
@@ -124,7 +124,7 @@ export function ProductCard({
             <div className="bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-100 flex items-baseline justify-between">
               <div>
                 <span className="text-[11px] text-emerald-800 block">
-                  {preorderOpen && preorderPricePerKg ? 'Giá giữ chỗ vụ mới:' : 'Giá sỉ tại MOQ:'}
+                  {preorderOpen && preorderPricePerKg ? 'Giá dự kiến vụ mới:' : 'Giá sỉ tại MOQ:'}
                 </span>
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-base font-extrabold text-emerald-700">

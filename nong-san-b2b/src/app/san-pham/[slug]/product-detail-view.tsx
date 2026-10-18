@@ -27,6 +27,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { formatVND, gramsToKg } from '@/lib/money'
+import { formatActiveCertificatesSummary, filterActiveCertificates } from '@/lib/certificate'
 import { calculateCustomerUnitPrice } from '@/lib/domain/pricing'
 import { ProductOrderBox } from './product-order-box'
 
@@ -193,8 +194,8 @@ export function ProductDetailView({
               <span className="text-slate-500 block flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Tiêu chuẩn vườn:
               </span>
-              <strong className="text-emerald-700 text-sm font-bold">
-                {product.farm.certificates.map((c) => c.type).join(', ') || 'Đang xác minh'}
+              <strong className={filterActiveCertificates(product.farm.certificates).length > 0 ? "text-emerald-700 text-sm font-bold" : "text-slate-500 text-xs font-semibold"}>
+                {formatActiveCertificatesSummary(product.farm.certificates)}
               </strong>
             </div>
           </div>
@@ -268,19 +269,27 @@ export function ProductDetailView({
             hasPurchasedSample={hasPurchasedSample}
           />
 
-          {/* PRE-ORDER BANNER (IF APPLICABLE) */}
+          {/* PRE-ORDER BANNER (IF APPLICABLE - WEB-PRE-01) */}
           {product.preorderOpen && (
             <div className="p-4 rounded-2xl bg-purple-50 border border-purple-200 text-purple-900 space-y-2">
-              <div className="flex items-center gap-2 font-bold text-sm">
-                <Sparkles className="w-4 h-4 text-purple-600" />
-                Mở Đặt Trước Vụ Mùa (Giữ Giá Trần)
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold text-sm">
+                  <Sparkles className="w-4 h-4 text-purple-600" />
+                  Thông Tin Dự Kiến Vụ Mùa Tới
+                </div>
+                <Badge variant="outline" className="border-purple-300 text-purple-700 bg-white text-[11px]">
+                  Tính năng Đặt trước đang phát triển (Phase 6)
+                </Badge>
               </div>
               <p className="text-xs text-purple-800 leading-relaxed">
-                Đơn giá cọc giữ chỗ: <strong>{formatVND(product.preorderPricePerKg || 0)}/kg</strong> (Biên độ giá chốt vụ không quá ±{product.preorderBandPercent}%).
+                Đơn giá cọc giữ chỗ tham khảo: <strong>{formatVND(product.preorderPricePerKg || 0)}/kg</strong> (Biên độ giá chốt vụ dự kiến ±{product.preorderBandPercent}%).
                 {product.expectedHarvestFrom && (
-                  <span> Dự kiến thu hoạch từ: {new Date(product.expectedHarvestFrom).toLocaleDateString('vi-VN')}</span>
+                  <span> Dự kiến thu hoạch từ: {new Date(product.expectedHarvestFrom).toLocaleDateString('vi-VN')}.</span>
                 )}
               </p>
+              <div className="text-[11px] text-purple-700 italic pt-1 border-t border-purple-200">
+                * Hợp đồng đặt trước giữ giá trần chính thức sẽ khả dụng ở Phase 6. Hiện tại quý khách có thể đặt sỉ theo các quy cách sẵn có bên dưới.
+              </div>
             </div>
           )}
 
@@ -364,6 +373,11 @@ export function ProductDetailView({
           {/* Tab 2: Certificates */}
           <TabsContent value="certs" className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {product.farm.certificates.length === 0 ? (
+                <div className="p-6 rounded-2xl border border-slate-200 text-center text-slate-500 text-xs col-span-2 bg-slate-50">
+                  Chưa có chứng nhận nào được ghi nhận cho nhà vườn này.
+                </div>
+              ) : null}
               {product.farm.certificates.map((cert) => {
                 const isExpired = new Date(cert.expiresAt).getTime() < nowTimestamp
                 return (

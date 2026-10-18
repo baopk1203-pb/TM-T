@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { useCartStore } from '@/lib/cart-store'
 import { formatVND } from '@/lib/money'
+import { getCartDiscountDisplay, calculateCartSavings } from '@/lib/cart-summary'
 import { quoteCart, QuoteCartResponse } from '@/actions/cart'
 import { toast } from 'sonner'
 
@@ -447,12 +448,30 @@ export function CartView() {
                   </strong>
                 </div>
 
-                <div className="flex justify-between text-slate-600">
-                  <span>Chiết khấu nhóm đối tác:</span>
-                  <span className="font-medium text-emerald-700">
-                    {userDiscount > 0 ? `Đã trừ ${userDiscount}%` : '0%'}
-                  </span>
-                </div>
+                {(() => {
+                  const actualSavings = calculateCartSavings(quote)
+                  const discountDisplay = getCartDiscountDisplay({
+                    userDiscount,
+                    regularLineCount: regularLines.length,
+                    sampleLineCount: sampleLines.length,
+                    actualSavings,
+                  })
+                  return (
+                    <div className="space-y-0.5">
+                      <div className="flex justify-between text-slate-600">
+                        <span>{discountDisplay.label}</span>
+                        <span className="font-medium text-emerald-700">
+                          {discountDisplay.text}
+                        </span>
+                      </div>
+                      {discountDisplay.subtext && (
+                        <div className="text-[11px] text-amber-700 italic text-right">
+                          {discountDisplay.subtext}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 <div className="flex justify-between text-slate-600 pt-2 border-t border-slate-100">
                   <span>Phí vận chuyển:</span>

@@ -69,15 +69,19 @@ export default async function FarmsDirectoryPage() {
 
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                   <div className="flex flex-wrap gap-1">
-                    {f.certificates.map((cert) => (
-                      <Badge
-                        key={cert.id}
-                        variant="outline"
-                        className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-300"
-                      >
-                        <Award className="w-3 h-3 mr-0.5 inline" /> {cert.type}
-                      </Badge>
-                    ))}
+                    {f.certificates.length > 0 ? (
+                      f.certificates.map((cert) => (
+                        <Badge
+                          key={cert.id}
+                          variant="outline"
+                          className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-300"
+                        >
+                          <Award className="w-3 h-3 mr-0.5 inline" /> {cert.type}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-[11px] text-slate-400 italic">Chưa có chứng nhận còn hiệu lực</span>
+                    )}
                   </div>
 
                   <Link href={`/nha-vuon/${f.slug}`}>

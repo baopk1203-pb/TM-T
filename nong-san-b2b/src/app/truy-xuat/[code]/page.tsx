@@ -136,7 +136,7 @@ export default async function BatchTraceabilityPage({
 
                 <div className="space-y-3">
                   {farm.certificates.length === 0 ? (
-                    <p className="text-xs text-slate-500 italic">Vườn đang trong quá trình tái cấp chứng nhận</p>
+                    <p className="text-xs text-slate-500 italic">Chưa có chứng nhận còn hiệu lực</p>
                   ) : (
                     farm.certificates.map((cert) => {
                       const isExpired = new Date(cert.expiresAt) < currentDate

@@ -2,6 +2,7 @@ import { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getServerAuthSession } from '@/lib/auth'
+import { computePayableAmount } from '@/lib/domain/settlement'
 import { StorefrontHeader } from '@/components/shop/storefront-header'
 import { PaymentView } from './payment-view'
 
@@ -28,6 +29,7 @@ export default async function OrderPaymentPage({
     where: { code },
     include: {
       items: true,
+      transactions: true,
     },
   })
 
@@ -44,10 +46,14 @@ export default async function OrderPaymentPage({
   const accountNo = process.env.VIETQR_ACCOUNT_NO || '0901234567'
   const accountName = process.env.VIETQR_ACCOUNT_NAME || 'CONG TY CP NONG SAN B2B'
 
-  const amountToPay =
-    order.paymentOption === 'DEPOSIT_30' ? order.depositAmount : order.total
+  // Tính số tiền thực tế cần thanh toán sau khi trừ các giao dịch PAYMENT DONE
+  const payable = computePayableAmount(order, order.transactions)
+  const amountToPay = payable.amountToPay
 
-  const vietQrUrl = `https://img.vietqr.io/image/${bankBin}-${accountNo}-compact2.png?amount=${amountToPay}&addInfo=${order.code}&accountName=${encodeURIComponent(accountName)}`
+  const vietQrUrl =
+    payable.isPayable && amountToPay > 0
+      ? `https://img.vietqr.io/image/${bankBin}-${accountNo}-compact2.png?amount=${amountToPay}&addInfo=${order.code}&accountName=${encodeURIComponent(accountName)}`
+      : ''
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50/50">
@@ -58,6 +64,7 @@ export default async function OrderPaymentPage({
           order={order}
           vietQrUrl={vietQrUrl}
           bankInfo={{ bankBin, accountNo, accountName }}
+          payable={payable}
         />
       </main>
 

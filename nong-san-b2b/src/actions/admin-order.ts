@@ -9,7 +9,6 @@ import {
   TxType,
   TxStatus,
   TxMethod,
-  CancelActor,
 } from '@prisma/client'
 import {
   canTransition,
@@ -40,6 +39,13 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
     }
 
     const result = await db.$transaction(async (tx) => {
+      // Khóa dòng nếu database hỗ trợ (PostgreSQL SELECT ... FOR UPDATE)
+      try {
+        await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${input.orderId} FOR UPDATE`
+      } catch {
+        // Bỏ qua nếu môi trường test / driver không hỗ trợ raw query
+      }
+
       const order = await tx.order.findUnique({
         where: { id: input.orderId },
         include: {
@@ -49,6 +55,15 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
 
       if (!order) {
         throw new Error('Không tìm thấy đơn hàng')
+      }
+
+      // Kiểm tra trạng thái: Không ghi nhận thanh toán vào đơn đã hủy hoặc đã hoàn tất
+      if (order.status === OrderStatus.CANCELLED) {
+        throw new Error('Đơn hàng đã ở trạng thái hủy (CANCELLED), không thể ghi nhận thanh toán')
+      }
+
+      if (order.status === OrderStatus.COMPLETED) {
+        throw new Error('Đơn hàng đã hoàn tất (COMPLETED), không thể ghi nhận thanh toán')
       }
 
       // Tạo giao dịch thanh toán thành công
@@ -141,57 +156,25 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
   }
 }
 
+import { processExpiredOrders } from '@/lib/services/order-expiration'
+
 /**
- * Quét và hủy các đơn PENDING_CONFIRMATION quá hạn 24h mà chưa thanh toán (paid = 0)
+ * Server Action: Quét và hủy các đơn PENDING_CONFIRMATION quá hạn 24h mà chưa thanh toán (paid = 0)
+ * - Bảo vệ bằng requireAdmin() ở server-side (SRC-SEC-07)
+ * - Nút "Quét đơn quá hạn" tại trang Admin tiếp tục sử dụng action này an toàn
  */
 export async function expireOrdersJob() {
-  const now = new Date()
-
-  // Tìm các đơn PENDING_CONFIRMATION có paymentDueAt < now
-  const overdueOrders = await db.order.findMany({
-    where: {
-      status: OrderStatus.PENDING_CONFIRMATION,
-      paymentDueAt: { lt: now },
-    },
-    include: {
-      transactions: {
-        where: {
-          type: TxType.PAYMENT,
-          status: TxStatus.DONE,
-        },
-      },
-    },
-  })
-
-  let expiredCount = 0
-
-  for (const order of overdueOrders) {
-    // Chỉ hủy nếu chưa thanh toán đồng nào (paid = 0)
-    const paid = order.transactions.reduce((sum, tx) => sum + tx.amount, 0)
-    if (paid === 0) {
-      await db.$transaction(async (tx) => {
-        await tx.order.update({
-          where: { id: order.id },
-          data: {
-            status: OrderStatus.CANCELLED,
-            cancelledBy: CancelActor.SYSTEM,
-            cancelReason: 'Quá hạn thanh toán 24h mà hệ thống chưa nhận được tiền',
-          },
-        })
-
-        await recordOrderEvent(tx, {
-          orderId: order.id,
-          type: 'PAYMENT_EXPIRED',
-          fromStatus: OrderStatus.PENDING_CONFIRMATION,
-          toStatus: OrderStatus.CANCELLED,
-          note: 'Hệ thống tự động hủy đơn do quá hạn thanh toán 24h',
-        })
-      })
-
-      expiredCount++
+  try {
+    await requireAdmin()
+    const result = await processExpiredOrders()
+    revalidatePath('/admin/don-hang')
+    return result
+  } catch (error) {
+    console.error('Error running expireOrdersJob action:', error)
+    return {
+      success: false,
+      expiredCount: 0,
+      error: error instanceof Error ? error.message : 'Bạn không có quyền thực hiện thao tác này',
     }
   }
-
-  revalidatePath('/admin/don-hang')
-  return { success: true, expiredCount }
 }

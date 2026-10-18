@@ -3,9 +3,10 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 import { Role } from '@prisma/client'
+import { getAuthSecret } from '@/lib/auth-config'
 
 export const authOptions: NextAuthOptions = {
-  secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || 'nong-san-b2b-super-secret-key-change-in-production-123456',
+  secret: getAuthSecret(),
   session: {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 ngày
@@ -81,8 +82,11 @@ export const authOptions: NextAuthOptions = {
       return session
     },
     async redirect({ url, baseUrl }) {
-      // Cho phép relative callback URLs
-      if (url.startsWith('/')) return `${baseUrl}${url}`
+      // Cho phép relative callback URLs an toàn (ngăn chặn open redirect dạng //evil.com)
+      if (url.startsWith('/')) {
+        if (url.startsWith('//')) return baseUrl
+        return `${baseUrl}${url}`
+      }
       // Cho phép callback URLs trên cùng host/origin
       try {
         const parsedUrl = new URL(url)

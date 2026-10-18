@@ -66,6 +66,7 @@ describe('Server Action: confirmPayment() - REGRESSION-01 Test Suite', () => {
     )
 
     const txMock = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
       order: {
         findUnique: vi.fn().mockResolvedValue(initialOrder),
         update: mockOrderUpdate,
@@ -249,5 +250,58 @@ describe('Server Action: confirmPayment() - REGRESSION-01 Test Suite', () => {
       where: { id: 'order-case-e' },
       data: { status: OrderStatus.PROCESSING },
     })
+  })
+
+  it('Case D (Revision 01) — Từ chối xác nhận thanh toán khi đơn hàng đã bị hủy (CANCELLED)', async () => {
+    const cancelledOrderData = {
+      id: 'order-cancelled-cron',
+      code: 'DH-CANCELLED',
+      status: OrderStatus.CANCELLED,
+      paymentOption: PaymentOption.FULL,
+      total: 15277500,
+      depositAmount: 4584000,
+      transactions: [],
+    }
+
+    const { mockOrderUpdate, mockTxCreate } = setupTxMock(cancelledOrderData)
+
+    const result = await confirmPayment({
+      orderId: 'order-cancelled-cron',
+      amount: 15277500,
+      method: TxMethod.BANK_TRANSFER,
+      reference: 'FT-LATE',
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Đơn hàng đã ở trạng thái hủy (CANCELLED)')
+    expect(mockTxCreate).not.toHaveBeenCalled()
+    expect(mockOrderUpdate).not.toHaveBeenCalled()
+    expect(recordOrderEvent).not.toHaveBeenCalled()
+  })
+
+  it('Case D2 (Revision 01) — Từ chối xác nhận thanh toán khi đơn hàng đã hoàn tất (COMPLETED)', async () => {
+    const completedOrderData = {
+      id: 'order-completed',
+      code: 'DH-COMPLETED',
+      status: OrderStatus.COMPLETED,
+      paymentOption: PaymentOption.FULL,
+      total: 15277500,
+      depositAmount: 4584000,
+      transactions: [],
+    }
+
+    const { mockOrderUpdate, mockTxCreate } = setupTxMock(completedOrderData)
+
+    const result = await confirmPayment({
+      orderId: 'order-completed',
+      amount: 15277500,
+      method: TxMethod.BANK_TRANSFER,
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Đơn hàng đã hoàn tất (COMPLETED)')
+    expect(mockTxCreate).not.toHaveBeenCalled()
+    expect(mockOrderUpdate).not.toHaveBeenCalled()
+    expect(recordOrderEvent).not.toHaveBeenCalled()
   })
 })

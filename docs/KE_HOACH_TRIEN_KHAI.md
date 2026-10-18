@@ -585,18 +585,18 @@ flowchart LR
 
 ## Phase 6 – Đơn định kỳ, Pre-order & Dashboard khách
 
-- [ ] `recurring.ts`: `upcomingDeliveryDates(schedule, today, leadTime)` và `shouldCreateDraft(...)` kèm test (an toàn khi chạy lặp, không tạo trùng).
-- [ ] `/tai-khoan/dinh-ky`: tạo lịch từ đơn COMPLETED hoặc thủ công; bật/tắt; sửa thứ, khung giờ, địa chỉ, số lượng.
-- [ ] Job `/api/cron/recurring` + nút Admin "Chạy sinh đơn định kỳ", tạo đơn `DRAFT` (`type = RECURRING`) và ghi `RECURRING_DRAFT_CREATED`.
-- [ ] Khách xác nhận đơn nháp: tính lại giá, cho sửa số lượng, chọn thanh toán, chuyển `PENDING_CONFIRMATION` rồi hiện VietQR.
-- [ ] Job hủy đơn nháp quá hạn (gộp chung vào `expire-orders`).
-- [ ] `preorder.ts`: `checkPriceBand()`, `computePreorderShortfallRefund()` kèm test (mục 7.5).
-- [ ] Storefront pre-order: trên trang sản phẩm `preorderOpen` có khối "Đặt trước vụ mùa" (giá dự kiến, biên độ ±%, kỳ thu hoạch, cọc 30% bắt buộc), checkout riêng không chọn ngày.
-- [ ] Admin pre-order: danh sách đơn `PREORDER_WAITING` theo sản phẩm; form **Vào vụ** (nhập giá chốt và khối lượng đáp ứng cho từng đơn hoặc hàng loạt), ghi `PREORDER_HARVEST_READY`; xử lý theo 3.10.
-- [ ] Khách: khối "Cần bạn quyết định" (pre-order ngoài biên độ: Chấp nhận/Hủy).
-- [ ] `/tai-khoan` dashboard: thẻ thống kê (đơn đang xử lý, chờ thanh toán, đơn nháp chờ xác nhận, pre-order) và danh sách đơn gần đây.
+- [x] `recurring.ts`: `upcomingDeliveryDates(schedule, today, leadTime)` và `shouldCreateDraft(...)` kèm test (an toàn khi chạy lặp, không tạo trùng).
+- [x] `/tai-khoan/dinh-ky`: tạo lịch từ đơn COMPLETED hoặc thủ công; bật/tắt; sửa thứ, khung giờ, địa chỉ, số lượng.
+- [x] Job `/api/cron/recurring` + nút Admin "Chạy sinh đơn định kỳ", tạo đơn `DRAFT` (`type = RECURRING`) và ghi `RECURRING_DRAFT_CREATED`.
+- [x] Khách xác nhận đơn nháp: tính lại giá, cho sửa số lượng, chọn thanh toán, chuyển `PENDING_CONFIRMATION` rồi hiện VietQR.
+- [x] Job hủy đơn nháp quá hạn (gộp chung vào `expire-orders`).
+- [x] `preorder.ts`: `checkPriceBand()`, `computePreorderShortfallRefund()` kèm test (mục 7.5).
+- [x] Storefront pre-order: trên trang sản phẩm `preorderOpen` có khối "Đặt trước vụ mùa" (giá dự kiến, biên độ ±%, kỳ thu hoạch, cọc 30% bắt buộc), checkout riêng không chọn ngày.
+- [x] Admin pre-order: danh sách đơn `PREORDER_WAITING` theo sản phẩm; form **Vào vụ** (nhập giá chốt và khối lượng đáp ứng cho từng đơn hoặc hàng loạt), ghi `PREORDER_HARVEST_READY`; xử lý theo 3.10.
+- [x] Khách: khối "Cần bạn quyết định" (pre-order ngoài biên độ: Chấp nhận/Hủy).
+- [x] `/tai-khoan` dashboard: 4 thẻ thống kê tách biệt không đếm trùng (đơn đang xử lý, chờ thanh toán, đơn nháp chờ xác nhận, pre-order), khối hành động ưu tiên và danh sách đơn gần đây.
 
-**DoD:** tạo lịch T2/T5, chạy job 2 lần chỉ ra đúng số đơn nháp. Kịch bản pre-order trong biên độ, ngoài biên độ và mất mùa một phần đều chạy đúng số tiền.
+**DoD:** Tạo lịch T2/T5, chạy job 2 lần chỉ ra đúng số đơn nháp (idempotent). Kịch bản pre-order trong biên độ, ngoài biên độ và mất mùa một phần/toàn phần đều chạy đúng số tiền cọc/hoàn cọc. Dashboard hiển thị 4 nhóm KPI mutually exclusive và dẫn đúng luồng tác nghiệp. Đã PASS toàn bộ Local/Static QA (Batch 6A: `9cd484a`, Batch 6B: `e6208a5`, Batch 6C: `d0924fb`). Tổng 283/283 unit tests PASS. Beta Runtime E2E chưa được xác minh.
 
 ---
 
@@ -782,7 +782,7 @@ interface NotificationChannel { name: 'EMAIL' | 'ZNS'; send(msg: { to: string; t
 | 3 – Giỏ hàng & Engine giá | ✅ Hoàn thành | Đã hoàn thành pure domain findTier & priceCart, toàn bộ bộ test case P1–P8 (100% PASS); Zustand cart store có persist localStorage; Server action quoteCart & checkSamplePurchased; Bộ chọn quy cách xem trước giá realtime & thanh tiến trình bậc giá tại /san-pham/[slug]; Trang giỏ hàng /gio-hang nhóm theo sản phẩm, kiểm tra MOQ & thanh toán; Cart badge động trên Header; toàn bộ lint, typecheck, test, build PASS. |
 | 4 – Checkout & Thanh toán | ✅ Hoàn thành | Đã hoàn thành earliestDeliveryDate (leadTime & cutoff 17h), checkCapacity & weekly Monday, zeroShippingCalculator mock (chờ Phase 8), recordOrderEvent (chờ Phase 9), computeDepositAmount (làm tròn lên nghìn đồng test case S1) & derivePaymentStatus; Server action placeOrder trong 1 transaction an toàn (tính lại giá server-side, kiểm tra MOQ/sample/capacity, snapshot địa chỉ & sản phẩm, sinh mã DH-YYMMDD-XXXX); Giao diện checkout 5 bước /thanh-toan; Trang thanh toán VietQR /thanh-toan/[code] với đếm ngược 24h & mã QR động; Trang Admin quản lý đơn /admin/don-hang với lọc/tìm kiếm & nút quét quá hạn; Trang Admin chi tiết /admin/don-hang/[code] với modal xác nhận đã nhận tiền; Cron /api/cron/expire-orders bảo vệ bằng CRON_SECRET; Trang chi tiết đơn khách /tai-khoan/don-hang/[code]; Toàn bộ 54 unit tests, lint, typecheck, build 100% PASS. |
 | 5 – Vòng đời đơn & Quyết toán | ✅ Hoàn thành | Đã hoàn thành máy trạng thái order-state.ts (canTransition, applyTransition với 23 unit tests); computeCancellation (S2-S5), computeWeightSettlement (W1-W3 với validate 105%), computeComplaintCompensation (C1-C3 với hao hụt 3% và hạn 24h); Server actions order-lifecycle.ts; UI Admin /admin/don-hang/[code] hiển thị nút theo trạng thái, modal bàn giao vận chuyển kèm gán lô, modal nhập khối lượng thực & quyết toán live, modal hủy đơn (100% hoàn tiền), xác nhận hoàn tiền; UI Admin /admin/khieu-nai xử lý khiếu nại (xác minh kg, bồi hoàn tiền hoặc bù hàng); UI Khách /tai-khoan/don-hang/[code] tự refresh 30s, cảnh báo mất cọc khi hủy ở PROCESSING, form gửi khiếu nại kèm upload ảnh; Toàn bộ 88 tests, lint, typecheck, build 100% PASS. |
-| 6 – Định kỳ, Pre-order, Dashboard | ⬜ | |
+| 6 – Định kỳ, Pre-order, Dashboard | 🟨 Code Complete / Local QA Accepted / Beta Validation Pending | Batch 6A (Recurring Orders - commit `9cd484a`), Batch 6B (Pre-order Workflow - commit `e6208a5`), Batch 6C (Customer Dashboard & Integration Fixes - commit `d0924fb`) đã hoàn thành và PASS Local/Static QA. Tổng 283/283 unit tests PASS (24 test suites). Lint, typecheck, production build PASS. Đang chờ Product Owner xác nhận nghiệm thu Demo trên Vercel Beta Runtime. |
 | 7 – CRM & Báo cáo | ⬜ | |
 | 8 – Vận chuyển | ⬜ | |
 | 9 – Thông báo, Hoàn thiện, Deploy | ⬜ | |

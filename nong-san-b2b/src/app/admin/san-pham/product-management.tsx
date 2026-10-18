@@ -91,10 +91,10 @@ export function ProductManagement({
 
   // Packagings State
   const [packagings, setPackagings] = useState<
-    { name: string; weightKg: number; isSample: boolean; samplePrice: number }[]
+    { id?: string; name: string; weightKg: number; isSample: boolean; samplePrice: number; isActive: boolean }[]
   >([
-    { name: 'Thùng carton 10kg', weightKg: 10, isSample: false, samplePrice: 0 },
-    { name: 'Rổ nhựa 20kg', weightKg: 20, isSample: false, samplePrice: 0 },
+    { name: 'Thùng carton 10kg', weightKg: 10, isSample: false, samplePrice: 0, isActive: true },
+    { name: 'Rổ nhựa 20kg', weightKg: 20, isSample: false, samplePrice: 0, isActive: true },
   ])
 
   // Price Tiers State
@@ -138,8 +138,8 @@ export function ProductManagement({
     setHarvestFrom('')
     setHarvestTo('')
     setPackagings([
-      { name: 'Thùng carton 10kg', weightKg: 10, isSample: false, samplePrice: 0 },
-      { name: 'Rổ nhựa 20kg', weightKg: 20, isSample: false, samplePrice: 0 },
+      { name: 'Thùng carton 10kg', weightKg: 10, isSample: false, samplePrice: 0, isActive: true },
+      { name: 'Rổ nhựa 20kg', weightKg: 20, isSample: false, samplePrice: 0, isActive: true },
     ])
     setTiers([
       { minKg: 50, pricePerKg: 80000 },
@@ -171,12 +171,24 @@ export function ProductManagement({
       p.expectedHarvestTo ? new Date(p.expectedHarvestTo).toISOString().split('T')[0] : ''
     )
     setPackagings(
-      p.packagings.map((pkg) => ({
-        name: pkg.name,
-        weightKg: gramsToKg(pkg.weightGrams),
-        isSample: pkg.isSample,
-        samplePrice: pkg.samplePrice || 0,
-      }))
+      p.packagings.length > 0
+        ? p.packagings.map((pkg) => ({
+            id: pkg.id,
+            name: pkg.name,
+            weightKg: gramsToKg(pkg.weightGrams),
+            isSample: pkg.isSample,
+            samplePrice: pkg.samplePrice || 0,
+            isActive: pkg.isActive,
+          }))
+        : [
+            {
+              name: 'Thùng carton 10kg',
+              weightKg: 10,
+              isSample: false,
+              samplePrice: 0,
+              isActive: true,
+            },
+          ]
     )
     setTiers(
       p.priceTiers.map((t) => ({
@@ -191,7 +203,7 @@ export function ProductManagement({
   const addPackagingRow = () => {
     setPackagings((prev) => [
       ...prev,
-      { name: `Quy cách mới`, weightKg: 10, isSample: false, samplePrice: 0 },
+      { name: `Quy cách mới`, weightKg: 10, isSample: false, samplePrice: 0, isActive: true },
     ])
   }
 
@@ -261,10 +273,12 @@ export function ProductManagement({
       expectedHarvestFrom: preorderOpen && harvestFrom ? new Date(harvestFrom) : null,
       expectedHarvestTo: preorderOpen && harvestTo ? new Date(harvestTo) : null,
       packagings: packagings.map((pkg) => ({
+        id: pkg.id,
         name: pkg.name.trim(),
         weightGrams: kgToGrams(pkg.weightKg),
         isSample: pkg.isSample,
         samplePrice: pkg.isSample ? pkg.samplePrice : null,
+        isActive: pkg.isActive,
       })),
       priceTiers: tiers.map((t) => ({
         minGrams: kgToGrams(t.minKg),
@@ -474,11 +488,16 @@ export function ProductManagement({
                         key={idx}
                         variant="outline"
                         className={`text-[11px] ${
-                          pkg.isSample ? 'border-amber-300 bg-amber-50 text-amber-800' : ''
+                          !pkg.isActive
+                            ? 'border-slate-200 bg-slate-100 text-slate-400 line-through'
+                            : pkg.isSample
+                            ? 'border-amber-300 bg-amber-50 text-amber-800'
+                            : ''
                         }`}
                       >
                         {pkg.name} ({gramsToKg(pkg.weightGrams)}kg)
                         {pkg.isSample && ` • Mẫu ${formatVND(pkg.samplePrice || 0)}`}
+                        {!pkg.isActive && ' (Đã ngừng)'}
                       </Badge>
                     ))}
                   </div>
@@ -817,7 +836,30 @@ export function ProductManagement({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4 pt-1">
+                    <div className="flex flex-wrap items-center gap-4 pt-1">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={pkg.isActive}
+                          onChange={(e) => {
+                            const checked = e.target.checked
+                            setPackagings((prev) =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, isActive: checked } : item
+                              )
+                            )
+                          }}
+                          className="rounded border-slate-300 text-emerald-600 w-3.5 h-3.5"
+                        />
+                        <span
+                          className={`font-medium ${
+                            pkg.isActive ? 'text-emerald-700' : 'text-slate-500 line-through'
+                          }`}
+                        >
+                          {pkg.isActive ? 'Đang mở bán' : 'Ngừng bán (Inactive)'}
+                        </span>
+                      </label>
+
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input
                           type="checkbox"

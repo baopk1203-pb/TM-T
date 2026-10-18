@@ -180,7 +180,8 @@ export function computeCancellation(
     paymentOption?: PaymentOption | string
   },
   paid: number,
-  cancelledBy: CancelActor | 'CUSTOMER' | 'SELLER' | 'SYSTEM'
+  cancelledBy: CancelActor | 'CUSTOMER' | 'SELLER' | 'SYSTEM',
+  isOutOfBandRejection: boolean = false
 ): {
   forfeitAmount: number
   refundAmount: number
@@ -227,6 +228,13 @@ export function computeCancellation(
     cancelledBy === CancelActor.CUSTOMER &&
     order.status === OrderStatus.PREORDER_WAITING
   ) {
+    if (isOutOfBandRejection) {
+      return {
+        forfeitAmount: 0,
+        refundAmount: paid,
+        isDepositForfeited: false,
+      }
+    }
     const forfeit = Math.min(paid, policyDeposit)
     const refund = Math.max(0, paid - forfeit)
     return {

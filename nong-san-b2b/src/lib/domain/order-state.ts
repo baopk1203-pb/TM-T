@@ -102,6 +102,19 @@ export function canTransition(
       return { ok: false, reason: `Không thể chuyển từ DRAFT sang ${toStatus}` }
 
     case OrderStatus.PENDING_CONFIRMATION:
+      if (toStatus === OrderStatus.PREORDER_WAITING) {
+        if (actor !== 'SELLER') {
+          return { ok: false, reason: 'Chỉ ban quản trị (SELLER) mới có quyền xác nhận cọc đơn đặt trước' }
+        }
+        const requiredAmount = order.depositAmount
+        if (paid < requiredAmount) {
+          return {
+            ok: false,
+            reason: `Chưa nhận đủ tiền đặt cọc tối thiểu (${paid.toLocaleString('vi-VN')} đ < ${requiredAmount.toLocaleString('vi-VN')} đ)`,
+          }
+        }
+        return { ok: true }
+      }
       if (toStatus === OrderStatus.PROCESSING) {
         if (actor !== 'SELLER') {
           return { ok: false, reason: 'Chỉ ban quản trị (SELLER) mới có quyền duyệt đơn sang PROCESSING' }
@@ -122,8 +135,11 @@ export function canTransition(
 
     case OrderStatus.PREORDER_WAITING:
       if (toStatus === OrderStatus.PROCESSING) {
-        if (actor !== 'SELLER') {
-          return { ok: false, reason: 'Chỉ ban quản trị mới được chuyển đơn đặt trước vào vụ mùa' }
+        if (actor !== 'SELLER' && actor !== 'CUSTOMER') {
+          return {
+            ok: false,
+            reason: 'Chỉ ban quản trị hoặc khách hàng mới được chuyển đơn đặt trước vào xử lý',
+          }
         }
         return { ok: true }
       }

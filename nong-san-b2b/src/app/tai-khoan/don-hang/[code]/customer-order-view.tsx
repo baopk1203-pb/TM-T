@@ -17,6 +17,7 @@ import {
   CalendarDays,
   CheckCircle2,
   ArrowRight,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +36,8 @@ import {
 import { formatVND } from '@/lib/money'
 import { cancelOrder, submitComplaint } from '@/actions/order-lifecycle'
 import { confirmRecurringDraft, createRecurringFromOrder } from '@/actions/recurring'
+import { customerDecidePreorder } from '@/actions/preorder'
+import { checkPriceBand } from '@/lib/domain/preorder'
 import { quoteCart } from '@/actions/cart'
 import { PriceCartResult } from '@/lib/domain/pricing'
 import { computeDepositAmount } from '@/lib/domain/settlement'
@@ -44,6 +47,7 @@ import { OrderStatus, ComplaintStatus, PaymentOption } from '@prisma/client'
 export interface CustomerOrderData {
   id: string
   code: string
+  type?: string
   status: OrderStatus
   paymentOption: string
   subtotal: number
@@ -60,6 +64,9 @@ export interface CustomerOrderData {
   cancelledBy: string | null
   cancelReason: string | null
   customerNote?: string | null
+  preorderFinalPricePerKg?: number | null
+  preorderFulfilledGrams?: number | null
+  preorderCustomerDecision?: string | null
   addressSnapshot: {
     recipient?: string
     phone?: string
@@ -78,6 +85,8 @@ export interface CustomerOrderData {
     quantity: number
     orderedGrams: number
     unitPricePerKg: number
+    preorderPricePerKg?: number | null
+    preorderBandPercent?: number
     lineTotal: number
     actualGrams: number | null
     finalLineTotal: number | null
@@ -346,6 +355,43 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
     })
   }
 
+  // Pre-order helpers and decision handler
+  const firstItem = order.items[0]
+  const basePreorderPrice = firstItem?.preorderPricePerKg || firstItem?.unitPricePerKg || 0
+  const bandPercent = firstItem?.preorderBandPercent ?? 10
+  const priceBandCheck =
+    order.preorderFinalPricePerKg && basePreorderPrice > 0
+      ? checkPriceBand(basePreorderPrice, order.preorderFinalPricePerKg, bandPercent)
+      : null
+
+  const handleCustomerDecide = (decision: 'ACCEPT' | 'CANCEL') => {
+    startTransition(async () => {
+      try {
+        const res = await customerDecidePreorder({
+          orderId: order.id,
+          decision,
+        })
+
+        if (res.success) {
+          if (decision === 'ACCEPT') {
+            toast.success('Bạn đã đồng ý giá chốt vụ mùa. Đơn hàng chuyển sang Đang xử lý!')
+          } else {
+            toast.info(
+              `Bạn đã từ chối nhận hàng. Đơn đã hủy và tạo lệnh hoàn trả ${formatVND(
+                res.refundAmount || 0
+              )} tiền cọc!`
+            )
+          }
+          router.refresh()
+        } else {
+          toast.error(res.error || 'Có lỗi xảy ra khi xử lý quyết định')
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Có lỗi xảy ra')
+      }
+    })
+  }
+
   // Check 24h complaint deadline
   const canComplaint = (() => {
     if (order.status !== OrderStatus.DELIVERED || !order.deliveredAt) return false
@@ -428,6 +474,7 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
 
           {/* Hủy đơn hàng */}
           {(order.status === OrderStatus.PENDING_CONFIRMATION ||
+            order.status === OrderStatus.PREORDER_WAITING ||
             order.status === OrderStatus.PROCESSING) && (
             <Button
               variant="outline"
@@ -440,6 +487,116 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
           )}
         </div>
       </div>
+
+      {/* Khối quyết định đơn giá mùa vụ đặt trước (PREORDER_WAITING có preorderFinalPricePerKg) */}
+      {order.type === 'PREORDER' &&
+        order.status === OrderStatus.PREORDER_WAITING &&
+        order.preorderFinalPricePerKg && (
+          <Card className="border-2 border-purple-300 bg-linear-to-br from-purple-50/70 via-white to-purple-50/40 shadow-md rounded-2xl overflow-hidden">
+            <CardHeader className="pb-3 border-b border-purple-100 bg-purple-700 text-white">
+              <CardTitle className="text-sm sm:text-base font-bold flex items-center justify-between flex-wrap gap-2">
+                <span className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+                  Thông Báo Thu Hoạch Vụ Mùa & Quyết Định Đơn Giá
+                </span>
+                <Badge className="bg-purple-900 border-purple-400 text-purple-100 text-xs">
+                  Biên độ cam kết: ±{bandPercent}%
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-5 sm:p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-purple-50/80 rounded-xl border border-purple-100 text-purple-950">
+                <div>
+                  <span className="text-slate-500 block font-medium">Đơn giá đặt trước ban đầu:</span>
+                  <strong className="text-sm font-bold text-slate-800">
+                    {formatVND(basePreorderPrice)}/kg
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 block font-medium">Đơn giá thu hoạch thực tế:</span>
+                  <div className="flex items-baseline gap-1.5">
+                    <strong className="text-base font-black text-purple-900">
+                      {formatVND(order.preorderFinalPricePerKg)}/kg
+                    </strong>
+                    {priceBandCheck && (
+                      <span
+                        className={`font-semibold text-xs ${
+                          priceBandCheck.inBand ? 'text-emerald-700' : 'text-amber-700'
+                        }`}
+                      >
+                        ({priceBandCheck.inBand ? 'Trong' : 'Vượt'} biên độ {priceBandCheck.diffPercent}%)
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-slate-500 block font-medium">Sản lượng giao thực tế:</span>
+                  <strong className="text-sm font-bold text-slate-800">
+                    {(order.preorderFulfilledGrams || order.items[0]?.orderedGrams || 0) / 1000} kg
+                  </strong>
+                </div>
+              </div>
+
+              {order.preorderCustomerDecision ? (
+                <div
+                  className={`p-3.5 rounded-xl border font-semibold flex items-center gap-2 text-xs ${
+                    order.preorderCustomerDecision === 'ACCEPT'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-rose-50 border-rose-200 text-rose-800'
+                  }`}
+                >
+                  {order.preorderCustomerDecision === 'ACCEPT' ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Bạn đã chấp nhận đơn giá mới. Đơn hàng đang được chuẩn bị đóng gói và giao hàng.</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-4 h-4 text-rose-600" />
+                      <span>Bạn đã từ chối đơn giá mới. Đơn hàng đã hủy và toàn bộ tiền cọc đang được hoàn trả 100%.</span>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 leading-relaxed">
+                    <strong>Lưu ý quyền lợi khách hàng:</strong> Do giá mùa vụ thực tế biến động{' '}
+                    <strong>+{priceBandCheck?.diffPercent ?? 0}%</strong> (vượt biên độ thỏa thuận ±{bandPercent}%), quý khách có toàn quyền:
+                    <ul className="list-disc pl-5 mt-1 space-y-0.5">
+                      <li>
+                        <strong>Chấp nhận:</strong> Tiếp tục nhận hàng theo đơn giá thu hoạch thực tế ({formatVND(order.preorderFinalPricePerKg)}/kg).
+                      </li>
+                      <li>
+                        <strong>Từ chối:</strong> Hủy đơn hàng và được hoàn lại{' '}
+                        <strong>100% tiền cọc</strong> đã thanh toán (không phạt cọc).
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-3 pt-1">
+                    <Button
+                      onClick={() => handleCustomerDecide('ACCEPT')}
+                      disabled={isPending}
+                      className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-sm h-10 px-5"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Chấp nhận giá mới & Giao hàng
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleCustomerDecide('CANCEL')}
+                      disabled={isPending}
+                      className="w-full sm:w-auto border-rose-300 text-rose-700 hover:bg-rose-50 font-bold text-xs gap-1.5 h-10 px-5"
+                    >
+                      <XCircle className="w-4 h-4 text-rose-600" />
+                      Từ chối & Hủy nhận lại 100% cọc
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
       {/* Khối xác nhận đơn nháp định kỳ (DRAFT -> PENDING_CONFIRMATION) */}
       {order.status === OrderStatus.DRAFT && (
@@ -1052,6 +1209,8 @@ function CustomerStatusBadge({ status }: { status: OrderStatus }) {
       return <Badge className="bg-amber-100 text-amber-900 border-amber-300">Đơn nháp định kỳ</Badge>
     case 'PENDING_CONFIRMATION':
       return <Badge className="bg-amber-100 text-amber-800 border-amber-200">Chờ xác nhận</Badge>
+    case 'PREORDER_WAITING':
+      return <Badge className="bg-purple-100 text-purple-800 border-purple-200 font-semibold">Chờ thu hoạch</Badge>
     case 'PROCESSING':
       return <Badge className="bg-blue-100 text-blue-800 border-blue-200">Đang xử lý</Badge>
     case 'SHIPPING':

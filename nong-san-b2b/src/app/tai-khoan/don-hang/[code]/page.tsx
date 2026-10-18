@@ -27,6 +27,11 @@ export default async function CustomerOrderDetailPage({
       items: {
         include: {
           batch: true,
+          packaging: {
+            include: {
+              product: true,
+            },
+          },
         },
       },
       transactions: {
@@ -73,6 +78,7 @@ export default async function CustomerOrderDetailPage({
   const orderData: CustomerOrderData = {
     id: order.id,
     code: order.code,
+    type: order.type,
     status: order.status,
     paymentOption: order.paymentOption,
     subtotal: order.subtotal,
@@ -89,6 +95,9 @@ export default async function CustomerOrderDetailPage({
     cancelledBy: order.cancelledBy,
     cancelReason: order.cancelReason,
     customerNote: order.customerNote,
+    preorderFinalPricePerKg: order.preorderFinalPricePerKg,
+    preorderFulfilledGrams: order.preorderFulfilledGrams,
+    preorderCustomerDecision: order.preorderCustomerDecision,
     addressSnapshot: {
       recipient: address.recipient,
       phone: address.phone,
@@ -107,6 +116,8 @@ export default async function CustomerOrderDetailPage({
       quantity: item.quantity,
       orderedGrams: item.orderedGrams,
       unitPricePerKg: item.unitPricePerKg,
+      preorderPricePerKg: item.packaging?.product?.preorderPricePerKg ?? item.unitPricePerKg,
+      preorderBandPercent: item.packaging?.product?.preorderBandPercent ?? 10,
       lineTotal: item.lineTotal,
       actualGrams: item.actualGrams,
       finalLineTotal: item.finalLineTotal,

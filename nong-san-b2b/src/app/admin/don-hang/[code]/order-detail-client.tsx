@@ -21,6 +21,7 @@ import {
   QrCode,
   ExternalLink,
   ShieldAlert,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -45,6 +46,8 @@ import {
   confirmRefundDone,
   completeOrder,
 } from '@/actions/order-lifecycle'
+import { adminProcessHarvest } from '@/actions/preorder'
+import { checkPriceBand, computePreorderShortfallRefund } from '@/lib/domain/preorder'
 import { toast } from 'sonner'
 import {
   OrderStatus,
@@ -52,6 +55,7 @@ import {
   TxType,
   TxStatus,
   ComplaintStatus,
+  TimeSlot,
 } from '@prisma/client'
 
 export interface OrderDetailData {
@@ -74,6 +78,9 @@ export interface OrderDetailData {
   cancelledBy: string | null
   cancelReason: string | null
   customerNote: string | null
+  preorderFinalPricePerKg?: number | null
+  preorderFulfilledGrams?: number | null
+  preorderCustomerDecision?: string | null
   createdAt: string
   addressSnapshot: {
     recipient: string
@@ -101,6 +108,8 @@ export interface OrderDetailData {
     quantity: number
     orderedGrams: number
     unitPricePerKg: number
+    preorderPricePerKg?: number | null
+    preorderBandPercent?: number
     lineTotal: number
     actualGrams: number | null
     finalLineTotal: number | null
@@ -222,6 +231,85 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
   // Cancel form state
   const [cancelReasonOption, setCancelReasonOption] = useState(cancelReasons[0])
   const [cancelReasonCustom, setCancelReasonCustom] = useState('')
+
+  // Harvest form state for Pre-order
+  const firstItem = order.items[0]
+  const basePreorderPrice = firstItem?.preorderPricePerKg || firstItem?.unitPricePerKg || 0
+  const bandPercent = firstItem?.preorderBandPercent ?? 10
+  const orderedKg = (firstItem?.orderedGrams ?? 0) / 1000
+
+  const [harvestDialogOpen, setHarvestDialogOpen] = useState(false)
+  const [harvestPricePerKg, setHarvestPricePerKg] = useState<number>(
+    order.preorderFinalPricePerKg || basePreorderPrice
+  )
+  const [harvestFulfilledKg, setHarvestFulfilledKg] = useState<number>(
+    (order.preorderFulfilledGrams ?? firstItem?.orderedGrams ?? 0) / 1000
+  )
+  const [harvestDeliveryDate, setHarvestDeliveryDate] = useState<string>(() => {
+    if (order.deliveryDate) {
+      return order.deliveryDate.split('T')[0]
+    }
+    const d = new Date()
+    d.setDate(d.getDate() + 2)
+    return d.toISOString().split('T')[0]
+  })
+  const [harvestTimeSlot, setHarvestTimeSlot] = useState<TimeSlot>(
+    (order.timeSlot as TimeSlot) || TimeSlot.MORNING
+  )
+  const [harvestBatchId, setHarvestBatchId] = useState<string>(firstItem?.batchId || '')
+  const [harvestAdminNote, setHarvestAdminNote] = useState<string>('')
+
+  const handleProcessHarvest = () => {
+    if (harvestPricePerKg <= 0 && harvestFulfilledKg > 0) {
+      toast.error('Vui lòng nhập đơn giá chốt vụ hợp lệ (> 0)')
+      return
+    }
+
+    if (harvestFulfilledKg < 0) {
+      toast.error('Khối lượng thực giao không được âm')
+      return
+    }
+
+    const priceBandCheck = checkPriceBand(basePreorderPrice || 1, harvestPricePerKg, bandPercent)
+    if (priceBandCheck.inBand && harvestFulfilledKg > 0 && !harvestDeliveryDate) {
+      toast.error('Vui lòng chọn ngày giao hàng khi đơn giá chốt trong biên độ')
+      return
+    }
+
+    startTransition(async () => {
+      try {
+        const res = await adminProcessHarvest({
+          orderId: order.id,
+          finalPricePerKg: harvestPricePerKg,
+          fulfilledGrams: Math.round(harvestFulfilledKg * 1000),
+          deliveryDate: harvestDeliveryDate || undefined,
+          timeSlot: harvestTimeSlot,
+          batchId: harvestBatchId || undefined,
+          adminNote: harvestAdminNote.trim() || undefined,
+        })
+
+        if (res.success) {
+          if (res.action === 'CONFIRMED_IN_BAND') {
+            toast.success(
+              `Chốt vụ thành công trong biên độ (${res.diffPercent}%)! Đơn đã chuyển sang Đang xử lý.`
+            )
+          } else if (res.action === 'WAITING_CUSTOMER_DECISION') {
+            toast.warning(
+              `Giá chốt vượt biên độ (+${res.diffPercent}%). Đơn hàng đã ghi nhận và đang chờ khách hàng xác nhận.`
+            )
+          } else if (res.action === 'LOST_AND_CANCELLED') {
+            toast.error('Đã ghi nhận mất mùa 100%. Đơn đã hủy và tạo lệnh hoàn trả cọc.')
+          }
+          setHarvestDialogOpen(false)
+          router.refresh()
+        } else {
+          toast.error(res.error || 'Có lỗi xảy ra khi chốt vụ mùa')
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Có lỗi xảy ra')
+      }
+    })
+  }
 
   // Handlers
   const handleConfirmPayment = () => {
@@ -458,6 +546,17 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
 
         {/* Dynamic Action Buttons based on Order State */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Action 0: Vào vụ & Chốt giá mùa vụ (PREORDER ở PREORDER_WAITING) */}
+          {order.type === 'PREORDER' && order.status === OrderStatus.PREORDER_WAITING && (
+            <Button
+              onClick={() => setHarvestDialogOpen(true)}
+              className="bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs gap-1.5 shadow-sm"
+            >
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              Vào vụ & Chốt giá mùa vụ
+            </Button>
+          )}
+
           {/* Action 1: Xác nhận đã nhận tiền (khi còn thiếu tiền) */}
           {order.status !== OrderStatus.CANCELLED &&
             order.status !== OrderStatus.COMPLETED &&
@@ -505,8 +604,9 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
             </Button>
           )}
 
-          {/* Action 5: Hủy đơn hàng (khi ở PENDING hoặc PROCESSING) */}
+          {/* Action 5: Hủy đơn hàng (khi ở PENDING, PREORDER_WAITING hoặc PROCESSING) */}
           {(order.status === OrderStatus.PENDING_CONFIRMATION ||
+            order.status === OrderStatus.PREORDER_WAITING ||
             order.status === OrderStatus.PROCESSING) && (
             <Button
               variant="outline"
@@ -608,6 +708,78 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
               )}
             </CardContent>
           </Card>
+
+          {/* Pre-order Information Card */}
+          {order.type === 'PREORDER' && (
+            <Card className="border-purple-200 bg-purple-50/40 shadow-sm">
+              <CardHeader className="pb-3 border-b border-purple-100 bg-purple-50/70">
+                <CardTitle className="text-sm font-bold flex items-center justify-between text-purple-900">
+                  <span className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-purple-600" />
+                    Hợp đồng Đặt Trước Vụ Mùa (Pre-order Contract)
+                  </span>
+                  <Badge variant="outline" className="bg-white border-purple-300 text-purple-800 text-xs">
+                    Biên độ cam kết: ±{bandPercent}%
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-5 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div className="bg-white p-3.5 rounded-xl border border-purple-100 space-y-1">
+                  <span className="text-slate-500 font-medium block">Đơn giá cọc ban đầu:</span>
+                  <div className="text-sm font-bold text-slate-800">
+                    {formatVND(basePreorderPrice)}/kg
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    Biên độ cho phép: {formatVND(Math.round(basePreorderPrice * (1 - bandPercent / 100)))} –{' '}
+                    {formatVND(Math.round(basePreorderPrice * (1 + bandPercent / 100)))}
+                  </div>
+                </div>
+
+                <div className="bg-white p-3.5 rounded-xl border border-purple-100 space-y-1">
+                  <span className="text-slate-500 font-medium block">Đơn giá chốt vụ thực tế:</span>
+                  <div className="text-sm font-bold text-purple-900">
+                    {order.preorderFinalPricePerKg
+                      ? `${formatVND(order.preorderFinalPricePerKg)}/kg`
+                      : 'Chưa chốt giá vụ'}
+                  </div>
+                  {order.preorderFinalPricePerKg && (
+                    <div className="text-[11px] font-semibold text-purple-700">
+                      Biến động:{' '}
+                      {
+                        checkPriceBand(basePreorderPrice || 1, order.preorderFinalPricePerKg, bandPercent)
+                          .diffPercent
+                      }
+                      %{' '}
+                      {checkPriceBand(basePreorderPrice || 1, order.preorderFinalPricePerKg, bandPercent).inBand
+                        ? '(Trong biên độ)'
+                        : '(Ngoài biên độ)'}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white p-3.5 rounded-xl border border-purple-100 space-y-1">
+                  <span className="text-slate-500 font-medium block">Sản lượng & Quyết định:</span>
+                  <div className="text-sm font-bold text-slate-800">
+                    {order.preorderFulfilledGrams !== null && order.preorderFulfilledGrams !== undefined
+                      ? `${order.preorderFulfilledGrams / 1000} kg / ${orderedKg} kg`
+                      : `Đặt ${orderedKg} kg (Chờ cân)`}
+                  </div>
+                  <div className="text-[11px] text-slate-600">
+                    Khách phản hồi:{' '}
+                    <strong>
+                      {order.preorderCustomerDecision === 'ACCEPT'
+                        ? 'Đã chấp nhận giá'
+                        : order.preorderCustomerDecision === 'CANCEL'
+                        ? 'Đã từ chối (Hủy & Hoàn cọc)'
+                        : order.preorderFinalPricePerKg
+                        ? 'Đang chờ khách phản hồi'
+                        : 'Chưa có'}
+                    </strong>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Items Table Card with Batch QR & Settled Weights */}
           <Card className="border-slate-200 shadow-sm overflow-hidden">
@@ -1380,6 +1552,218 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
               className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs gap-1.5"
             >
               {isPending ? 'Đang hủy...' : 'Xác nhận hủy & Hoàn 100%'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG CHỐT VỤ MÙA PRE-ORDER */}
+      <Dialog open={harvestDialogOpen} onOpenChange={setHarvestDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-600" />
+              Vào vụ & Chốt giá mùa vụ (Đơn {order.code})
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Nhập đơn giá thực tế khi thu hoạch và sản lượng thực tế nông trại bàn giao.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-xs">
+            {/* Info Summary */}
+            <div className="p-3 bg-purple-50 rounded-xl border border-purple-100 grid grid-cols-2 gap-3 text-purple-900">
+              <div>
+                <span className="text-purple-600 block text-[11px]">Sản phẩm đặt trước:</span>
+                <strong className="text-xs">{firstItem?.productName}</strong>
+              </div>
+              <div>
+                <span className="text-purple-600 block text-[11px]">Khối lượng đặt:</span>
+                <strong className="text-xs">{orderedKg} kg</strong>
+              </div>
+              <div>
+                <span className="text-purple-600 block text-[11px]">Đơn giá cọc ban đầu:</span>
+                <strong className="text-xs">{formatVND(basePreorderPrice)}/kg</strong>
+              </div>
+              <div>
+                <span className="text-purple-600 block text-[11px]">Biên độ cam kết:</span>
+                <strong className="text-xs">
+                  ±{bandPercent}% ({formatVND(Math.round(basePreorderPrice * (1 - bandPercent / 100)))} –{' '}
+                  {formatVND(Math.round(basePreorderPrice * (1 + bandPercent / 100)))})
+                </strong>
+              </div>
+            </div>
+
+            {/* Final Price Input */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-baseline">
+                <Label htmlFor="harvestPrice" className="text-xs font-bold text-slate-800">
+                  Đơn giá chốt vụ thực tế (đ/kg) *
+                </Label>
+                {harvestPricePerKg > 0 && basePreorderPrice > 0 && (
+                  (() => {
+                    const check = checkPriceBand(basePreorderPrice, harvestPricePerKg, bandPercent)
+                    return (
+                      <Badge
+                        variant="outline"
+                        className={
+                          check.inBand
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                            : 'bg-amber-50 text-amber-700 border-amber-300'
+                        }
+                      >
+                        {check.inBand
+                          ? `Trong biên độ (Biến động ${check.diffPercent}%)`
+                          : `Ngoài biên độ (Biến động ${check.diffPercent}%)`}
+                      </Badge>
+                    )
+                  })()
+                )}
+              </div>
+              <Input
+                id="harvestPrice"
+                type="number"
+                min="0"
+                step="1000"
+                value={harvestPricePerKg || ''}
+                onChange={(e) => setHarvestPricePerKg(Math.max(0, parseInt(e.target.value) || 0))}
+                className="text-xs font-semibold"
+              />
+              <p className="text-[11px] text-slate-500">
+                Nếu đơn giá trong biên độ (≤ ±{bandPercent}%), đơn sẽ tự động chuyển sang ĐANG XỬ LÝ. Nếu vượt biên độ, đơn sẽ chờ khách hàng quyết định.
+              </p>
+            </div>
+
+            {/* Fulfilled Grams Input */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-baseline">
+                <Label htmlFor="harvestGrams" className="text-xs font-bold text-slate-800">
+                  Khối lượng thực giao (kg) *
+                </Label>
+                {harvestFulfilledKg < orderedKg && (
+                  <span className="text-amber-700 font-semibold text-[11px]">
+                    {harvestFulfilledKg === 0 ? 'Thất thu 100%' : `Thiếu ${(orderedKg - harvestFulfilledKg).toFixed(1)} kg`}
+                  </span>
+                )}
+              </div>
+              <Input
+                id="harvestGrams"
+                type="number"
+                min="0"
+                step="0.5"
+                value={harvestFulfilledKg || ''}
+                onChange={(e) => setHarvestFulfilledKg(Math.max(0, parseFloat(e.target.value) || 0))}
+                className="text-xs font-semibold"
+              />
+              {harvestFulfilledKg === 0 ? (
+                <div className="p-2 bg-rose-50 border border-rose-200 rounded text-rose-800 text-[11px]">
+                  ⚠️ Khối lượng 0 kg đại diện cho mất mùa 100%. Hệ thống sẽ tự động hủy đơn và tạo lệnh hoàn 100% tiền cọc cho khách.
+                </div>
+              ) : harvestFulfilledKg < orderedKg ? (
+                (() => {
+                  const refund = computePreorderShortfallRefund({
+                    depositAmount: order.depositAmount,
+                    orderedGrams: Math.round(orderedKg * 1000),
+                    fulfilledGrams: Math.round(harvestFulfilledKg * 1000),
+                  })
+                  return (
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-[11px]">
+                      Sản lượng thiếu hụt sẽ tự động tạo lệnh hoàn lại {formatVND(refund)} tiền cọc tương ứng cho khách hàng.
+                    </div>
+                  )
+                })()
+              ) : null}
+            </div>
+
+            {/* Delivery Date & Time Slot (Required if in-band and fulfilledKg > 0) */}
+            {harvestFulfilledKg > 0 && (
+              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100">
+                <div className="space-y-1">
+                  <Label htmlFor="harvestDeliveryDate" className="text-xs font-semibold text-slate-700">
+                    Ngày giao hàng *
+                  </Label>
+                  <Input
+                    id="harvestDeliveryDate"
+                    type="date"
+                    value={harvestDeliveryDate}
+                    onChange={(e) => setHarvestDeliveryDate(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="harvestTimeSlot" className="text-xs font-semibold text-slate-700">
+                    Khung giờ giao
+                  </Label>
+                  <select
+                    id="harvestTimeSlot"
+                    value={harvestTimeSlot}
+                    onChange={(e) => setHarvestTimeSlot(e.target.value as TimeSlot)}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs"
+                  >
+                    <option value="MORNING">Buổi sáng (07:00 - 11:30)</option>
+                    <option value="AFTERNOON">Buổi chiều (13:30 - 17:30)</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* Select Batch (optional) */}
+            {availableBatches.length > 0 && harvestFulfilledKg > 0 && (
+              <div className="space-y-1">
+                <Label htmlFor="harvestBatchSelect" className="text-xs font-semibold text-slate-700">
+                  Gán lô nông sản thu hoạch (Batch)
+                </Label>
+                <select
+                  id="harvestBatchSelect"
+                  value={harvestBatchId}
+                  onChange={(e) => setHarvestBatchId(e.target.value)}
+                  className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs"
+                >
+                  <option value="">-- Chưa gán lô --</option>
+                  {availableBatches
+                    .filter((b) => !firstItem?.productId || b.productId === firstItem.productId)
+                    .map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.code} (Thu hoạch {new Date(b.harvestDate).toLocaleDateString('vi-VN')} -{' '}
+                        {b.quantityGrams / 1000}kg)
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
+            {/* Note */}
+            <div className="space-y-1">
+              <Label htmlFor="harvestNote" className="text-xs font-semibold text-slate-700">
+                Ghi chú nội bộ
+              </Label>
+              <Input
+                id="harvestNote"
+                placeholder="Ghi chú về chất lượng vụ mùa..."
+                value={harvestAdminNote}
+                onChange={(e) => setHarvestAdminNote(e.target.value)}
+                className="text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setHarvestDialogOpen(false)}
+              disabled={isPending}
+              className="text-xs"
+            >
+              Hủy
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleProcessHarvest}
+              disabled={isPending}
+              className="bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs gap-1.5"
+            >
+              {isPending ? 'Đang xử lý...' : 'Xác nhận chốt vụ mùa'}
             </Button>
           </DialogFooter>
         </DialogContent>

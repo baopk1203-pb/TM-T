@@ -9,7 +9,6 @@ import {
   Clock,
   Scale,
   Award,
-  Sparkles,
   ShieldCheck,
   Layers,
   ExternalLink,
@@ -31,6 +30,7 @@ import { formatVND, gramsToKg } from '@/lib/money'
 import { formatActiveCertificatesSummary, filterActiveCertificates } from '@/lib/certificate'
 import { calculateCustomerUnitPrice } from '@/lib/domain/pricing'
 import { ProductOrderBox } from './product-order-box'
+import { PreorderBox } from './preorder-box'
 
 interface ProductDetailProps {
   product: {
@@ -270,28 +270,12 @@ export function ProductDetailView({
             hasPurchasedSample={hasPurchasedSample}
           />
 
-          {/* PRE-ORDER BANNER (IF APPLICABLE - WEB-PRE-01) */}
+          {/* PRE-ORDER SECTION (IF APPLICABLE - BATCH 6B) */}
           {product.preorderOpen && (
-            <div className="p-4 rounded-2xl bg-purple-50 border border-purple-200 text-purple-900 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 font-bold text-sm">
-                  <Sparkles className="w-4 h-4 text-purple-600" />
-                  Thông Tin Dự Kiến Vụ Mùa Tới
-                </div>
-                <Badge variant="outline" className="border-purple-300 text-purple-700 bg-white text-[11px]">
-                  Tính năng Đặt trước đang phát triển (Phase 6)
-                </Badge>
-              </div>
-              <p className="text-xs text-purple-800 leading-relaxed">
-                Đơn giá cọc giữ chỗ tham khảo: <strong>{formatVND(product.preorderPricePerKg || 0)}/kg</strong> (Biên độ giá chốt vụ dự kiến ±{product.preorderBandPercent}%).
-                {product.expectedHarvestFrom && (
-                  <span> Dự kiến thu hoạch từ: {new Date(product.expectedHarvestFrom).toLocaleDateString('vi-VN')}.</span>
-                )}
-              </p>
-              <div className="text-[11px] text-purple-700 italic pt-1 border-t border-purple-200">
-                * Hợp đồng đặt trước giữ giá trần chính thức sẽ khả dụng ở Phase 6. Hiện tại quý khách có thể đặt sỉ theo các quy cách sẵn có bên dưới.
-              </div>
-            </div>
+            <PreorderBox
+              product={product}
+              user={user}
+            />
           )}
 
           {/* Back link */}

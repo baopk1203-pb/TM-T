@@ -26,6 +26,11 @@ export default async function AdminOrderDetailPage({
         items: {
           include: {
             batch: true,
+            packaging: {
+              include: {
+                product: true,
+              },
+            },
           },
         },
         transactions: {
@@ -95,6 +100,9 @@ export default async function AdminOrderDetailPage({
     cancelledBy: order.cancelledBy,
     cancelReason: order.cancelReason,
     customerNote: order.customerNote,
+    preorderFinalPricePerKg: order.preorderFinalPricePerKg,
+    preorderFulfilledGrams: order.preorderFulfilledGrams,
+    preorderCustomerDecision: order.preorderCustomerDecision,
     createdAt: order.createdAt.toISOString(),
     addressSnapshot: {
       recipient: addressSnapshot?.recipient ?? '',
@@ -122,6 +130,8 @@ export default async function AdminOrderDetailPage({
       quantity: item.quantity,
       orderedGrams: item.orderedGrams,
       unitPricePerKg: item.unitPricePerKg,
+      preorderPricePerKg: item.packaging?.product?.preorderPricePerKg ?? item.unitPricePerKg,
+      preorderBandPercent: item.packaging?.product?.preorderBandPercent ?? 10,
       lineTotal: item.lineTotal,
       actualGrams: item.actualGrams,
       finalLineTotal: item.finalLineTotal,

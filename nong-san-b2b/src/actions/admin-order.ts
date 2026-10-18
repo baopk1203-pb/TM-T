@@ -6,6 +6,7 @@ import { requireAdmin } from '@/lib/auth'
 import { recordOrderEvent } from '@/lib/events'
 import {
   OrderStatus,
+  OrderType,
   TxType,
   TxStatus,
   TxMethod,
@@ -100,34 +101,61 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
         .filter((t) => t.type === TxType.PAYMENT && t.status === TxStatus.DONE)
         .reduce((sum, t) => sum + t.amount, 0)
 
-      // Nếu đơn đang PENDING_CONFIRMATION, kiểm tra điều kiện chuyển PROCESSING theo domain order-state
+      // Nếu đơn đang PENDING_CONFIRMATION, kiểm tra điều kiện chuyển PREORDER_WAITING hoặc PROCESSING theo domain order-state
       let statusChanged = false
 
       if (order.status === OrderStatus.PENDING_CONFIRMATION) {
-        const transitionCheck = canTransition(
-          order,
-          OrderStatus.PROCESSING,
-          'SELLER',
-          { paidAmount: totalPaid }
-        )
+        if (order.type === OrderType.PREORDER) {
+          const transitionCheck = canTransition(
+            order,
+            OrderStatus.PREORDER_WAITING,
+            'SELLER',
+            { paidAmount: totalPaid }
+          )
 
-        if (transitionCheck.ok) {
-          const requiredThreshold = getRequiredConfirmationPayment(order)
-          await tx.order.update({
-            where: { id: order.id },
-            data: { status: OrderStatus.PROCESSING },
-          })
+          if (transitionCheck.ok) {
+            await tx.order.update({
+              where: { id: order.id },
+              data: { status: OrderStatus.PREORDER_WAITING },
+            })
 
-          await recordOrderEvent(tx, {
-            orderId: order.id,
-            type: 'STATUS_CHANGED',
-            fromStatus: OrderStatus.PENDING_CONFIRMATION,
-            toStatus: OrderStatus.PROCESSING,
-            actorId: admin.id,
-            note: `Đã nhận đủ tiền thanh toán (${totalPaid.toLocaleString('vi-VN')} đ ≥ ${requiredThreshold.toLocaleString('vi-VN')} đ, hình thức: ${order.paymentOption}) -> Chuyển sang Đang xử lý`,
-          })
+            await recordOrderEvent(tx, {
+              orderId: order.id,
+              type: 'STATUS_CHANGED',
+              fromStatus: OrderStatus.PENDING_CONFIRMATION,
+              toStatus: OrderStatus.PREORDER_WAITING,
+              actorId: admin.id,
+              note: `Đã nhận đủ tiền cọc đặt trước (${totalPaid.toLocaleString('vi-VN')} đ ≥ ${order.depositAmount.toLocaleString('vi-VN')} đ) -> Chuyển sang Chờ thu hoạch (PREORDER_WAITING)`,
+            })
 
-          statusChanged = true
+            statusChanged = true
+          }
+        } else {
+          const transitionCheck = canTransition(
+            order,
+            OrderStatus.PROCESSING,
+            'SELLER',
+            { paidAmount: totalPaid }
+          )
+
+          if (transitionCheck.ok) {
+            const requiredThreshold = getRequiredConfirmationPayment(order)
+            await tx.order.update({
+              where: { id: order.id },
+              data: { status: OrderStatus.PROCESSING },
+            })
+
+            await recordOrderEvent(tx, {
+              orderId: order.id,
+              type: 'STATUS_CHANGED',
+              fromStatus: OrderStatus.PENDING_CONFIRMATION,
+              toStatus: OrderStatus.PROCESSING,
+              actorId: admin.id,
+              note: `Đã nhận đủ tiền thanh toán (${totalPaid.toLocaleString('vi-VN')} đ ≥ ${requiredThreshold.toLocaleString('vi-VN')} đ, hình thức: ${order.paymentOption}) -> Chuyển sang Đang xử lý`,
+            })
+
+            statusChanged = true
+          }
         }
       }
 

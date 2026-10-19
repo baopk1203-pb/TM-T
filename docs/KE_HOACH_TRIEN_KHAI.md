@@ -451,7 +451,7 @@ flowchart LR
 | 4 | Checkout ra đơn, VietQR, Admin xác nhận tiền, tự hủy khi quá hạn |
 | 5 | Admin đi hết vòng đời đơn, hủy/hoàn cọc, chốt khối lượng, khiếu nại |
 | 6 | Đơn định kỳ (đơn nháp), Pre-order mùa vụ, dashboard khách |
-| 7 | Quản lý khách và nhóm, dashboard báo cáo |
+| 7 | Quản lý khách và nhóm, dashboard báo cáo (Code Complete / Local QA Accepted / Beta Validation Pending) |
 | 8 | Phí ship theo khoảng cách + loại xe, quản lý chuyến giao |
 | 9 | Email + Zalo ZNS, e2e test, deploy |
 
@@ -600,20 +600,21 @@ flowchart LR
 
 ---
 
-## Phase 7 – CRM khách hàng & Báo cáo (IN PROGRESS)
+## Phase 7 – CRM khách hàng & Báo cáo (Code Complete / Local QA Accepted / Beta Validation Pending)
 
 - [x] `/admin/khach-hang`: danh sách (tên doanh nghiệp, MST, nhóm, số đơn, doanh thu), chi tiết khách (đơn hàng, địa chỉ), **đổi nhóm** (ghi structured server log). *(Hoàn thành ở mức Local QA — QA-TASK-16 PASS, commit `86778a9`)*
 - [x] `/admin/nhom-khach`: sửa % chiết khấu (0..50% số nguyên). Thay đổi chỉ áp dụng cho đơn mới; đơn cũ giữ snapshot. Đồng bộ DB sang UI qua `getServerAuthSession`. *(Hoàn thành ở mức Local QA — QA-TASK-16 PASS, commit `86778a9`)*
-- [ ] `/admin/bao-cao` (lọc theo khoảng ngày, dùng `recharts`):
+- [x] `/admin/bao-cao` (lọc theo khoảng ngày, dùng `recharts`): *(Hoàn thành ở mức Local QA — QA-TASK-17 PASS, commit `2c7c57e`)*
   - Doanh thu theo ngày/tuần (tổng `finalTotal ?? total` của đơn `COMPLETED`).
-  - Top 10 sản phẩm theo kg và theo doanh thu.
-  - Tỷ lệ hủy (theo `cancelledBy`), tỷ lệ khiếu nại.
-  - **Tỷ lệ hao hụt trung bình** = `1 − Σ actualGrams / Σ orderedGrams`.
-  - Doanh thu theo nhóm khách hàng hiện tại.
-- [ ] `/admin` dashboard: KPI hôm nay (đơn mới, chờ xác nhận tiền, đơn giao hôm nay, khiếu nại mở).
-- [ ] Các truy vấn báo cáo đặt trong `src/server/reports.ts`, có test với dữ liệu seed nhỏ.
+  - Top 10 sản phẩm theo kg và theo doanh thu (ưu tiên `actualGrams`, tách hàng mẫu).
+  - Tỷ lệ hủy (theo `cancelledBy`: CUSTOMER, SELLER, SYSTEM), tỷ lệ khiếu nại (theo đơn có khiếu nại).
+  - **Tỷ lệ hao hụt trung bình** = `1 − Σ actualGrams / Σ orderedGrams` (theo tổng trọng lượng có cân).
+  - Doanh thu theo nhóm khách hàng hiện tại (nhãn cảnh báo rõ ràng).
+  - Phân tích dòng tiền đối soát tách biệt (đã thanh toán, đã hoàn, chờ hoàn).
+- [x] `/admin` dashboard: KPI hôm nay (đơn mới hôm nay, chờ xác nhận tiền, đơn giao hôm nay, khiếu nại mở) truy vấn từ database thật. *(Hoàn thành ở mức Local QA — QA-TASK-17 PASS, commit `2c7c57e`)*
+- [x] Các truy vấn báo cáo đặt trong `src/server/reports.ts`, có test với dữ liệu seed/fixture nhỏ (13 unit test cases). *(Hoàn thành ở mức Local QA — QA-TASK-17 PASS, commit `2c7c57e`)*
 
-**DoD:** số liệu báo cáo khớp khi đối chiếu tay với dữ liệu seed. Batch 7A đã PASS Local QA (QA-TASK-16). Batch 7B đang triển khai.
+**DoD:** Số liệu báo cáo khớp khi đối chiếu tay với dữ liệu seed/fixture. Đã PASS toàn bộ Local/Static QA (Batch 7A: QA-TASK-16, commit `86778a9`; Batch 7B: QA-TASK-17, commit `2c7c57e`). Tổng 314/314 unit tests PASS (26/26 test suites). Trạng thái: **Code Complete / Local QA Accepted / Beta Validation Pending**. Beta Runtime E2E chưa được xác minh.
 
 ---
 

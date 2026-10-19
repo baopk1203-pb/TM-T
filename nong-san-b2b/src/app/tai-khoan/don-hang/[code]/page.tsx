@@ -43,6 +43,7 @@ export default async function CustomerOrderDetailPage({
       complaints: {
         orderBy: { createdAt: 'desc' },
       },
+      shipment: true,
     },
   })
 
@@ -98,6 +99,19 @@ export default async function CustomerOrderDetailPage({
     preorderFinalPricePerKg: order.preorderFinalPricePerKg,
     preorderFulfilledGrams: order.preorderFulfilledGrams,
     preorderCustomerDecision: order.preorderCustomerDecision,
+    shipment: order.shipment
+      ? {
+          code: order.shipment.code,
+          status: order.shipment.status,
+          vehicleType: order.shipment.vehicleType,
+          driverName: order.shipment.driverName,
+          driverPhone: order.shipment.driverPhone,
+          licensePlate: order.shipment.licensePlate,
+          dispatchedAt: order.shipment.dispatchedAt ? order.shipment.dispatchedAt.toISOString() : null,
+          deliveredAt: order.shipment.deliveredAt ? order.shipment.deliveredAt.toISOString() : null,
+          note: order.shipment.note,
+        }
+      : null,
     addressSnapshot: {
       recipient: address.recipient,
       phone: address.phone,

@@ -15,7 +15,7 @@ import {
   checkCapacity,
   getWeekStartMonday,
 } from '@/lib/domain/capacity'
-import { getShippingCalculator } from '@/lib/domain/shipping'
+import { createDynamicShippingCalculator } from '@/lib/services/shipping-config'
 import { computeDepositAmount } from '@/lib/domain/settlement'
 import { recordOrderEvent } from '@/lib/events'
 import { generateOrderCode } from '@/lib/order-code'
@@ -121,7 +121,7 @@ export async function calculateShippingQuoteAction(input: CalculateShippingQuote
       }
     }
 
-    const shippingCalculator = getShippingCalculator()
+    const shippingCalculator = createDynamicShippingCalculator()
     const quote = await shippingCalculator.quote({
       totalGrams,
       requiresCold,
@@ -345,8 +345,8 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
           }
         }
 
-        // 8. Tính phí vận chuyển (Shipping Engine - Phase 8A)
-        const shippingCalculator = getShippingCalculator()
+        // 8. Tính phí vận chuyển (Shipping Engine - Phase 8B Dynamic)
+        const shippingCalculator = createDynamicShippingCalculator()
         const totalGramsAll =
           quote.lines.reduce((sum, l) => sum + l.totalGrams, 0) +
           quote.sampleLines.reduce((sum, l) => sum + l.weightGrams * l.quantity, 0)

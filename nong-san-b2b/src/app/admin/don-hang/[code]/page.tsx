@@ -42,6 +42,7 @@ export default async function AdminOrderDetailPage({
         complaints: {
           orderBy: { createdAt: 'desc' },
         },
+        shipment: true,
       },
     }),
     db.batch.findMany({
@@ -179,6 +180,24 @@ export default async function AdminOrderDetailPage({
     netPaid: payment.netPaid,
     refundedAmount: payment.refundedAmount,
     paymentStatus: payment.status,
+    shippingDistanceKm: order.shippingDistanceKm,
+    shippingVehicleType: order.shippingVehicleType,
+    shipment: order.shipment
+      ? {
+          id: order.shipment.id,
+          code: order.shipment.code,
+          vehicleType: order.shipment.vehicleType,
+          distanceKm: order.shipment.distanceKm,
+          shippingFee: order.shipment.shippingFee,
+          driverName: order.shipment.driverName,
+          driverPhone: order.shipment.driverPhone,
+          licensePlate: order.shipment.licensePlate,
+          status: order.shipment.status,
+          dispatchedAt: order.shipment.dispatchedAt ? order.shipment.dispatchedAt.toISOString() : null,
+          deliveredAt: order.shipment.deliveredAt ? order.shipment.deliveredAt.toISOString() : null,
+          note: order.shipment.note,
+        }
+      : null,
   }
 
   const mappedBatches = batches.map((b) => ({

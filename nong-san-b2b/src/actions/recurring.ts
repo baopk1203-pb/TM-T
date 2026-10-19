@@ -7,7 +7,7 @@ import { requireUser, requireAdmin } from '@/lib/auth'
 import { priceCart, ProductPricingData } from '@/lib/domain/pricing'
 import { earliestDeliveryDate, isDeliveryDateValid } from '@/lib/domain/delivery-date'
 import { checkCapacity, getWeekStartMonday } from '@/lib/domain/capacity'
-import { getShippingCalculator } from '@/lib/domain/shipping'
+import { createDynamicShippingCalculator } from '@/lib/services/shipping-config'
 import { computeDepositAmount } from '@/lib/domain/settlement'
 import { canTransition } from '@/lib/domain/order-state'
 import { isDraftExpired } from '@/lib/domain/recurring'
@@ -815,7 +815,7 @@ export async function confirmRecurringDraft(
       }
 
       const addressSnapshot = (order.addressSnapshot ?? {}) as Record<string, unknown>
-      const shippingCalculator = getShippingCalculator()
+      const shippingCalculator = createDynamicShippingCalculator()
       const totalGramsAll = quote.lines.reduce((sum, l) => sum + l.totalGrams, 0)
       const shippingQuote = await shippingCalculator.quote({
         totalGrams: totalGramsAll,

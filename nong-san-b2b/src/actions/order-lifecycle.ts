@@ -23,7 +23,11 @@ import {
   ComplaintStatus,
   Resolution,
   Role,
+  ShipmentStatus,
+  VehicleType,
 } from '@prisma/client'
+
+const VN_PHONE_REGEX = /^(0|\+84)(3|5|7|8|9)[0-9]{8}$/
 
 /**
  * Hủy đơn hàng (Khách hàng hoặc Bên bán / Admin) (Mục 3.7 & Test Cases S2-S5)
@@ -123,6 +127,15 @@ export async function cancelOrder(input: {
         },
       })
 
+      // Đồng bộ trạng thái chuyến giao nếu có (PENDING hoặc DISPATCHED)
+      const existingShipment = await tx.shipment.findUnique({ where: { orderId: order.id } })
+      if (existingShipment && (existingShipment.status === ShipmentStatus.PENDING || existingShipment.status === ShipmentStatus.DISPATCHED)) {
+        await tx.shipment.update({
+          where: { id: existingShipment.id },
+          data: { status: ShipmentStatus.CANCELLED },
+        })
+      }
+
       // Nếu có khoản hoàn tiền
       if (impact.refundAmount > 0) {
         await tx.paymentTransaction.create({
@@ -179,21 +192,50 @@ export async function cancelOrder(input: {
 }
 
 /**
- * Admin chuyển đơn sang SHIPPING (Bàn giao vận chuyển) & gán lô hàng (Mục 3.7, 3.12)
+ * Admin chuyển đơn sang SHIPPING (Bàn giao vận chuyển, gán tài xế & lô hàng) (Mục 3.7, 3.12, Phase 8B)
  */
 export async function transitionToShipping(input: {
   orderId: string
   batchAssignments?: { orderItemId: string; batchId: string }[]
+  driverName?: string
+  driverPhone?: string
+  licensePlate?: string
+  note?: string
 }) {
   try {
     const admin = await requireAdmin()
 
+    // Validate thông tin tài xế & phương tiện bắt buộc
+    const driverName = input.driverName?.trim()
+    const driverPhone = input.driverPhone?.trim()
+    const licensePlate = input.licensePlate?.trim()
+
+    if (!driverName || driverName.length < 2) {
+      return { success: false, error: 'Vui lòng nhập họ tên tài xế (tối thiểu 2 ký tự)' }
+    }
+    if (!driverPhone || !VN_PHONE_REGEX.test(driverPhone)) {
+      return { success: false, error: 'Số điện thoại tài xế không hợp lệ (10 chữ số VN, bắt đầu bằng 0 hoặc +84)' }
+    }
+    if (!licensePlate || licensePlate.length < 3) {
+      return { success: false, error: 'Vui lòng nhập biển số xe giao hàng hợp lệ' }
+    }
+
     const order = await db.order.findUnique({
       where: { id: input.orderId },
-      include: { items: true },
+      include: { items: true, shipment: true },
     })
 
     if (!order) return { success: false, error: 'Không tìm thấy đơn hàng' }
+
+    // Kiểm tra không cho giao lại nếu đã có shipment hoàn tất hoặc hủy
+    if (order.shipment) {
+      if (order.shipment.status === ShipmentStatus.DELIVERED || order.shipment.status === ShipmentStatus.CANCELLED) {
+        return {
+          success: false,
+          error: `Không thể bàn giao chuyến giao đã ở trạng thái ${order.shipment.status === ShipmentStatus.DELIVERED ? 'ĐÃ GIAO' : 'ĐÃ HỦY'}`,
+        }
+      }
+    }
 
     const check = canTransition(
       {
@@ -231,6 +273,41 @@ export async function transitionToShipping(input: {
         data: { status: OrderStatus.SHIPPING },
       })
 
+      // Tạo mới hoặc cập nhật Shipment liên quan
+      const existingShipment = await tx.shipment.findUnique({
+        where: { orderId: order.id },
+      })
+
+      if (existingShipment) {
+        await tx.shipment.update({
+          where: { id: existingShipment.id },
+          data: {
+            driverName,
+            driverPhone,
+            licensePlate: licensePlate.toUpperCase(),
+            note: input.note?.trim() || null,
+            status: ShipmentStatus.DISPATCHED,
+            dispatchedAt: new Date(),
+          },
+        })
+      } else {
+        await tx.shipment.create({
+          data: {
+            orderId: order.id,
+            code: `SHIP-${order.code}`,
+            vehicleType: order.shippingVehicleType || VehicleType.NORMAL,
+            distanceKm: order.shippingDistanceKm || 0,
+            shippingFee: order.shippingFee || 0,
+            driverName,
+            driverPhone,
+            licensePlate: licensePlate.toUpperCase(),
+            note: input.note?.trim() || null,
+            status: ShipmentStatus.DISPATCHED,
+            dispatchedAt: new Date(),
+          },
+        })
+      }
+
       // Ghi OrderEvent
       await recordOrderEvent(tx, {
         orderId: order.id,
@@ -238,13 +315,20 @@ export async function transitionToShipping(input: {
         fromStatus: order.status,
         toStatus: OrderStatus.SHIPPING,
         actorId: admin.id,
-        note: 'Admin đã bàn giao hàng cho tài xế/đội vận chuyển',
+        note: `Bàn giao vận chuyển cho tài xế ${driverName} (${driverPhone}) - Xe: ${licensePlate.toUpperCase()}`,
+        payload: {
+          driverName,
+          driverPhone,
+          licensePlate: licensePlate.toUpperCase(),
+          shipmentCode: `SHIP-${order.code}`,
+        },
       })
     })
 
     revalidatePath(`/admin/don-hang/${order.id}`)
     revalidatePath(`/admin/don-hang/${order.code}`)
     revalidatePath('/admin/don-hang')
+    revalidatePath('/admin/van-chuyen')
     revalidatePath(`/tai-khoan/don-hang/${order.code}`)
 
     return { success: true, message: 'Đã chuyển đơn hàng sang trạng thái ĐANG GIAO (SHIPPING)' }
@@ -351,6 +435,24 @@ export async function settleActualWeights(input: {
         },
       })
 
+      // Đồng bộ trạng thái chuyến giao nếu có
+      const existingShipment = await tx.shipment.findUnique({
+        where: { orderId: order.id },
+      })
+      if (
+        existingShipment &&
+        existingShipment.status !== ShipmentStatus.DELIVERED &&
+        existingShipment.status !== ShipmentStatus.CANCELLED
+      ) {
+        await tx.shipment.update({
+          where: { id: existingShipment.id },
+          data: {
+            status: ShipmentStatus.DELIVERED,
+            deliveredAt: new Date(),
+          },
+        })
+      }
+
       // Nếu số tiền đã trả > số tiền thực tế cần trả (thực tế giao thiếu), tạo khoản hoàn
       if (settlement.refundAmount > 0) {
         await tx.paymentTransaction.create({
@@ -392,6 +494,7 @@ export async function settleActualWeights(input: {
     revalidatePath(`/admin/don-hang/${order.id}`)
     revalidatePath(`/admin/don-hang/${order.code}`)
     revalidatePath('/admin/don-hang')
+    revalidatePath('/admin/van-chuyen')
     revalidatePath(`/tai-khoan/don-hang/${order.code}`)
 
     return {

@@ -14,7 +14,7 @@ import {
 } from '@/lib/domain/preorder'
 import { earliestDeliveryDate, isDeliveryDateValid } from '@/lib/domain/delivery-date'
 import { canTransition } from '@/lib/domain/order-state'
-import { getShippingCalculator } from '@/lib/domain/shipping'
+import { createDynamicShippingCalculator } from '@/lib/services/shipping-config'
 import { computeDepositAmount } from '@/lib/domain/settlement'
 import {
   OrderStatus,
@@ -164,8 +164,8 @@ export async function placePreorder(input: PlacePreorderInput): Promise<PlacePre
 
         const paymentDueAt = new Date(now.getTime() + 24 * 60 * 60 * 1000)
 
-        // Tính toán phí vận chuyển dự kiến theo địa chỉ khách chọn (Shipping Engine - Phase 8A)
-        const shippingCalculator = getShippingCalculator()
+        // Tính toán phí vận chuyển dự kiến theo địa chỉ khách chọn (Shipping Engine - Phase 8B Dynamic)
+        const shippingCalculator = createDynamicShippingCalculator()
         const shippingQuote = await shippingCalculator.quote({
           totalGrams,
           requiresCold: product.requiresCold,

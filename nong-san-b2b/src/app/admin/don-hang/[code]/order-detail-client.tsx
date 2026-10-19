@@ -22,6 +22,7 @@ import {
   ExternalLink,
   ShieldAlert,
   Sparkles,
+  Printer,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -49,6 +50,7 @@ import {
 } from '@/actions/order-lifecycle'
 import { adminProcessHarvest } from '@/actions/preorder'
 import { checkPriceBand, computePreorderShortfallRefund } from '@/lib/domain/preorder'
+import { PackingSlipModal, PackingSlipData } from '@/components/admin/packing-slip-modal'
 import { toast } from 'sonner'
 import {
   OrderStatus,
@@ -57,6 +59,8 @@ import {
   TxStatus,
   ComplaintStatus,
   TimeSlot,
+  ShipmentStatus,
+  VehicleType,
 } from '@prisma/client'
 
 export interface OrderDetailData {
@@ -70,6 +74,22 @@ export interface OrderDetailData {
   timeSlot: string | null
   subtotal: number
   shippingFee: number
+  shippingDistanceKm?: number | null
+  shippingVehicleType?: VehicleType | null
+  shipment?: {
+    id: string
+    code: string
+    vehicleType: VehicleType
+    distanceKm: number
+    shippingFee: number
+    driverName?: string | null
+    driverPhone?: string | null
+    licensePlate?: string | null
+    status: ShipmentStatus
+    dispatchedAt?: string | null
+    deliveredAt?: string | null
+    note?: string | null
+  } | null
   total: number
   depositAmount: number
   finalSubtotal: number | null
@@ -220,6 +240,38 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
     return init
   })
 
+  // Dispatch driver form state & packing slip modal
+  const [dispatchDriverName, setDispatchDriverName] = useState(order.shipment?.driverName || '')
+  const [dispatchDriverPhone, setDispatchDriverPhone] = useState(order.shipment?.driverPhone || '')
+  const [dispatchLicensePlate, setDispatchLicensePlate] = useState(order.shipment?.licensePlate || '')
+  const [dispatchNote, setDispatchNote] = useState(order.shipment?.note || '')
+  const [packingSlipOpen, setPackingSlipOpen] = useState(false)
+
+  const packingSlipData: PackingSlipData = {
+    orderCode: order.code,
+    shipmentCode: order.shipment?.code || `SHIP-${order.code}`,
+    deliveryDate: order.deliveryDate,
+    timeSlot: order.timeSlot,
+    customerName: order.user.fullName,
+    companyName: order.user.companyName,
+    taxCode: null,
+    phone: order.addressSnapshot.phone || order.user.phone,
+    address: `${order.addressSnapshot.line}, ${order.addressSnapshot.ward}, ${order.addressSnapshot.district}, ${order.addressSnapshot.province}`,
+    driverName: order.shipment?.driverName || dispatchDriverName || null,
+    driverPhone: order.shipment?.driverPhone || dispatchDriverPhone || null,
+    licensePlate: order.shipment?.licensePlate || dispatchLicensePlate || null,
+    vehicleType: (order.shipment?.vehicleType || order.shippingVehicleType || 'NORMAL') as string,
+    note: order.shipment?.note || order.customerNote || null,
+    items: order.items.map((item) => ({
+      id: item.id,
+      productName: item.productName,
+      packagingName: item.packagingName,
+      orderedKg: item.orderedGrams / 1000,
+      batchCode: item.batchCode,
+      isSample: item.isSample,
+    })),
+  }
+
   // Settle weights form state (actualKg entered by admin)
   const [actualKgMap, setActualKgMap] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {}
@@ -343,6 +395,19 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
   }
 
   const handleTransitionToShipping = () => {
+    if (!dispatchDriverName.trim() || dispatchDriverName.trim().length < 2) {
+      toast.error('Vui lòng nhập họ tên tài xế (tối thiểu 2 ký tự)')
+      return
+    }
+    if (!dispatchDriverPhone.trim() || !/^(0|\+84)(3|5|7|8|9)[0-9]{8}$/.test(dispatchDriverPhone.trim())) {
+      toast.error('Số điện thoại tài xế không hợp lệ (10 chữ số VN, ví dụ: 0912345678)')
+      return
+    }
+    if (!dispatchLicensePlate.trim() || dispatchLicensePlate.trim().length < 3) {
+      toast.error('Vui lòng nhập biển số xe giao hàng hợp lệ')
+      return
+    }
+
     startTransition(async () => {
       try {
         const assignments = Object.entries(batchAssignments)
@@ -352,6 +417,10 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
         const res = await transitionToShipping({
           orderId: order.id,
           batchAssignments: assignments,
+          driverName: dispatchDriverName,
+          driverPhone: dispatchDriverPhone,
+          licensePlate: dispatchLicensePlate,
+          note: dispatchNote,
         })
 
         if (res.success) {
@@ -618,6 +687,16 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
               Hủy đơn
             </Button>
           )}
+
+          {/* Action 6: In phiếu giao hàng (Packing Slip) */}
+          <Button
+            variant="outline"
+            onClick={() => setPackingSlipOpen(true)}
+            className="border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold gap-1.5 shadow-sm"
+          >
+            <Printer className="w-4 h-4 text-slate-600" />
+            Phiếu giao hàng
+          </Button>
         </div>
       </div>
 
@@ -705,6 +784,125 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                 <div className="sm:col-span-2 bg-amber-50/60 border border-amber-200/60 p-3 rounded-xl text-slate-700">
                   <strong className="text-amber-900 block mb-0.5">Ghi chú của khách hàng:</strong>
                   {order.customerNote}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Shipment Information Card */}
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-bold flex items-center gap-2 text-slate-900">
+                <Truck className="w-4 h-4 text-indigo-600" />
+                Thông tin Vận chuyển & Vận đơn
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                {order.shipment ? (
+                  <Badge
+                    className={
+                      order.shipment.status === 'DELIVERED'
+                        ? 'bg-teal-100 text-teal-800 border-teal-200'
+                        : order.shipment.status === 'DISPATCHED'
+                        ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                        : order.shipment.status === 'CANCELLED'
+                        ? 'bg-rose-100 text-rose-800 border-rose-200'
+                        : 'bg-amber-100 text-amber-800 border-amber-200'
+                    }
+                  >
+                    {order.shipment.status === 'DELIVERED'
+                      ? 'Đã giao'
+                      : order.shipment.status === 'DISPATCHED'
+                      ? 'Đang vận chuyển'
+                      : order.shipment.status === 'CANCELLED'
+                      ? 'Đã hủy'
+                      : 'Chờ giao'}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-slate-500 border-slate-200">
+                    Chưa có vận đơn
+                  </Badge>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPackingSlipOpen(true)}
+                  className="h-7 text-xs gap-1 border-slate-200 hover:bg-slate-50"
+                >
+                  <Printer className="w-3.5 h-3.5 text-slate-600" />
+                  In phiếu
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-1.5 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                <div className="text-slate-500 font-medium">Mã vận đơn:</div>
+                <div className="text-sm font-bold text-slate-800 font-mono">
+                  {order.shipment?.code || `Chưa gán (Dự kiến: SHIP-${order.code})`}
+                </div>
+                <div className="text-slate-600 pt-1">
+                  Loại xe vận chuyển:{' '}
+                  <strong className="text-slate-800">
+                    {(order.shipment?.vehicleType || order.shippingVehicleType) === 'COLD'
+                      ? 'Xe đông lạnh (Bảo quản mát)'
+                      : 'Xe tải thường'}
+                  </strong>
+                </div>
+                <div className="text-slate-600">
+                  Khoảng cách tính cước:{' '}
+                  <strong>
+                    {order.shipment?.distanceKm ?? order.shippingDistanceKm ?? 0} km
+                  </strong>
+                </div>
+                <div className="text-slate-600">
+                  Cước phí vận chuyển:{' '}
+                  <strong className="text-emerald-700">
+                    {formatVND(order.shipment?.shippingFee ?? order.shippingFee)}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                <div className="text-slate-500 font-medium">Tài xế & Phương tiện:</div>
+                {order.shipment?.driverName ? (
+                  <>
+                    <div className="font-bold text-slate-800 text-sm">
+                      {order.shipment.driverName}
+                    </div>
+                    <div className="text-slate-600">
+                      Điện thoại:{' '}
+                      <a
+                        href={`tel:${order.shipment.driverPhone}`}
+                        className="text-indigo-600 font-bold hover:underline"
+                      >
+                        {order.shipment.driverPhone}
+                      </a>
+                    </div>
+                    <div className="text-slate-600">
+                      Biển số xe: <strong className="font-mono">{order.shipment.licensePlate}</strong>
+                    </div>
+                    {order.shipment.dispatchedAt && (
+                      <div className="text-[11px] text-slate-500 pt-1">
+                        Xuất kho:{' '}
+                        <strong>{formatVietnamDateTime(order.shipment.dispatchedAt)}</strong>
+                      </div>
+                    )}
+                    {order.shipment.deliveredAt && (
+                      <div className="text-[11px] text-teal-700 font-semibold">
+                        Giao thành công:{' '}
+                        <strong>{formatVietnamDateTime(order.shipment.deliveredAt)}</strong>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-slate-500 italic py-2">
+                    Chưa bàn giao tài xế vận chuyển. Sẽ cập nhật thông tin khi chuyển sang trạng thái Đang giao (SHIPPING).
+                  </div>
+                )}
+              </div>
+
+              {order.shipment?.note && (
+                <div className="sm:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-100 text-slate-600">
+                  <strong>Ghi chú vận chuyển:</strong> {order.shipment.note}
                 </div>
               )}
             </CardContent>
@@ -1283,7 +1481,60 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-2 text-xs max-h-96 overflow-y-auto">
+          <div className="space-y-4 py-2 text-xs max-h-[70vh] overflow-y-auto">
+            {/* Form tài xế & phương tiện bắt buộc */}
+            <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 space-y-2.5">
+              <div className="font-bold text-indigo-900 text-xs flex items-center gap-1.5">
+                <Truck className="w-3.5 h-3.5 text-indigo-600" />
+                Thông tin Tài xế & Phương tiện Giao hàng
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[11px] font-semibold text-slate-700">Tên tài xế *</Label>
+                  <Input
+                    placeholder="Nguyễn Văn Hùng"
+                    value={dispatchDriverName}
+                    onChange={(e) => setDispatchDriverName(e.target.value)}
+                    className="h-8 text-xs bg-white mt-0.5"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[11px] font-semibold text-slate-700">SĐT tài xế *</Label>
+                  <Input
+                    placeholder="0912345678"
+                    value={dispatchDriverPhone}
+                    onChange={(e) => setDispatchDriverPhone(e.target.value)}
+                    className="h-8 text-xs bg-white mt-0.5"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[11px] font-semibold text-slate-700">Biển số xe *</Label>
+                  <Input
+                    placeholder="51D-123.45"
+                    value={dispatchLicensePlate}
+                    onChange={(e) => setDispatchLicensePlate(e.target.value.toUpperCase())}
+                    className="h-8 text-xs bg-white mt-0.5 font-mono uppercase"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[11px] font-semibold text-slate-700">Ghi chú chuyến</Label>
+                  <Input
+                    placeholder="Xe lạnh 1.5 tấn"
+                    value={dispatchNote}
+                    onChange={(e) => setDispatchNote(e.target.value)}
+                    className="h-8 text-xs bg-white mt-0.5"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                Gán Lô hàng Thu hoạch (Tùy chọn)
+              </Label>
+              <div className="space-y-3">
             {order.items.map((item) => {
               const itemBatches = availableBatches.filter((b) => b.productId === item.productId)
               return (
@@ -1320,6 +1571,8 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                 </div>
               )
             })}
+              </div>
+            </div>
           </div>
 
           <DialogFooter>
@@ -1769,6 +2022,13 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal 5: Phiếu Giao Hàng & Xuất Kho A4 */}
+      <PackingSlipModal
+        open={packingSlipOpen}
+        onOpenChange={setPackingSlipOpen}
+        data={packingSlipData}
+      />
     </div>
   )
 }

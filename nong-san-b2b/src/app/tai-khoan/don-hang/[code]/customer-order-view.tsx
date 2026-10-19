@@ -18,6 +18,8 @@ import {
   CheckCircle2,
   ArrowRight,
   Sparkles,
+  Truck,
+  Phone,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -67,6 +69,17 @@ export interface CustomerOrderData {
   preorderFinalPricePerKg?: number | null
   preorderFulfilledGrams?: number | null
   preorderCustomerDecision?: string | null
+  shipment?: {
+    code: string
+    status: string
+    vehicleType: string
+    driverName?: string | null
+    driverPhone?: string | null
+    licensePlate?: string | null
+    dispatchedAt?: string | null
+    deliveredAt?: string | null
+    note?: string | null
+  } | null
   addressSnapshot: {
     recipient?: string
     phone?: string
@@ -768,6 +781,92 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
               </div>
             </CardContent>
           </Card>
+
+          {/* Thông tin Vận chuyển & Giao hàng (khi có shipment hoặc đang giao/đã giao) */}
+          {(order.shipment || order.status === 'SHIPPING' || order.status === 'DELIVERED') && (
+            <Card className="border-indigo-100 bg-indigo-50/30 shadow-sm">
+              <CardHeader className="pb-3 border-b border-indigo-100">
+                <CardTitle className="text-sm font-bold flex items-center justify-between text-indigo-950">
+                  <span className="flex items-center gap-2">
+                    <Truck className="w-4 h-4 text-indigo-600" />
+                    Thông tin Vận chuyển & Giao hàng
+                  </span>
+                  {order.shipment && (
+                    <Badge
+                      className={
+                        order.shipment.status === 'DELIVERED'
+                          ? 'bg-teal-100 text-teal-800 border-teal-200'
+                          : order.shipment.status === 'DISPATCHED'
+                          ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                          : 'bg-amber-100 text-amber-800 border-amber-200'
+                      }
+                    >
+                      {order.shipment.status === 'DELIVERED'
+                        ? 'Đã giao hàng'
+                        : order.shipment.status === 'DISPATCHED'
+                        ? 'Đang vận chuyển'
+                        : 'Chờ giao'}
+                    </Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 space-y-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="bg-white p-3 rounded-xl border border-indigo-100 space-y-1">
+                    <span className="text-slate-500 font-medium block">Mã vận đơn:</span>
+                    <span className="font-mono font-bold text-slate-800 text-sm">
+                      {order.shipment?.code || `SHIP-${order.code}`}
+                    </span>
+                    <div className="text-[11px] text-slate-500 pt-0.5">
+                      Phương tiện:{' '}
+                      <strong>
+                        {order.shipment?.vehicleType === 'COLD'
+                          ? 'Xe tải lạnh chuyên dụng'
+                          : 'Xe tải tiêu chuẩn'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-indigo-100 space-y-1">
+                    <span className="text-slate-500 font-medium block">Tài xế phụ trách:</span>
+                    {order.shipment?.driverName ? (
+                      <>
+                        <div className="font-bold text-slate-900 text-sm">
+                          {order.shipment.driverName}
+                        </div>
+                        {order.shipment.driverPhone && (
+                          <div className="text-slate-600 flex items-center gap-1.5 pt-0.5">
+                            <Phone className="w-3.5 h-3.5 text-indigo-600" />
+                            <a
+                              href={`tel:${order.shipment.driverPhone}`}
+                              className="text-indigo-600 font-bold hover:underline"
+                            >
+                              {order.shipment.driverPhone}
+                            </a>
+                          </div>
+                        )}
+                        {order.shipment.licensePlate && (
+                          <div className="text-[11px] text-slate-500 font-mono">
+                            Biển số xe: <strong>{order.shipment.licensePlate}</strong>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-slate-500 italic py-1">
+                        Đang điều phối xe và tài xế giao hàng.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {order.shipment?.note && (
+                  <div className="bg-white p-2.5 rounded-lg border border-indigo-100 text-slate-600 text-[11px]">
+                    <strong>Ghi chú giao hàng:</strong> {order.shipment.note}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Items & Settled Weights Table */}
           <Card className="border-slate-200 shadow-sm overflow-hidden">

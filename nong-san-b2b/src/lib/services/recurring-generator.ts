@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import { recordOrderEvent } from '@/lib/events'
 import { generateOrderCode } from '@/lib/order-code'
 import { priceCart, ProductPricingData } from '@/lib/domain/pricing'
-import { getShippingCalculator } from '@/lib/domain/shipping'
+import { createDynamicShippingCalculator } from '@/lib/services/shipping-config'
 import { computeDepositAmount } from '@/lib/domain/settlement'
 import {
   upcomingDeliveryDates,
@@ -187,7 +187,7 @@ export async function processRecurringSchedules(
           lng: address.lng,
         }
 
-        const shippingCalculator = getShippingCalculator()
+        const shippingCalculator = createDynamicShippingCalculator()
         const totalGramsAll = quote.lines.reduce((sum, l) => sum + l.totalGrams, 0)
         const shippingQuote = await shippingCalculator.quote({
           totalGrams: totalGramsAll,

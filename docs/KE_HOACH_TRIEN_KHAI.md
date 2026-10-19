@@ -618,7 +618,7 @@ flowchart LR
 
 ---
 
-## Phase 8 – VẬN CHUYỂN (phase cuối, phần 1)
+## Phase 8 – VẬN CHUYỂN (Phase 8A + 8B: Completed — Local QA Accepted)
 
 **Mục tiêu:** tính phí ship theo **khoảng cách + loại xe**, quản lý chuyến giao. Thay `zeroShippingCalculator` mà **không sửa** luồng checkout ngoài phần hiển thị.
 
@@ -640,17 +640,21 @@ Bảng giá seed (giả định minh họa):
 | COLD | 0 | 250.000 | 12.000 |
 | COLD | 500.000 | 450.000 | 18.000 |
 
-**Việc cần làm**
-- [ ] Prisma: `ShippingRate`, `Shipment(orderId @unique, vehicleType, distanceKm, fee, driverName, driverPhone, plateNumber, dispatchedAt, deliveredAt, note)`, `AppSetting` (key/value: `warehouseLat`, `warehouseLng`, `warehouseAddress`, `maxRadiusKm`). Thêm `GOOGLE_MAPS_API_KEY` vào `.env.example`.
-- [ ] Geocode địa chỉ (Geocoding API, hoặc cho khách ghim vị trí trên bản đồ / nhập tọa độ khi không có key) rồi lưu `Address.lat/lng`.
-- [ ] `src/lib/domain/shipping/maps-calculator.ts` cài `ShippingCalculator`. `getShippingCalculator()` trả về calculator này. Các phép tính tách thành hàm thuần `computeShippingFee()` kèm test (mục 7.6).
-- [ ] Checkout: hiển thị phí ship thật, loại xe, km, lựa chọn nâng cấp xe lạnh; `total` và `depositAmount` tính cả phí ship. Server tính lại phí khi `placeOrder`.
-- [ ] Đơn **cũ** (`shippingFee = 0`): Admin được nhập phí ship thủ công khi xác nhận đơn. Hệ thống tính lại `total`/`depositAmount` và ghi event; khách trả phần chênh khi nhận hàng.
-- [ ] Chuyển `PROCESSING → SHIPPING` **bắt buộc** nhập thông tin chuyến (tài xế, SĐT, biển số) và tạo `Shipment`.
-- [ ] `/admin/van-chuyen`: bảng giá xe (CRUD), cấu hình kho, danh sách chuyến giao theo ngày (nhóm theo khung giờ, in phiếu giao hàng).
-- [ ] Khách: chi tiết đơn hiển thị tài xế, SĐT, biển số khi đơn đang giao.
+**Việc đã hoàn thành (Phase 8A + 8B — Local QA Accepted)**
+- [x] Prisma: `ShippingRate`, `Shipment(orderId @unique, vehicleType, distanceKm, fee, driverName, driverPhone, licensePlate, dispatchedAt, deliveredAt, note)`, `AppSetting` (key/value: `warehouseLat`, `warehouseLng`, `warehouseAddress`, `warehouseName`, `maxRadiusKm`). Thêm `GOOGLE_MAPS_API_KEY` vào `.env.example`.
+- [x] Geocode địa chỉ: Google Routes matrix calculation kết hợp Haversine fallback an toàn.
+- [x] Shipping Engine động: `calculateShippingQuote`, `getEffectiveShippingRates` fallback in-memory, bọc transaction toàn vẹn.
+- [x] Checkout: hiển thị phí ship thật, loại xe, km; `total` và `depositAmount` tính cả phí ship. Server tính lại phí khi `placeOrder`.
+- [x] Pre-order & Recurring Shipping: Tích hợp đầy đủ cước vận chuyển vào đơn nháp và đơn đặt trước; xử lý sửa lỗi quyết toán hoàn cọc `PH8A-FIN-01`.
+- [x] Chuyển `PROCESSING → SHIPPING` gán thông tin chuyến (tài xế, SĐT, biển số) và cập nhật `Shipment`.
+- [x] `/admin/van-chuyen`: bảng giá xe (CRUD) với Rate Integrity Guards (chặn xóa/tắt bậc 0kg cơ sở, atomic `createMany skipDuplicates`), cấu hình kho, danh sách chuyến giao, in phiếu giao hàng A4.
+- [x] Khách: chi tiết đơn hiển thị tài xế, SĐT, biển số, mã vận đơn khi đơn đang giao.
 
-**DoD:** không có API key thì checkout vẫn chạy (dùng fallback). Có key thì km khớp Google Maps (sai lệch ≤ 1km). Test phí ship pass. Đơn cũ không bị lỗi.
+**DoD:** Đã hoàn thành toàn bộ Phase 8A và Phase 8B ở mức Local/Static QA.
+- 52/52 tests Shipping Admin PASS (bao gồm bộ kiểm thử hồi quy T1–T10 và B1–B10).
+- Tổng 414/414 unit tests PASS (30/30 test files), lint 0 errors, typecheck PASS, build PASS.
+- Trạng thái: **Phase 8A + 8B: Completed — Local QA Accepted.**
+- Ghi chú phát hành: **Beta Runtime Acceptance / Neon Migration: PENDING GAP-01.** (Chưa chạy migration hoặc deploy lên Neon/Beta).
 
 ---
 

@@ -823,7 +823,16 @@ export async function confirmRecurringDraft(
         lat: typeof addressSnapshot.lat === 'number' ? addressSnapshot.lat : null,
         lng: typeof addressSnapshot.lng === 'number' ? addressSnapshot.lng : null,
         addressText: `${addressSnapshot.line ?? ''}, ${addressSnapshot.ward ?? ''}, ${addressSnapshot.district ?? ''}, ${addressSnapshot.province ?? ''}`,
+        district: typeof addressSnapshot.district === 'string' ? addressSnapshot.district : undefined,
+        province: typeof addressSnapshot.province === 'string' ? addressSnapshot.province : undefined,
       })
+
+      if (!shippingQuote.allowed) {
+        throw new Error(
+          shippingQuote.error ||
+            'Không thể xác nhận đơn nháp: địa chỉ không thể tính phí vận chuyển hoặc vượt bán kính'
+        )
+      }
 
       const shippingFee = shippingQuote.fee
       const subtotal = quote.subtotal
@@ -842,6 +851,8 @@ export async function confirmRecurringDraft(
           groupDiscountPercent,
           subtotal,
           shippingFee,
+          shippingDistanceKm: shippingQuote.distanceKm,
+          shippingVehicleType: shippingQuote.vehicleType,
           total,
           depositAmount,
           paymentDueAt,

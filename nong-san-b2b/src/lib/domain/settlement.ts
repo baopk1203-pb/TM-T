@@ -18,6 +18,25 @@ export interface PaymentTransactionData {
   type: TxType
   status: TxStatus
   amount: number
+  reference?: string | null
+  note?: string | null
+  isShortfall?: boolean
+}
+
+/**
+ * Kiểm tra xem giao dịch hoàn tiền có phải là hoàn cọc do thiếu hụt sản lượng Pre-order hay không (DEV-TASK-20-FIX01 / PH8A-FIN-01)
+ */
+export function isShortfallRefund(tx: PaymentTransactionData): boolean {
+  if (tx.type !== TxType.REFUND) return false
+  if (tx.isShortfall) return true
+  if (tx.reference === 'REFUND_SHORTFALL' || tx.reference?.startsWith('SHORTFALL')) return true
+  if (tx.note) {
+    const lower = tx.note.toLowerCase()
+    if ((lower.includes('thiếu hụt') || lower.includes('shortfall')) && !lower.includes('khiếu nại')) {
+      return true
+    }
+  }
+  return false
 }
 
 export interface DerivedPaymentResult {
@@ -27,7 +46,7 @@ export interface DerivedPaymentResult {
   netPaid: number // Doanh thu thực thu ròng
   refundedAmount: number // Tổng tiền đã hoàn trả cho khách
   targetTotal: number
-  remainingAmount: number // Nghĩa vụ nợ còn lại của khách (Math.max(0, targetTotal - grossPaid))
+  remainingAmount: number // Nghĩa vụ nợ còn lại của khách (Math.max(0, targetTotal - effectivePaid))
   isSettled: boolean // Khách đã hoàn thành nghĩa vụ thanh toán đơn hàng
   hasPendingRefund: boolean
 }
@@ -42,12 +61,13 @@ export function computeDepositAmount(total: number): number {
 }
 
 /**
- * Suy ra trạng thái thanh toán từ các giao dịch thực tế (Mục 3.6)
+ * Suy ra trạng thái thanh toán từ các giao dịch thực tế (Mục 3.6 & DEV-TASK-20-FIX01)
  * - grossPaid = Σ PAYMENT(DONE)
  * - refundedAmount = Σ REFUND(DONE)
  * - netPaid = grossPaid - refundedAmount
  * - targetTotal = finalTotal ?? total
- * - remainingAmount = max(0, targetTotal - grossPaid)
+ * - effectivePaid = grossPaid - totalShortfallRefundDone (tiền cọc thực giữ)
+ * - remainingAmount = max(0, targetTotal - effectivePaid)
  */
 export function derivePaymentStatus(
   order: OrderPaymentTarget,
@@ -57,6 +77,7 @@ export function derivePaymentStatus(
 
   let totalPaymentDone = 0
   let totalRefundDone = 0
+  let totalShortfallRefundDone = 0
   let hasPendingRefund = false
 
   for (const tx of transactions) {
@@ -65,6 +86,9 @@ export function derivePaymentStatus(
     } else if (tx.type === TxType.REFUND) {
       if (tx.status === TxStatus.DONE) {
         totalRefundDone += tx.amount
+        if (isShortfallRefund(tx)) {
+          totalShortfallRefundDone += tx.amount
+        }
       } else if (tx.status === TxStatus.PENDING) {
         hasPendingRefund = true
       }
@@ -76,9 +100,12 @@ export function derivePaymentStatus(
   const netPaid = Math.max(0, grossPaid - refundedAmount)
   const paidAmount = netPaid
 
-  // Nghĩa vụ thanh toán còn lại của khách: khách chỉ nợ nếu tổng đã trả chưa đủ targetTotal.
-  // Tiền bồi hoàn khiếu nại (refundedAmount) không làm phát sinh nợ giả cho khách.
-  const remainingAmount = Math.max(0, targetTotal - grossPaid)
+  // Số tiền khách đã thanh toán còn giữ cho đơn hàng (sau khi trừ các khoản cọc đã hoàn trả do hụt sản lượng)
+  // Lưu ý: Tiền bồi hoàn khiếu nại (complaint compensation) không trừ vào effectivePaid để không gây nợ giả cho khách (SRC-FIN-02).
+  const effectivePaid = Math.max(0, grossPaid - totalShortfallRefundDone)
+
+  // Nghĩa vụ thanh toán còn lại của khách:
+  const remainingAmount = Math.max(0, targetTotal - effectivePaid)
   const isSettled = remainingAmount === 0 && !hasPendingRefund
 
   // Nếu có giao dịch hoàn tiền đang chờ
@@ -430,9 +457,15 @@ export function computePayableAmount(
   transactions: PaymentTransactionData[]
 ): PayableAmountResult {
   let grossPaid = 0
+  let totalShortfallRefundDone = 0
+
   for (const tx of transactions) {
     if (tx.type === TxType.PAYMENT && tx.status === TxStatus.DONE) {
       grossPaid += tx.amount
+    } else if (tx.type === TxType.REFUND && tx.status === TxStatus.DONE) {
+      if (isShortfallRefund(tx)) {
+        totalShortfallRefundDone += tx.amount
+      }
     }
   }
 
@@ -489,7 +522,8 @@ export function computePayableAmount(
 
   // PROCESSING, SHIPPING, DELIVERED, COMPLAINT
   const targetTotal = order.finalTotal ?? order.total
-  const remaining = Math.max(0, targetTotal - grossPaid)
+  const effectivePaid = Math.max(0, grossPaid - totalShortfallRefundDone)
+  const remaining = Math.max(0, targetTotal - effectivePaid)
 
   if (remaining === 0) {
     return {

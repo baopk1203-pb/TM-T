@@ -32,6 +32,8 @@ export default async function CheckoutPage() {
       district: true,
       province: true,
       isDefault: true,
+      lat: true,
+      lng: true,
     },
   })
 

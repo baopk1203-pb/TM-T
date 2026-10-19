@@ -328,15 +328,17 @@ describe('Phase 6A — Recurring Orders (Domain, Generator, Confirmation & Cron)
       expect(simulatedOrdersInDb).toHaveLength(2)
       expect(recordOrderEvent).toHaveBeenCalledTimes(2)
 
-      // Kiểm tra giá tính qua priceCart khớp tuyệt đối: 210kg * 72.750 = 15.277.500đ, cọc 4.584.000đ
+      // Kiểm tra giá tính qua priceCart & Shipping Engine (Phase 8A):
+      // subtotal: 15.277.500đ, shippingFee: 302.000đ -> total: 15.579.500đ, cọc 30%: 4.674.000đ
       expect(txMock.order.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             type: OrderType.RECURRING,
             status: OrderStatus.DRAFT,
             subtotal: 15277500,
-            total: 15277500,
-            depositAmount: 4584000,
+            shippingFee: 302000,
+            total: 15579500,
+            depositAmount: 4674000,
           }),
         })
       )
@@ -560,8 +562,9 @@ describe('Phase 6A — Recurring Orders (Domain, Generator, Confirmation & Cron)
           status: OrderStatus.PENDING_CONFIRMATION,
           paymentOption: PaymentOption.DEPOSIT_30,
           subtotal: 15277500,
-          total: 15277500,
-          depositAmount: 4584000,
+          shippingFee: 270000,
+          total: 15547500,
+          depositAmount: 4665000,
           paymentDueAt: expect.any(Date),
         }),
       })

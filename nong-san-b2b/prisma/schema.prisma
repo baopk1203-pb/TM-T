@@ -87,6 +87,18 @@ enum Resolution {
   REPLACE
 }
 
+enum VehicleType {
+  NORMAL
+  COLD
+}
+
+enum ShipmentStatus {
+  PENDING
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+}
+
 model CustomerGroup {
   id              String   @id @default(cuid())
   code            String   @unique
@@ -250,6 +262,9 @@ model Order {
   timeSlot                 TimeSlot?
   subtotal                 Int
   shippingFee              Int                  @default(0)
+  shippingDistanceKm       Float?
+  shippingVehicleType      VehicleType?
+  shipment                 Shipment?
   total                    Int
   depositAmount            Int
   finalSubtotal            Int?
@@ -359,4 +374,44 @@ model RecurringItem {
   packagingId String
   quantity    Int
   schedule    RecurringSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+}
+
+model ShippingRate {
+  id          String      @id @default(cuid())
+  vehicleType VehicleType
+  minGrams    Int
+  baseFee     Int
+  perKm       Int
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@unique([vehicleType, minGrams])
+}
+
+model Shipment {
+  id           String         @id @default(cuid())
+  orderId      String         @unique
+  code         String         @unique
+  vehicleType  VehicleType
+  distanceKm   Float
+  shippingFee  Int
+  driverName   String?
+  driverPhone  String?
+  licensePlate String?
+  status       ShipmentStatus @default(PENDING)
+  dispatchedAt DateTime?
+  deliveredAt  DateTime?
+  note         String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  order        Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model AppSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
 }

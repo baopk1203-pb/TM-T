@@ -58,7 +58,7 @@ Trong quá trình phát triển các Phase 1–7, các nhóm QA (QA Agent Antigr
 
 ---
 
-### 2.4. BẢNG THEO DÕI HỢP NHẤT TOÀN DỰ ÁN (30 MỤC)
+### 2.4. BẢNG THEO DÕI HỢP NHẤT TOÀN DỰ ÁN (31 MỤC)
 
 | ID | Phase | Phân hệ | Mô tả vấn đề | Nguồn bằng chứng | Trạng thái | Ưu tiên | File liên quan | Commit sửa lỗi | Retest / Xác minh | Hướng xử lý đề xuất | Thời điểm xử lý |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -92,6 +92,7 @@ Trong quá trình phát triển các Phase 1–7, các nhóm QA (QA Agent Antigr
 | **GAP-06** | Phase 7 | Báo cáo | Báo cáo doanh thu Recharts với dữ liệu đơn COMPLETED thực tế | QA-WORK-06 | **TEST GAP** | P3 | Phân hệ Reports | `2c7c57e` | Unit tests 13/13 PASS | Tạo 1 đơn COMPLETED qua seed/flow để kiểm tra hiển thị cột biểu đồ thật trên DB cô lập | Phase 9 E2E |
 | **GAP-07** | Phase 8 | Vận chuyển | Tích hợp Shipping Engine vào luồng xác nhận đơn nháp định kỳ và đặt trước | Phase 8 Audit | **TEST GAP** | P2 | `actions/recurring.ts`, `actions/preorder.ts` | Dự kiến Phase 8 | Cần audit ở Batch 8A | Bảo đảm `shippingFee` tính đúng vào `total` & `depositAmount` của đơn định kỳ/đặt trước | Phase 8 |
 | **GAP-08** | Phase 9 | Thông báo | Kết nối các `OrderEvent` (`ORDER_CREATED`, `DRAFT_EXPIRED`...) với Email SMTP & Zalo mock | Phase 9 Spec | **TEST GAP** | P2 | `src/lib/notifications/` | Dự kiến Phase 9 | Cần triển khai ở Phase 9 | Bắt sự kiện sau commit transaction để gửi email/thông báo không chặn nghiệp vụ | Phase 9 |
+| **PH8A-FIN-01** | Phase 8A | Quyết toán / Pre-order | Pre-order Shortfall Refund gây tính thiếu tiền quyết toán cuối cùng (OBS-01) | QA-TASK-20 | **FIXED LOCAL ONLY** | P0 | `settlement.ts`, `actions/preorder.ts`, `api/qr/payment/[code]/route.ts` | Dự kiến DEV-TASK-20-FIX01 | 362/362 unit tests PASS (S1–S8 regression suite) | Khấu trừ khoản hoàn cọc do hụt sản lượng đã thực hiện khỏi grossPaid khi tính số tiền còn phải trả | DEV-TASK-20-FIX01 |
 
 ---
 

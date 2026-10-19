@@ -24,6 +24,7 @@ import {
   OrderType,
   PaymentOption,
   TimeSlot,
+  VehicleType,
   Prisma,
 } from '@prisma/client'
 
@@ -45,6 +46,7 @@ const placeOrderSchema = z.object({
   paymentOption: z.nativeEnum(PaymentOption, {
     message: 'Vui lòng chọn hình thức thanh toán hợp lệ',
   }),
+  vehicleType: z.nativeEnum(VehicleType).optional(),
   customerNote: z.string().max(500).optional(),
 })
 
@@ -55,6 +57,92 @@ export interface PlaceOrderResult {
   orderCode?: string
   orderId?: string
   error?: string
+}
+
+export const calculateShippingQuoteSchema = z.object({
+  addressId: z.string().min(1, 'Thiếu địa chỉ nhận hàng'),
+  lines: z.array(
+    z.object({
+      productId: z.string().min(1),
+      packagingId: z.string().min(1),
+      quantity: z.number().int().positive(),
+    })
+  ),
+  vehicleType: z.nativeEnum(VehicleType).optional(),
+})
+
+export type CalculateShippingQuoteInput = z.infer<typeof calculateShippingQuoteSchema>
+
+/**
+ * Server action: Tính phí vận chuyển live cho màn hình Checkout (Phase 8A)
+ */
+export async function calculateShippingQuoteAction(input: CalculateShippingQuoteInput) {
+  try {
+    const sessionUser = await requireUser()
+    const validated = calculateShippingQuoteSchema.safeParse(input)
+    if (!validated.success) {
+      return {
+        success: false,
+        error: validated.error.issues[0]?.message || 'Dữ liệu không hợp lệ',
+      }
+    }
+
+    const address = await db.address.findUnique({
+      where: { id: validated.data.addressId, userId: sessionUser.id },
+    })
+
+    if (!address) {
+      return { success: false, error: 'Không tìm thấy địa chỉ giao hàng' }
+    }
+
+    const productIds = Array.from(new Set(validated.data.lines.map((l) => l.productId)))
+    const dbProducts = await db.product.findMany({
+      where: { id: { in: productIds } },
+      select: {
+        id: true,
+        requiresCold: true,
+        packagings: {
+          select: { id: true, weightGrams: true },
+        },
+      },
+    })
+
+    let totalGrams = 0
+    let requiresCold = false
+
+    for (const line of validated.data.lines) {
+      const prod = dbProducts.find((p) => p.id === line.productId)
+      if (prod) {
+        if (prod.requiresCold) requiresCold = true
+        const pkg = prod.packagings.find((pk) => pk.id === line.packagingId)
+        if (pkg) {
+          totalGrams += pkg.weightGrams * line.quantity
+        }
+      }
+    }
+
+    const shippingCalculator = getShippingCalculator()
+    const quote = await shippingCalculator.quote({
+      totalGrams,
+      requiresCold,
+      vehicleType: validated.data.vehicleType,
+      lat: address.lat,
+      lng: address.lng,
+      addressText: `${address.line}, ${address.ward}, ${address.district}, ${address.province}`,
+      district: address.district,
+      province: address.province,
+    })
+
+    return {
+      success: true,
+      quote,
+    }
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Lỗi khi tính toán phí vận chuyển',
+    }
+  }
 }
 
 /**
@@ -257,21 +345,32 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
           }
         }
 
-        // 8. Tính phí vận chuyển (gọi zeroShippingCalculator)
+        // 8. Tính phí vận chuyển (Shipping Engine - Phase 8A)
         const shippingCalculator = getShippingCalculator()
         const totalGramsAll =
           quote.lines.reduce((sum, l) => sum + l.totalGrams, 0) +
           quote.sampleLines.reduce((sum, l) => sum + l.weightGrams * l.quantity, 0)
 
+        const hasCold = dbProducts.some((p) => p.requiresCold)
         const shippingQuote = await shippingCalculator.quote({
           totalGrams: totalGramsAll,
-          requiresCold: dbProducts.some((p) => p.requiresCold),
+          requiresCold: hasCold,
+          vehicleType: validated.vehicleType,
           lat: address.lat,
           lng: address.lng,
           addressText: `${address.line}, ${address.ward}, ${address.district}, ${address.province}`,
+          district: address.district,
+          province: address.province,
         })
 
-        const shippingFee = shippingQuote.fee // 0 đ ở Phase 4
+        if (!shippingQuote.allowed) {
+          throw new Error(
+            shippingQuote.error ||
+              'Không thể tính phí vận chuyển cho địa chỉ đã chọn (vượt bán kính hoặc thiếu tọa độ)'
+          )
+        }
+
+        const shippingFee = shippingQuote.fee
         const subtotal = quote.subtotal
         const total = subtotal + shippingFee
 
@@ -319,6 +418,8 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
             timeSlot: validated.timeSlot,
             subtotal,
             shippingFee,
+            shippingDistanceKm: shippingQuote.distanceKm,
+            shippingVehicleType: shippingQuote.vehicleType,
             total,
             depositAmount,
             paymentDueAt,

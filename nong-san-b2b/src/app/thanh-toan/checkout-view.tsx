@@ -11,9 +11,12 @@ import {
   ShieldCheck,
   Plus,
   AlertCircle,
+  AlertTriangle,
   ArrowRight,
   RefreshCw,
   ShoppingCart,
+  Snowflake,
+  Info,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -24,9 +27,10 @@ import { useCartStore } from '@/lib/cart-store'
 import { formatVND } from '@/lib/money'
 import { getCheckoutDiscountNotice, calculateCartSavings } from '@/lib/cart-summary'
 import { quoteCart, QuoteCartResponse } from '@/actions/cart'
-import { placeOrder } from '@/actions/order'
+import { placeOrder, calculateShippingQuoteAction } from '@/actions/order'
 import { computeDepositAmount } from '@/lib/domain/settlement'
-import { TimeSlot, PaymentOption } from '@prisma/client'
+import { TimeSlot, PaymentOption, VehicleType } from '@prisma/client'
+import { ShippingQuoteResult, DEFAULT_WAREHOUSE } from '@/lib/domain/shipping'
 import { toast } from 'sonner'
 
 interface AddressItem {
@@ -39,6 +43,8 @@ interface AddressItem {
   district: string
   province: string
   isDefault: boolean
+  lat?: number | null
+  lng?: number | null
 }
 
 interface CheckoutViewProps {
@@ -70,6 +76,12 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
   const [timeSlot, setTimeSlot] = useState<TimeSlot>(TimeSlot.MORNING)
   const [paymentOption, setPaymentOption] = useState<PaymentOption>(PaymentOption.DEPOSIT_30)
   const [customerNote, setCustomerNote] = useState('')
+
+  // Shipping Engine states (Phase 8A)
+  const [requestedVehicleType, setRequestedVehicleType] = useState<VehicleType>('NORMAL')
+  const [shippingQuote, setShippingQuote] = useState<ShippingQuoteResult | null>(null)
+  const [isCalculatingShipping, setIsCalculatingShipping] = useState(false)
+  const [shippingError, setShippingError] = useState<string | null>(null)
 
   // Load quote & earliest delivery date
   useEffect(() => {
@@ -114,6 +126,53 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
     }
   }, [items, isMounted])
 
+  const cartRequiresCold = quoteData
+    ? Object.values(quoteData.productMetadata).some((p) => p.requiresCold)
+    : false
+
+  // Tự động chuyển sang xe COLD nếu giỏ hàng có hàng yêu cầu lạnh (Mục 4)
+  const vehicleType: VehicleType = cartRequiresCold ? 'COLD' : requestedVehicleType
+
+  // Tính phí vận chuyển live khi thay đổi địa chỉ, loại xe hoặc giỏ hàng (Phase 8A)
+  useEffect(() => {
+    if (!isMounted || !selectedAddressId || items.length === 0) return
+
+    let isCancelled = false
+    const timer = setTimeout(() => {
+      setIsCalculatingShipping(true)
+    }, 0)
+
+    calculateShippingQuoteAction({
+      addressId: selectedAddressId,
+      lines: items,
+      vehicleType,
+    })
+      .then((res) => {
+        if (!isCancelled) {
+          setIsCalculatingShipping(false)
+          if (res.success && res.quote) {
+            setShippingQuote(res.quote)
+            setShippingError(res.quote.allowed ? null : res.quote.error || 'Địa chỉ không hỗ trợ giao hàng')
+          } else {
+            setShippingQuote(null)
+            setShippingError(res.error || 'Không thể tính phí vận chuyển')
+          }
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setIsCalculatingShipping(false)
+          setShippingQuote(null)
+          setShippingError('Lỗi kết nối khi tính phí vận chuyển')
+        }
+      })
+
+    return () => {
+      isCancelled = true
+      clearTimeout(timer)
+    }
+  }, [isMounted, selectedAddressId, items, vehicleType])
+
   if (!isMounted || isQuoting) {
     return (
       <div className="py-24 text-center">
@@ -142,11 +201,12 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
 
   const quote = quoteData?.quote
   const subtotal = quote?.subtotal || 0
-  const shippingFee = 0 // 0 đ ở Phase 4
+  const shippingFee = shippingQuote?.allowed ? shippingQuote.fee : 0
   const total = subtotal + shippingFee
   const depositAmount = computeDepositAmount(total)
   const requiredPayNow = paymentOption === PaymentOption.DEPOSIT_30 ? depositAmount : total
   const isCartValid = quote?.isValid ?? false
+  const isShippingValid = (shippingQuote?.allowed ?? false) && !shippingError
 
   // Xử lý đặt hàng
   const handleSubmitOrder = () => {
@@ -165,6 +225,11 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
       return
     }
 
+    if (!isShippingValid) {
+      toast.error(shippingError || 'Không thể đặt hàng do phí vận chuyển chưa hợp lệ')
+      return
+    }
+
     startTransition(async () => {
       const res = await placeOrder({
         lines: items,
@@ -172,6 +237,7 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
         deliveryDate,
         timeSlot,
         paymentOption,
+        vehicleType,
         customerNote: customerNote.trim() || undefined,
       })
 
@@ -314,22 +380,158 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
             </div>
           </div>
 
-          {/* BƯỚC 3: PHƯƠNG THỨC VẬN CHUYỂN */}
-          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
-            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <Truck className="w-4 h-4 text-emerald-600" /> 3. Vận Chuyển Chuyên Dụng
-            </h2>
-            <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
-              <div>
-                <span className="font-semibold text-slate-900 block">
-                  Giao hàng trực tiếp từ nhà vườn bằng xe tải thùng kín / xe lạnh
-                </span>
-                <span className="text-slate-500 text-[11px]">
-                  Phí vận chuyển chính xác sẽ được báo khi xác nhận đơn hàng theo khoảng cách km.
-                </span>
-              </div>
-              <strong className="text-emerald-700 font-bold text-sm">0 đ</strong>
+          {/* BƯỚC 3: PHƯƠNG THỨC VẬN CHUYỂN & LOẠI XE (Phase 8A) */}
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <Truck className="w-4 h-4 text-emerald-600" /> 3. Phương Thức Vận Chuyển & Loại Xe
+              </h2>
+              {shippingQuote?.allowed && (
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] ${
+                    shippingQuote.isEstimated
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}
+                >
+                  {shippingQuote.isEstimated ? 'Khoảng cách ước tính' : 'Google Routes API'}
+                </Badge>
+              )}
             </div>
+
+            <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-start gap-2">
+              <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-slate-800">{DEFAULT_WAREHOUSE.name}</strong>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Bán kính phục vụ tối đa: {DEFAULT_WAREHOUSE.maxRadiusKm}km. Phí ship tính theo bậc khối lượng và km thực tế.
+                </p>
+              </div>
+            </div>
+
+            {/* Bộ chọn loại phương tiện */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-slate-700">
+                Chọn phương tiện chuyên chở:
+              </Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Xe tiêu chuẩn (NORMAL) */}
+                <div
+                  onClick={() => {
+                    if (!cartRequiresCold) {
+                      setRequestedVehicleType('NORMAL')
+                    }
+                  }}
+                  className={`p-3.5 rounded-xl border text-xs transition-all space-y-2 ${
+                    cartRequiresCold
+                      ? 'border-slate-200 bg-slate-100 opacity-60 cursor-not-allowed'
+                      : vehicleType === 'NORMAL'
+                      ? 'border-emerald-500 bg-emerald-50/40 ring-1 ring-emerald-500 cursor-pointer shadow-xs'
+                      : 'border-slate-200 hover:border-slate-300 cursor-pointer'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <strong className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                      <Truck className="w-4 h-4 text-slate-700" /> Xe Tải Tiêu Chuẩn
+                    </strong>
+                    {vehicleType === 'NORMAL' && !cartRequiresCold && (
+                      <Badge className="bg-emerald-600 text-white text-[10px]">Đang chọn</Badge>
+                    )}
+                  </div>
+                  <p className="text-slate-500 text-[11px] leading-relaxed">
+                    Thùng kín thoáng khí, bảo vệ hàng tránh mưa nắng. Cước cơ sở từ 150.000đ + 8.000đ/km.
+                  </p>
+                  {cartRequiresCold && (
+                    <div className="text-[10px] text-rose-600 font-medium">
+                      * Không khả dụng do giỏ có hàng cần bảo quản lạnh
+                    </div>
+                  )}
+                </div>
+
+                {/* Xe lạnh (COLD) */}
+                <div
+                  onClick={() => setRequestedVehicleType('COLD')}
+                  className={`p-3.5 rounded-xl border text-xs cursor-pointer transition-all space-y-2 ${
+                    vehicleType === 'COLD'
+                      ? 'border-blue-500 bg-blue-50/40 ring-1 ring-blue-500 shadow-xs'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <strong className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                      <Snowflake className="w-4 h-4 text-blue-600" /> Xe Lạnh Chuyên Dụng
+                    </strong>
+                    {cartRequiresCold ? (
+                      <Badge className="bg-blue-600 text-white text-[10px]">Bắt buộc theo SP</Badge>
+                    ) : vehicleType === 'COLD' ? (
+                      <Badge className="bg-blue-600 text-white text-[10px]">Nâng cấp</Badge>
+                    ) : null}
+                  </div>
+                  <p className="text-slate-500 text-[11px] leading-relaxed">
+                    Nhiệt độ kiểm soát 2°C – 8°C, giữ độ tươi giòn tối đa. Cước cơ sở từ 250.000đ + 12.000đ/km.
+                  </p>
+                  {cartRequiresCold && (
+                    <div className="text-[10px] text-blue-700 font-medium">
+                      * Tự động áp dụng cho sản phẩm yêu cầu lạnh trong đơn
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Chi tiết tính cước & khoảng cách */}
+            {isCalculatingShipping ? (
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 text-emerald-600 animate-spin" />
+                <span>Đang tính toán khoảng cách và cước vận chuyển...</span>
+              </div>
+            ) : shippingQuote && shippingQuote.allowed ? (
+              <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/30 text-xs space-y-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-slate-600">
+                  <div>
+                    <span className="block text-[11px] text-slate-400">Khoảng cách:</span>
+                    <strong className="text-slate-900 text-sm font-bold">
+                      {shippingQuote.distanceKm} km
+                    </strong>
+                    <span className="text-[10px] text-slate-400 block">(Tính cước: {shippingQuote.billedKm}km)</span>
+                  </div>
+                  <div>
+                    <span className="block text-[11px] text-slate-400">Loại xe:</span>
+                    <strong className="text-slate-900 font-bold">
+                      {shippingQuote.vehicleType === 'COLD' ? 'Xe Lạnh (2-8°C)' : 'Xe Tiêu Chuẩn'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="block text-[11px] text-slate-400">Bậc tải trọng:</span>
+                    <strong className="text-slate-900 font-bold">
+                      {shippingQuote.minGrams >= 500000 ? '≥ 500 kg (Xe lớn)' : '< 500 kg'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="block text-[11px] text-slate-400">Phí vận chuyển:</span>
+                    <strong className="text-emerald-700 text-base font-extrabold">
+                      {formatVND(shippingQuote.fee)}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-emerald-100 flex items-center justify-between text-[11px] text-slate-500">
+                  <span>Ghi chú lộ trình: {shippingQuote.note}</span>
+                  <span className="text-slate-400">
+                    Cước cơ sở: {formatVND(shippingQuote.baseFee)} + {formatVND(shippingQuote.perKm)}/km
+                  </span>
+                </div>
+              </div>
+            ) : shippingError ? (
+              <div className="p-4 rounded-xl border border-rose-200 bg-rose-50 text-xs text-rose-800 space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-rose-900">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  Không thể giao hàng tới địa chỉ này:
+                </div>
+                <p className="text-[11px] text-rose-700 leading-relaxed">{shippingError}</p>
+              </div>
+            ) : null}
           </div>
 
           {/* BƯỚC 4: HÌNH THỨC THANH TOÁN */}
@@ -423,8 +625,25 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
                 </div>
 
                 <div className="flex justify-between text-slate-600">
-                  <span>Phí vận chuyển:</span>
-                  <span className="font-medium text-emerald-700">0 đ (Tạm tính)</span>
+                  <span>Phí vận chuyển ({vehicleType === 'COLD' ? 'Xe lạnh' : 'Xe tiêu chuẩn'}):</span>
+                  {isCalculatingShipping ? (
+                    <span className="font-medium text-slate-400 flex items-center gap-1">
+                      <RefreshCw className="w-3 h-3 animate-spin" /> Đang tính...
+                    </span>
+                  ) : isShippingValid ? (
+                    <div className="text-right">
+                      <span className="font-bold text-emerald-700 text-sm">
+                        {formatVND(shippingFee)}
+                      </span>
+                      <span className="block text-[10px] text-slate-400">
+                        {shippingQuote?.distanceKm} km {shippingQuote?.isEstimated ? '(Ước tính)' : ''}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="font-semibold text-rose-600 text-xs">
+                      Chưa tính được phí
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex justify-between text-slate-600 pt-2 border-t border-slate-100">
@@ -454,16 +673,36 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
                 </div>
               )}
 
+              {/* Lỗi Vận chuyển nếu có */}
+              {!isShippingValid && !isCalculatingShipping && shippingError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{shippingError}</span>
+                </div>
+              )}
+
               {/* Nút đặt hàng */}
               <Button
                 onClick={handleSubmitOrder}
-                disabled={isSubmitting || !isCartValid || !selectedAddressId}
+                disabled={
+                  isSubmitting ||
+                  !isCartValid ||
+                  !selectedAddressId ||
+                  !isShippingValid ||
+                  isCalculatingShipping
+                }
                 className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm gap-2 shadow-sm disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" /> Đang tạo đơn hàng...
                   </>
+                ) : isCalculatingShipping ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" /> Đang tính phí ship...
+                  </>
+                ) : !isShippingValid ? (
+                  <>Không thể giao tới địa chỉ này</>
                 ) : (
                   <>
                     Xác nhận đặt hàng <ArrowRight className="w-4 h-4" />

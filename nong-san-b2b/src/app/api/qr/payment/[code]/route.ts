@@ -38,6 +38,8 @@ export async function GET(
             type: true,
             status: true,
             amount: true,
+            reference: true,
+            note: true,
           },
         },
       },

@@ -14,6 +14,8 @@ import {
 } from '@/lib/domain/preorder'
 import { earliestDeliveryDate, isDeliveryDateValid } from '@/lib/domain/delivery-date'
 import { canTransition } from '@/lib/domain/order-state'
+import { getShippingCalculator } from '@/lib/domain/shipping'
+import { computeDepositAmount } from '@/lib/domain/settlement'
 import {
   OrderStatus,
   OrderType,
@@ -162,6 +164,31 @@ export async function placePreorder(input: PlacePreorderInput): Promise<PlacePre
 
         const paymentDueAt = new Date(now.getTime() + 24 * 60 * 60 * 1000)
 
+        // Tính toán phí vận chuyển dự kiến theo địa chỉ khách chọn (Shipping Engine - Phase 8A)
+        const shippingCalculator = getShippingCalculator()
+        const shippingQuote = await shippingCalculator.quote({
+          totalGrams,
+          requiresCold: product.requiresCold,
+          vehicleType: product.requiresCold ? 'COLD' : 'NORMAL',
+          lat: address.lat,
+          lng: address.lng,
+          addressText: `${address.line}, ${address.ward}, ${address.district}, ${address.province}`,
+          district: address.district,
+          province: address.province,
+        })
+
+        if (!shippingQuote.allowed) {
+          throw new Error(
+            shippingQuote.error ||
+              'Không thể tính phí vận chuyển cho địa chỉ đã chọn (vượt bán kính phục vụ hoặc thiếu tọa độ)'
+          )
+        }
+
+        const shippingFee = shippingQuote.fee
+        const subtotal = pricing.subtotal
+        const total = subtotal + shippingFee
+        const depositAmount = computeDepositAmount(total)
+
         // Tạo đơn đặt trước
         const order = await tx.order.create({
           data: {
@@ -174,10 +201,12 @@ export async function placePreorder(input: PlacePreorderInput): Promise<PlacePre
             addressSnapshot,
             deliveryDate: null,
             timeSlot: null,
-            subtotal: pricing.subtotal,
-            shippingFee: 0,
-            total: pricing.total,
-            depositAmount: pricing.depositAmount,
+            subtotal,
+            shippingFee,
+            shippingDistanceKm: shippingQuote.distanceKm,
+            shippingVehicleType: shippingQuote.vehicleType,
+            total,
+            depositAmount,
             paymentDueAt,
             customerNote: validated.customerNote || null,
             items: {
@@ -204,7 +233,7 @@ export async function placePreorder(input: PlacePreorderInput): Promise<PlacePre
           type: 'ORDER_CREATED',
           toStatus: OrderStatus.PENDING_CONFIRMATION,
           actorId: user.id,
-          note: `Khách hàng ${user.fullName} đặt trước vụ mùa cho sản phẩm ${product.name} (${totalGrams / 1000}kg). Tiền cọc 30%: ${pricing.depositAmount.toLocaleString('vi-VN')} đ`,
+          note: `Khách hàng ${user.fullName} đặt trước vụ mùa cho sản phẩm ${product.name} (${totalGrams / 1000}kg). Tiền cọc 30%: ${depositAmount.toLocaleString('vi-VN')} đ (Đã gồm phí ship dự kiến: ${shippingFee.toLocaleString('vi-VN')} đ)`,
         })
 
         return {
@@ -384,6 +413,7 @@ export async function adminProcessHarvest(
               status: TxStatus.PENDING,
               method: TxMethod.BANK_TRANSFER,
               amount: shortfallRefund,
+              reference: 'REFUND_SHORTFALL',
               note: `Hoàn tiền cọc do sản lượng thu hoạch thiếu hụt (${validated.fulfilledGrams / 1000}kg / ${orderedGrams / 1000}kg)`,
             },
           })

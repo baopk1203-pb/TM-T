@@ -195,7 +195,17 @@ export async function processRecurringSchedules(
           lat: address.lat,
           lng: address.lng,
           addressText: `${address.line}, ${address.ward}, ${address.district}, ${address.province}`,
+          district: address.district,
+          province: address.province,
         })
+
+        // Một lịch thiếu địa chỉ hợp lệ không được làm crash toàn bộ Cron (Mục 8)
+        if (!shippingQuote.allowed) {
+          console.warn(
+            `[Recurring] Bỏ qua lịch ${schedule.id} (${schedule.name}): ${shippingQuote.error || 'Địa chỉ không hợp lệ'}`
+          )
+          return { created: 0, skipped: deliveryDates.length, codes: [] as string[], processed: false }
+        }
 
         const shippingFee = shippingQuote.fee
         const subtotal = quote.subtotal
@@ -264,6 +274,8 @@ export async function processRecurringSchedules(
               timeSlot: schedule.timeSlot,
               subtotal,
               shippingFee,
+              shippingDistanceKm: shippingQuote.distanceKm,
+              shippingVehicleType: shippingQuote.vehicleType,
               total,
               depositAmount,
               paymentDueAt: null,

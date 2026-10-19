@@ -31,6 +31,7 @@ export default async function ProductDetailPage({
         name: session.user.name,
         discountPercent: session.user.discountPercent || 0,
         role: session.user.role,
+        groupName: session.user.groupName || undefined,
       }
     : null
 

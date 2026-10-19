@@ -7,6 +7,8 @@ declare module 'next-auth' {
       id: string
       role: Role
       groupId: string | null
+      groupCode?: string | null
+      groupName?: string | null
       discountPercent: number
       companyName?: string | null
       phone?: string | null
@@ -17,6 +19,8 @@ declare module 'next-auth' {
     id: string
     role: Role
     groupId: string | null
+    groupCode?: string | null
+    groupName?: string | null
     discountPercent: number
     companyName?: string | null
     phone?: string | null
@@ -28,6 +32,8 @@ declare module 'next-auth/jwt' {
     id: string
     role: Role
     groupId: string | null
+    groupCode?: string | null
+    groupName?: string | null
     discountPercent: number
     companyName?: string | null
     phone?: string | null

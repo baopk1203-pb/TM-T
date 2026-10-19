@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { SignOutButton } from '@/components/auth/sign-out-button'
+import { formatCustomerGroupBadge } from '@/lib/domain/crm'
 
 export default async function AccountLayout({
   children,
@@ -26,13 +27,12 @@ export default async function AccountLayout({
 
   const user = session.user
 
-  // Xác định badge nhóm
-  let groupBadge = { label: 'Cửa hàng nhỏ', color: 'bg-slate-100 text-slate-700 border-slate-300' }
-  if (user.discountPercent === 5) {
-    groupBadge = { label: 'Đại lý cấp 1 (-5%)', color: 'bg-blue-100 text-blue-800 border-blue-300' }
-  } else if (user.discountPercent === 3) {
-    groupBadge = { label: 'Siêu thị (-3%)', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' }
-  }
+  // Xác định badge nhóm từ dữ liệu DB đã đồng bộ (không hardcode theo mức 5% / 3%)
+  const groupBadge = formatCustomerGroupBadge({
+    code: user.groupCode,
+    name: user.groupName,
+    discountPercent: user.discountPercent,
+  })
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">

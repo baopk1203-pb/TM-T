@@ -1,9 +1,10 @@
-import { NextAuthOptions, getServerSession } from 'next-auth'
+import { NextAuthOptions, getServerSession, Session } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 import { Role } from '@prisma/client'
 import { getAuthSecret } from '@/lib/auth-config'
+import { resolveCustomerGroupContext } from '@/lib/domain/crm'
 
 export const authOptions: NextAuthOptions = {
   secret: getAuthSecret(),
@@ -51,6 +52,8 @@ export const authOptions: NextAuthOptions = {
           name: user.fullName,
           role: user.role,
           groupId: user.groupId,
+          groupCode: user.group?.code ?? 'SMALL_SHOP',
+          groupName: user.group?.name ?? 'Cửa hàng nhỏ',
           discountPercent: user.group?.discountPercent ?? 0,
           companyName: user.companyName,
           phone: user.phone,
@@ -64,6 +67,8 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id
         token.role = user.role
         token.groupId = user.groupId
+        token.groupCode = user.groupCode ?? 'SMALL_SHOP'
+        token.groupName = user.groupName ?? 'Cửa hàng nhỏ'
         token.discountPercent = user.discountPercent
         token.companyName = user.companyName
         token.phone = user.phone
@@ -75,6 +80,8 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id
         session.user.role = token.role
         session.user.groupId = token.groupId
+        session.user.groupCode = token.groupCode ?? 'SMALL_SHOP'
+        session.user.groupName = token.groupName ?? 'Cửa hàng nhỏ'
         session.user.discountPercent = token.discountPercent
         session.user.companyName = token.companyName
         session.user.phone = token.phone
@@ -99,10 +106,68 @@ export const authOptions: NextAuthOptions = {
 }
 
 /**
- * Lấy session hiện tại ở Server Component / Server Action
+ * Đồng bộ thông tin nhóm khách hàng và tỷ lệ chiết khấu mới nhất từ DB vào session
+ * Đảm bảo khi Admin đổi nhóm khách hàng hoặc sửa % chiết khấu của nhóm,
+ * giao diện khách hàng nhận được thông tin mới ở lần tải trang tiếp theo mà không cần đăng nhập lại (CRM-05).
+ */
+export async function syncSessionWithDatabase(
+  session: Session | null
+): Promise<Session | null> {
+  if (!session?.user?.id) {
+    return session
+  }
+
+  try {
+    const dbUser = await db.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        id: true,
+        fullName: true,
+        companyName: true,
+        phone: true,
+        role: true,
+        groupId: true,
+        group: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            discountPercent: true,
+          },
+        },
+      },
+    })
+
+    if (dbUser) {
+      const resolved = resolveCustomerGroupContext(dbUser, session.user)
+      return {
+        ...session,
+        user: {
+          ...session.user,
+          name: resolved.name ?? session.user.name,
+          companyName: resolved.companyName,
+          phone: resolved.phone,
+          role: resolved.role,
+          groupId: resolved.groupId,
+          groupCode: resolved.groupCode,
+          groupName: resolved.groupName,
+          discountPercent: resolved.discountPercent,
+        },
+      }
+    }
+  } catch {
+    // Fallback an toàn về dữ liệu trong JWT nếu môi trường test không mock db.user
+  }
+
+  return session
+}
+
+/**
+ * Lấy session hiện tại ở Server Component / Server Action (đã đồng bộ nhóm & chiết khấu mới nhất từ DB)
  */
 export async function getServerAuthSession() {
-  return await getServerSession(authOptions)
+  const session = await getServerSession(authOptions)
+  return await syncSessionWithDatabase(session)
 }
 
 /**

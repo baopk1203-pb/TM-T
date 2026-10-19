@@ -10,15 +10,24 @@ import {
   Users,
   ArrowRight,
   TrendingUp,
+  ShoppingCart,
+  Clock,
+  Truck,
+  AlertCircle,
+  BarChart3,
 } from 'lucide-react'
+import { getAdminDashboardKpis } from '@/server/reports'
+
+export const dynamic = 'force-dynamic'
 
 export default async function AdminDashboardPage() {
-  const [productCount, farmCount, batchCount, userCount] =
+  const [productCount, farmCount, batchCount, userCount, operationalKpis] =
     await Promise.all([
       db.product.count(),
       db.farm.count(),
       db.batch.count(),
       db.user.count({ where: { role: 'CUSTOMER' } }),
+      getAdminDashboardKpis(),
     ])
 
   return (
@@ -34,13 +43,105 @@ export default async function AdminDashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/admin/bao-cao">
+            <Button size="sm" variant="outline" className="text-xs flex items-center gap-1.5 border-emerald-600 text-emerald-700 hover:bg-emerald-50">
+              <BarChart3 className="w-3.5 h-3.5" />
+              Báo cáo kinh doanh
+            </Button>
+          </Link>
           <Badge className="bg-emerald-600 text-white text-xs px-3 py-1">
             Hệ thống đang hoạt động
           </Badge>
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* 4 KPI Vận hành Hôm nay (Mục C - Phase 7B) */}
+      <div>
+        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+          Chỉ số Vận hành hôm nay (Thời gian thực)
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Link href="/admin/don-hang" className="block group">
+            <Card className="border-slate-200 transition-all hover:border-emerald-500 hover:shadow-sm">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-medium text-slate-500">Đơn mới hôm nay</div>
+                  <div className="text-2xl font-bold text-slate-900 mt-1">
+                    {operationalKpis.newOrdersToday}
+                  </div>
+                  <div className="text-[11px] text-emerald-600 mt-1 flex items-center gap-1 font-medium group-hover:underline">
+                    Xem danh sách <ArrowRight className="w-3 h-3" />
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                  <ShoppingCart className="w-5 h-5" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link href="/admin/don-hang" className="block group">
+            <Card className="border-slate-200 transition-all hover:border-amber-500 hover:shadow-sm">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-medium text-slate-500">Chờ xác nhận tiền</div>
+                  <div className="text-2xl font-bold text-amber-700 mt-1">
+                    {operationalKpis.awaitingPaymentConfirmation}
+                  </div>
+                  <div className="text-[11px] text-amber-600 mt-1 flex items-center gap-1 font-medium group-hover:underline">
+                    Đối soát VietQR <ArrowRight className="w-3 h-3" />
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                  <Clock className="w-5 h-5" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link href="/admin/don-hang" className="block group">
+            <Card className="border-slate-200 transition-all hover:border-blue-500 hover:shadow-sm">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-medium text-slate-500">Đơn giao hôm nay</div>
+                  <div className="text-2xl font-bold text-slate-900 mt-1">
+                    {operationalKpis.deliveriesToday}
+                  </div>
+                  <div className="text-[11px] text-blue-600 mt-1 flex items-center gap-1 font-medium group-hover:underline">
+                    Lịch trình giao hàng <ArrowRight className="w-3 h-3" />
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+                  <Truck className="w-5 h-5" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link href="/admin/khieu-nai" className="block group">
+            <Card className="border-slate-200 transition-all hover:border-rose-500 hover:shadow-sm">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-medium text-slate-500">Khiếu nại đang mở</div>
+                  <div className="text-2xl font-bold text-rose-700 mt-1">
+                    {operationalKpis.openComplaints}
+                  </div>
+                  <div className="text-[11px] text-rose-600 mt-1 flex items-center gap-1 font-medium group-hover:underline">
+                    Xử lý khiếu nại <ArrowRight className="w-3 h-3" />
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      </div>
+
+      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+        Quy mô Danh mục & Đối tác
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="border-slate-200">
           <CardContent className="p-5 flex items-center justify-between">

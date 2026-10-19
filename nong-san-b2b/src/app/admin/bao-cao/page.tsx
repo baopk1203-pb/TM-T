@@ -1,11 +1,24 @@
-import { AdminPlaceholder } from '@/components/admin/admin-placeholder'
+import { requireAdmin } from '@/lib/auth'
+import { getBusinessReports } from '@/server/reports'
+import { ReportsClient } from './reports-client'
 
-export default function AdminReportsPage() {
-  return (
-    <AdminPlaceholder
-      title="Báo cáo & Thống kê kinh doanh"
-      phase="Phase 7"
-      description="Biểu đồ doanh thu theo chu kỳ, Top 10 sản phẩm bán chạy nhất, tỷ lệ hủy đơn theo lý do và tỷ lệ hao hụt trung bình thực tế."
-    />
-  )
+export const dynamic = 'force-dynamic'
+
+export default async function AdminReportsPage() {
+  await requireAdmin()
+
+  const reportResult = await getBusinessReports({
+    preset: '7D',
+    grouping: 'DAY',
+  })
+
+  if (!reportResult.success || !reportResult.data) {
+    return (
+      <div className="p-8 text-center text-slate-500 text-sm">
+        Không thể tải dữ liệu báo cáo kinh doanh: {reportResult.error || 'Lỗi không xác định'}
+      </div>
+    )
+  }
+
+  return <ReportsClient initialData={reportResult.data} />
 }

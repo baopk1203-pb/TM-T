@@ -600,20 +600,20 @@ flowchart LR
 
 ---
 
-## Phase 7 – CRM khách hàng & Báo cáo
+## Phase 7 – CRM khách hàng & Báo cáo (IN PROGRESS)
 
-- [ ] `/admin/khach-hang`: danh sách (tên doanh nghiệp, MST, nhóm, số đơn, doanh thu), chi tiết khách (đơn hàng, địa chỉ), **đổi nhóm** (ghi log).
-- [ ] `/admin/nhom-khach`: sửa % chiết khấu. Thay đổi chỉ áp dụng cho đơn mới; đơn cũ giữ snapshot.
+- [x] `/admin/khach-hang`: danh sách (tên doanh nghiệp, MST, nhóm, số đơn, doanh thu), chi tiết khách (đơn hàng, địa chỉ), **đổi nhóm** (ghi structured server log). *(Hoàn thành ở mức Local QA — QA-TASK-16 PASS, commit `86778a9`)*
+- [x] `/admin/nhom-khach`: sửa % chiết khấu (0..50% số nguyên). Thay đổi chỉ áp dụng cho đơn mới; đơn cũ giữ snapshot. Đồng bộ DB sang UI qua `getServerAuthSession`. *(Hoàn thành ở mức Local QA — QA-TASK-16 PASS, commit `86778a9`)*
 - [ ] `/admin/bao-cao` (lọc theo khoảng ngày, dùng `recharts`):
-  - Doanh thu theo ngày/tuần (tổng `finalTotal` của đơn `COMPLETED`).
+  - Doanh thu theo ngày/tuần (tổng `finalTotal ?? total` của đơn `COMPLETED`).
   - Top 10 sản phẩm theo kg và theo doanh thu.
   - Tỷ lệ hủy (theo `cancelledBy`), tỷ lệ khiếu nại.
   - **Tỷ lệ hao hụt trung bình** = `1 − Σ actualGrams / Σ orderedGrams`.
-  - Doanh thu theo nhóm khách.
+  - Doanh thu theo nhóm khách hàng hiện tại.
 - [ ] `/admin` dashboard: KPI hôm nay (đơn mới, chờ xác nhận tiền, đơn giao hôm nay, khiếu nại mở).
 - [ ] Các truy vấn báo cáo đặt trong `src/server/reports.ts`, có test với dữ liệu seed nhỏ.
 
-**DoD:** số liệu báo cáo khớp khi đối chiếu tay với dữ liệu seed.
+**DoD:** số liệu báo cáo khớp khi đối chiếu tay với dữ liệu seed. Batch 7A đã PASS Local QA (QA-TASK-16). Batch 7B đang triển khai.
 
 ---
 

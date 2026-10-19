@@ -90,3 +90,37 @@ export function isDeliveryDateValid(selectedDate: Date, minDate: Date): boolean 
   )
   return selUtc >= minUtc
 }
+
+/**
+ * Chuẩn hóa format ngày theo định dạng Việt Nam (DD/MM/YYYY) tại múi giờ Asia/Ho_Chi_Minh (UTC+7)
+ * Đảm bảo tính nhất quán tuyệt đối giữa SSR (Node UTC) và Client (Trình duyệt)
+ */
+export function formatVietnamDate(
+  date: Date | string | number | null | undefined,
+  options?: Intl.DateTimeFormatOptions
+): string {
+  if (!date) return ''
+  const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('vi-VN', {
+    timeZone: VIETNAM_TIMEZONE,
+    ...options,
+  })
+}
+
+/**
+ * Chuẩn hóa format ngày giờ theo định dạng Việt Nam tại múi giờ Asia/Ho_Chi_Minh (UTC+7)
+ * Đảm bảo tính nhất quán tuyệt đối giữa SSR (Node UTC) và Client (Trình duyệt)
+ */
+export function formatVietnamDateTime(
+  date: Date | string | number | null | undefined,
+  options?: Intl.DateTimeFormatOptions
+): string {
+  if (!date) return ''
+  const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleString('vi-VN', {
+    timeZone: VIETNAM_TIMEZONE,
+    ...options,
+  })
+}

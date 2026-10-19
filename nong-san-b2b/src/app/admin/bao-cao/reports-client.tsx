@@ -365,7 +365,7 @@ export function ReportsClient({ initialData }: ReportsClientProps) {
           </div>
         </CardHeader>
         <CardContent>
-          {isMounted && timeline.points.length > 0 ? (
+          {isMounted && timeline.points.length > 0 && (timeline.totalCompletedOrders > 0 || timeline.totalRevenue > 0) ? (
             <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={timeline.points} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
@@ -400,8 +400,9 @@ export function ReportsClient({ initialData }: ReportsClientProps) {
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="h-64 flex items-center justify-center text-slate-400 text-sm">
-              Không có dữ liệu đơn hoàn thành trong khoảng thời gian này
+            <div className="h-64 flex flex-col items-center justify-center text-slate-400 text-sm gap-2">
+              <BarChart3 className="w-8 h-8 text-slate-300 stroke-[1.5]" />
+              <p>Không có dữ liệu đơn hoàn thành trong khoảng thời gian này</p>
             </div>
           )}
         </CardContent>

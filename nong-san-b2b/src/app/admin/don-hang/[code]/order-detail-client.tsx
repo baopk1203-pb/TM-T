@@ -38,6 +38,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatVND } from '@/lib/money'
+import { formatVietnamDate, formatVietnamDateTime } from '@/lib/utils'
 import { confirmPayment } from '@/actions/admin-order'
 import {
   cancelOrder,
@@ -539,7 +540,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
               <PaymentStatusBadge status={order.paymentStatus} />
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Tạo lúc {new Date(order.createdAt).toLocaleString('vi-VN')} • Mã ID: {order.id}
+              Tạo lúc {formatVietnamDateTime(order.createdAt)} • Mã ID: {order.id}
             </p>
           </div>
         </div>
@@ -626,7 +627,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
           <Clock className="w-5 h-5 text-amber-600 shrink-0" />
           <div>
             <strong>Đơn hàng đã quá hạn thanh toán 24h:</strong> Hạn chót là{' '}
-            {new Date(order.paymentDueAt!).toLocaleString('vi-VN')}. Khách hàng chưa hoàn tất thanh toán. Bạn có thể hủy hoặc chạy &quot;Quét đơn quá hạn&quot;.
+            {formatVietnamDateTime(order.paymentDueAt)}. Khách hàng chưa hoàn tất thanh toán. Bạn có thể hủy hoặc chạy &quot;Quét đơn quá hạn&quot;.
           </div>
         </div>
       )}
@@ -688,7 +689,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                   Ngày giao dự kiến:{' '}
                   <strong>
                     {order.deliveryDate
-                      ? new Date(order.deliveryDate).toLocaleDateString('vi-VN')
+                      ? formatVietnamDate(order.deliveryDate)
                       : 'Vụ mùa'}
                   </strong>{' '}
                   •{' '}
@@ -956,7 +957,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-500 mt-0.5">
-                          {new Date(tx.createdAt).toLocaleString('vi-VN')}
+                          {formatVietnamDateTime(tx.createdAt)}
                           {tx.reference && ` • Mã GD: ${tx.reference}`}
                           {tx.note && ` • ${tx.note}`}
                         </div>
@@ -1011,7 +1012,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                         {evt.type}
                       </span>
                       <span className="text-[11px] text-slate-400">
-                        {new Date(evt.createdAt).toLocaleString('vi-VN')}
+                        {formatVietnamDateTime(evt.createdAt)}
                       </span>
                     </div>
                     {evt.note && <div className="text-slate-600 mt-0.5">{evt.note}</div>}
@@ -1106,7 +1107,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                 <div className="text-[11px] text-slate-500 pt-1 flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-slate-400" />
                   <span>
-                    Hạn thanh toán: {new Date(order.paymentDueAt).toLocaleString('vi-VN')}
+                    Hạn thanh toán: {formatVietnamDateTime(order.paymentDueAt)}
                   </span>
                 </div>
               )}
@@ -1311,7 +1312,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                       <option value="">-- Chưa gán lô --</option>
                       {itemBatches.map((b) => (
                         <option key={b.id} value={b.id}>
-                          Lô {b.code} (Thu hoạch {new Date(b.harvestDate).toLocaleDateString('vi-VN')} - {(b.quantityGrams / 1000).toLocaleString('vi-VN')} kg)
+                          Lô {b.code} (Thu hoạch {formatVietnamDate(b.harvestDate)} - {(b.quantityGrams / 1000).toLocaleString('vi-VN')} kg)
                         </option>
                       ))}
                     </select>
@@ -1724,7 +1725,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                     .filter((b) => !firstItem?.productId || b.productId === firstItem.productId)
                     .map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.code} (Thu hoạch {new Date(b.harvestDate).toLocaleDateString('vi-VN')} -{' '}
+                        {b.code} (Thu hoạch {formatVietnamDate(b.harvestDate)} -{' '}
                         {b.quantityGrams / 1000}kg)
                       </option>
                     ))}

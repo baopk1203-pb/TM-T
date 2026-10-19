@@ -50,6 +50,7 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatVND, gramsToKgText } from '@/lib/money'
+import { formatVietnamDate } from '@/lib/utils'
 import {
   filterCustomers,
   formatCustomerGroupBadge,
@@ -588,7 +589,7 @@ export function CustomerManagementClient({
                                 <TableCell className="font-mono font-bold text-slate-900">
                                   {ord.code}
                                   <div className="text-[11px] font-sans font-normal text-slate-400">
-                                    {new Date(ord.createdAt).toLocaleDateString('vi-VN')}
+                                    {formatVietnamDate(ord.createdAt)}
                                   </div>
                                 </TableCell>
                                 <TableCell>

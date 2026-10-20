@@ -19,6 +19,7 @@ import { createDynamicShippingCalculator } from '@/lib/services/shipping-config'
 import { computeDepositAmount } from '@/lib/domain/settlement'
 import { recordOrderEvent } from '@/lib/events'
 import { generateOrderCode } from '@/lib/order-code'
+import { sendOrderNotification } from '@/lib/email'
 import {
   OrderStatus,
   OrderType,
@@ -168,7 +169,7 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     // 2. Validate input với Zod
     const validated = placeOrderSchema.parse(input)
 
-    return await db.$transaction(
+    const result = await db.$transaction(
       async (tx) => {
         // Lấy thông tin user và nhóm khách hàng
         const user = await tx.user.findUnique({
@@ -472,6 +473,19 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
         timeout: 15000,
       }
     )
+
+    if (result.success && result.orderId) {
+      try {
+        await sendOrderNotification({
+          type: 'ORDER_PLACED',
+          orderId: result.orderId,
+        })
+      } catch (err) {
+        console.error('[placeOrder] Failed to send order placed notification:', err)
+      }
+    }
+
+    return result
   } catch (error) {
     console.error('Error placing order:', error)
     return {

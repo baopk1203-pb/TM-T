@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { getServerAuthSession, requireAdmin } from '@/lib/auth'
 import { recordOrderEvent } from '@/lib/events'
+import { sendOrderNotification } from '@/lib/email'
 import {
   canTransition,
   applyTransition,
@@ -325,6 +326,15 @@ export async function transitionToShipping(input: {
       })
     })
 
+    try {
+      await sendOrderNotification({
+        type: 'ORDER_SHIPPING',
+        orderId: order.id,
+      })
+    } catch (err) {
+      console.error('[transitionToShipping] Failed to send order shipping notification:', err)
+    }
+
     revalidatePath(`/admin/don-hang/${order.id}`)
     revalidatePath(`/admin/don-hang/${order.code}`)
     revalidatePath('/admin/don-hang')
@@ -507,6 +517,15 @@ export async function settleActualWeights(input: {
       })
     })
 
+    try {
+      await sendOrderNotification({
+        type: 'ORDER_COMPLETED',
+        orderId: order.id,
+      })
+    } catch (err) {
+      console.error('[settleActualWeights] Failed to send order completed notification:', err)
+    }
+
     revalidatePath(`/admin/don-hang/${order.id}`)
     revalidatePath(`/admin/don-hang/${order.code}`)
     revalidatePath('/admin/don-hang')
@@ -588,6 +607,16 @@ export async function confirmRefundDone(input: {
         },
       })
     })
+
+    try {
+      await sendOrderNotification({
+        type: 'REFUND_CONFIRMED',
+        orderId: txRecord.orderId,
+        transactionId: txRecord.id,
+      })
+    } catch (err) {
+      console.error('[confirmRefundDone] Failed to send refund confirmed notification:', err)
+    }
 
     revalidatePath(`/admin/don-hang/${txRecord.orderId}`)
     revalidatePath(`/admin/don-hang/${txRecord.order.code}`)
@@ -674,6 +703,15 @@ export async function completeOrder(input: { orderId: string }) {
         note: 'Đơn hàng đã hoàn tất toàn diện (đã tất toán, giao nhận thành công và không còn khiếu nại)',
       })
     })
+
+    try {
+      await sendOrderNotification({
+        type: 'ORDER_COMPLETED',
+        orderId: order.id,
+      })
+    } catch (err) {
+      console.error('[completeOrder] Failed to send order completed notification:', err)
+    }
 
     revalidatePath(`/admin/don-hang/${order.id}`)
     revalidatePath(`/admin/don-hang/${order.code}`)
@@ -791,7 +829,7 @@ export async function submitComplaint(input: {
       }
     }
 
-    await db.$transaction(async (tx) => {
+    const txResult = await db.$transaction(async (tx) => {
       // Tạo bản ghi Complaint
       const complaint = await tx.complaint.create({
         data: {
@@ -825,7 +863,19 @@ export async function submitComplaint(input: {
           photos: input.photos,
         },
       })
+
+      return { complaintId: complaint.id }
     })
+
+    try {
+      await sendOrderNotification({
+        type: 'COMPLAINT_OPENED',
+        orderId: order.id,
+        complaintId: txResult.complaintId,
+      })
+    } catch (err) {
+      console.error('[submitComplaint] Failed to send complaint opened notification:', err)
+    }
 
     revalidatePath(`/tai-khoan/don-hang/${order.code}`)
     revalidatePath(`/admin/don-hang/${order.code}`)
@@ -952,6 +1002,16 @@ export async function resolveComplaint(input: {
         },
       })
     })
+
+    try {
+      await sendOrderNotification({
+        type: 'COMPLAINT_RESOLVED',
+        orderId: complaint.orderId,
+        complaintId: complaint.id,
+      })
+    } catch (err) {
+      console.error('[resolveComplaint] Failed to send complaint resolved notification:', err)
+    }
 
     revalidatePath('/admin/khieu-nai')
     revalidatePath(`/admin/don-hang/${complaint.orderId}`)

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { recordOrderEvent } from '@/lib/events'
+import { sendOrderNotification } from '@/lib/email'
 import {
   OrderStatus,
   OrderType,
@@ -165,6 +166,18 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
         statusChanged,
       }
     })
+
+    if (result.success) {
+      try {
+        await sendOrderNotification({
+          type: 'PAYMENT_CONFIRMED',
+          orderId: input.orderId,
+          transactionId: result.transactionId,
+        })
+      } catch (err) {
+        console.error('[confirmPayment] Failed to send payment confirmation notification:', err)
+      }
+    }
 
     revalidatePath(`/admin/don-hang/${input.orderId}`)
     revalidatePath('/admin/don-hang')

@@ -3,6 +3,7 @@ import { confirmPayment } from '@/actions/admin-order'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { recordOrderEvent } from '@/lib/events'
+import { sendOrderNotification } from '@/lib/email'
 import { OrderStatus, PaymentOption, TxMethod, TxType, TxStatus, Role } from '@prisma/client'
 
 vi.mock('@/lib/db', () => ({
@@ -17,6 +18,10 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@/lib/events', () => ({
   recordOrderEvent: vi.fn(),
+}))
+
+vi.mock('@/lib/email', () => ({
+  sendOrderNotification: vi.fn().mockResolvedValue({ success: true }),
 }))
 
 vi.mock('next/cache', () => ({
@@ -303,5 +308,58 @@ describe('Server Action: confirmPayment() - REGRESSION-01 Test Suite', () => {
     expect(mockTxCreate).not.toHaveBeenCalled()
     expect(mockOrderUpdate).not.toHaveBeenCalled()
     expect(recordOrderEvent).not.toHaveBeenCalled()
+  })
+
+  it('Case E (DEV-TASK-45) — Chờ Promise sendOrderNotification hoàn tất sau khi transaction commit và không làm hỏng kết quả khi gửi email lỗi', async () => {
+    const orderData = {
+      id: 'order-case-e',
+      code: 'DH-CASE-E',
+      status: OrderStatus.PENDING_CONFIRMATION,
+      paymentOption: PaymentOption.DEPOSIT_30,
+      total: 15277500,
+      depositAmount: 4584000,
+      transactions: [],
+    }
+
+    const executionOrder: string[] = []
+
+    vi.mocked(db.$transaction).mockImplementation(async (callback) => {
+      const txMock = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue(orderData),
+          update: vi.fn().mockResolvedValue({ ...orderData, status: OrderStatus.PROCESSING }),
+        },
+        paymentTransaction: {
+          create: vi.fn().mockResolvedValue({
+            id: 'tx-case-e',
+            orderId: orderData.id,
+            type: TxType.PAYMENT,
+            status: TxStatus.DONE,
+            amount: 4584000,
+          }),
+        },
+      }
+      const res = await callback(txMock as unknown as Parameters<Parameters<typeof db.$transaction>[0]>[0])
+      executionOrder.push('transaction_committed')
+      return res
+    })
+
+    let emailFinishedBeforeActionReturn = false
+    vi.mocked(sendOrderNotification).mockImplementationOnce(async () => {
+      await new Promise((r) => setTimeout(r, 25))
+      executionOrder.push('email_awaited')
+      emailFinishedBeforeActionReturn = true
+      return { success: false, error: 'SMTP_TIMEOUT' }
+    })
+
+    const result = await confirmPayment({
+      orderId: 'order-case-e',
+      amount: 4584000,
+      method: TxMethod.BANK_TRANSFER,
+    })
+
+    expect(result.success).toBe(true)
+    expect(emailFinishedBeforeActionReturn).toBe(true)
+    expect(executionOrder).toEqual(['transaction_committed', 'email_awaited'])
   })
 })

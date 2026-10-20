@@ -13,6 +13,7 @@ import { canTransition } from '@/lib/domain/order-state'
 import { isDraftExpired } from '@/lib/domain/recurring'
 import { processRecurringSchedules, RecurringGeneratorResult } from '@/lib/services/recurring-generator'
 import { recordOrderEvent } from '@/lib/events'
+import { sendOrderNotification } from '@/lib/email'
 import { OrderStatus, PaymentOption, TimeSlot } from '@prisma/client'
 
 const recurringItemInputSchema = z.object({
@@ -908,6 +909,15 @@ export async function confirmRecurringDraft(
         orderCode: order.code,
       }
     })
+
+    try {
+      await sendOrderNotification({
+        type: 'ORDER_PLACED',
+        orderId: result.orderId,
+      })
+    } catch (err) {
+      console.error('[confirmRecurringDraft] Failed to send order placed notification:', err)
+    }
 
     revalidatePath('/tai-khoan/dinh-ky')
     revalidatePath('/tai-khoan/don-hang')

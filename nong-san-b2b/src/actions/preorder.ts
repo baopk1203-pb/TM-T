@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { requireUser, requireAdmin } from '@/lib/auth'
 import { recordOrderEvent } from '@/lib/events'
 import { generateOrderCode } from '@/lib/order-code'
+import { sendOrderNotification } from '@/lib/email'
 import {
   checkPriceBand,
   computePreorderShortfallRefund,
@@ -61,7 +62,7 @@ export async function placePreorder(input: PlacePreorderInput): Promise<PlacePre
     const sessionUser = await requireUser()
     const validated = placePreorderSchema.parse(input)
 
-    return await db.$transaction(
+    const result = await db.$transaction(
       async (tx) => {
         // Lấy thông tin user và nhóm khách hàng
         const user = await tx.user.findUnique({
@@ -244,6 +245,19 @@ export async function placePreorder(input: PlacePreorderInput): Promise<PlacePre
       },
       { timeout: 15000 }
     )
+
+    if (result.success && result.orderId) {
+      try {
+        await sendOrderNotification({
+          type: 'ORDER_PLACED',
+          orderId: result.orderId,
+        })
+      } catch (err) {
+        console.error('[placePreorder] Failed to send order placed notification:', err)
+      }
+    }
+
+    return result
   } catch (error) {
     console.error('Error placing preorder:', error)
     return {

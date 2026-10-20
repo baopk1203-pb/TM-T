@@ -660,7 +660,7 @@ Bảng giá seed (giả định minh họa):
 
 ## Phase 9 – THÔNG BÁO + Hoàn thiện + Deploy (phase cuối, phần 2)
 
-**Mục tiêu:** gửi Email + Zalo ZNS theo `OrderEvent`, kiểm thử e2e, triển khai.
+**Mục tiêu (Cập nhật theo quyết định PO tại DEV-TASK-44/45 — EMAIL-ONLY):** Chỉ triển khai thông báo qua **Email** (`nodemailer` SMTP), hủy bỏ tích hợp Zalo ZNS/SMS. Tận dụng bảng `OrderEvent` sẵn có (Zero DB migration), thực thi `await sendOrderNotification(...)` có kiểm soát timeout sau khi transaction commit.
 
 **Thiết kế**
 ```ts
@@ -688,7 +688,7 @@ interface NotificationChannel { name: 'EMAIL' | 'ZNS'; send(msg: { to: string; t
 
 **Việc cần làm**
 - [ ] Prisma: `NotificationLog(id, orderId?, userId, channel, template, to, status SENT|FAILED|MOCK, error?, payload Json, createdAt)`, `User.zaloOptIn`, `User.zaloPhone`.
-- [ ] Biến môi trường: `SMTP_HOST/PORT/USER/PASS`, `MAIL_FROM`, `ADMIN_NOTIFY_EMAIL`, `ZNS_MODE`, `ZNS_ACCESS_TOKEN`, `ZNS_TEMPLATE_*`.
+- [x] Biến môi trường Email (EMAIL-ONLY, bỏ Zalo ZNS): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (hoặc alias `MAIL_FROM`), tùy chọn `SMTP_SECURE`, `SMTP_TIMEOUT_MS`.
 - [ ] Cài các channel, `dispatchForEvent` và bảng `EVENT_TEMPLATES`; nối vào `recordOrderEvent` (sau commit).
 - [ ] `/tai-khoan/ho-so`: bật/tắt nhận Zalo, nhập SĐT Zalo.
 - [ ] `/admin/thong-bao`: nhật ký gửi (lọc theo kênh/trạng thái) và nút **Gửi lại** khi FAILED.
@@ -788,8 +788,8 @@ interface NotificationChannel { name: 'EMAIL' | 'ZNS'; send(msg: { to: string; t
 | 4 – Checkout & Thanh toán | ✅ Hoàn thành | Đã hoàn thành earliestDeliveryDate (leadTime & cutoff 17h), checkCapacity & weekly Monday, zeroShippingCalculator mock (chờ Phase 8), recordOrderEvent (chờ Phase 9), computeDepositAmount (làm tròn lên nghìn đồng test case S1) & derivePaymentStatus; Server action placeOrder trong 1 transaction an toàn (tính lại giá server-side, kiểm tra MOQ/sample/capacity, snapshot địa chỉ & sản phẩm, sinh mã DH-YYMMDD-XXXX); Giao diện checkout 5 bước /thanh-toan; Trang thanh toán VietQR /thanh-toan/[code] với đếm ngược 24h & mã QR động; Trang Admin quản lý đơn /admin/don-hang với lọc/tìm kiếm & nút quét quá hạn; Trang Admin chi tiết /admin/don-hang/[code] với modal xác nhận đã nhận tiền; Cron /api/cron/expire-orders bảo vệ bằng CRON_SECRET; Trang chi tiết đơn khách /tai-khoan/don-hang/[code]; Toàn bộ 54 unit tests, lint, typecheck, build 100% PASS. |
 | 5 – Vòng đời đơn & Quyết toán | ✅ Hoàn thành | Đã hoàn thành máy trạng thái order-state.ts (canTransition, applyTransition với 23 unit tests); computeCancellation (S2-S5), computeWeightSettlement (W1-W3 với validate 105%), computeComplaintCompensation (C1-C3 với hao hụt 3% và hạn 24h); Server actions order-lifecycle.ts; UI Admin /admin/don-hang/[code] hiển thị nút theo trạng thái, modal bàn giao vận chuyển kèm gán lô, modal nhập khối lượng thực & quyết toán live, modal hủy đơn (100% hoàn tiền), xác nhận hoàn tiền; UI Admin /admin/khieu-nai xử lý khiếu nại (xác minh kg, bồi hoàn tiền hoặc bù hàng); UI Khách /tai-khoan/don-hang/[code] tự refresh 30s, cảnh báo mất cọc khi hủy ở PROCESSING, form gửi khiếu nại kèm upload ảnh; Toàn bộ 88 tests, lint, typecheck, build 100% PASS. |
 | 6 – Định kỳ, Pre-order, Dashboard | 🟨 Code Complete / Local QA Accepted / Beta Validation Pending | Batch 6A (Recurring Orders - commit `9cd484a`), Batch 6B (Pre-order Workflow - commit `e6208a5`), Batch 6C (Customer Dashboard & Integration Fixes - commit `d0924fb`) đã hoàn thành và PASS Local/Static QA. Tổng 283/283 unit tests PASS (24 test suites). Lint, typecheck, production build PASS. Đang chờ Product Owner xác nhận nghiệm thu Demo trên Vercel Beta Runtime. |
-| 7 – CRM & Báo cáo | ⬜ | |
-| 8 – Vận chuyển | ⬜ | |
-| 9 – Thông báo, Hoàn thiện, Deploy | ⬜ | |
+| 7 – CRM & Báo cáo | ✅ Hoàn thành | Đã hoàn thành Batch 7A (CRM Khách hàng & Nhóm chiết khấu), Batch 7B (Báo cáo Doanh thu & Admin Dashboard KPI), đồng bộ dữ liệu hoàn tiền khiếu nại (CRM revenue parity). |
+| 8 – Vận chuyển | ✅ Hoàn thành | Đã hoàn thành Batch 8A (Mô hình cước phí & Quản lý đội xe), Batch 8B (Định giá tự động đa điểm theo khoảng cách Google Routes API / Haversine fallback & điều phối chuyến giao), triển khai Neon preview-beta an toàn. |
+| 9 – Thông báo, Hoàn thiện, Deploy | 🟨 Đang làm | Đã hoàn thành PH9-00 (Instant Order Completion & Vercel Private Blob Storage - commit fea0509). Đã hoàn thành DEV-TASK-44 & DEV-TASK-45 (Email Notification System EMAIL-ONLY: await vòng đời Promise sau commit kèm timeout 5s, chặn false-success khi thiếu SMTP trên Vercel với MISSING_SMTP_CONFIG, 6 sự kiện E01–E06 + REFUND_CONFIRMED, sequential dedup, 485/485 tests PASS). Chờ PO nghiệm thu. |
 
 Ký hiệu: ⬜ Chưa bắt đầu · 🟨 Đang làm · ✅ Hoàn thành (đã pass DoD và được người dùng xác nhận)

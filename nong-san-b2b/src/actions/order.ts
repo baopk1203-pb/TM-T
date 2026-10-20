@@ -59,7 +59,7 @@ export interface PlaceOrderResult {
   error?: string
 }
 
-export const calculateShippingQuoteSchema = z.object({
+const calculateShippingQuoteSchema = z.object({
   addressId: z.string().min(1, 'Thiếu địa chỉ nhận hàng'),
   lines: z.array(
     z.object({

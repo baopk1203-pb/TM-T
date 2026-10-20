@@ -10,7 +10,7 @@ import { VehicleType } from '@prisma/client'
 // Biểu thức chính quy kiểm tra số điện thoại di động Việt Nam (10 chữ số)
 const VN_PHONE_REGEX = /^(0|\+84)(3|5|7|8|9)[0-9]{8}$/
 
-export const createShippingRateSchema = z.object({
+const createShippingRateSchema = z.object({
   vehicleType: z.enum(['NORMAL', 'COLD']),
   minGrams: z.number().int().min(0, 'Khối lượng tối thiểu không được âm'),
   baseFee: z.number().int().min(0, 'Phí mở cửa không được âm'),
@@ -20,7 +20,7 @@ export const createShippingRateSchema = z.object({
 
 export type CreateShippingRateInput = z.input<typeof createShippingRateSchema>
 
-export const updateShippingRateSchema = z.object({
+const updateShippingRateSchema = z.object({
   id: z.string().min(1, 'ID không được để trống'),
   baseFee: z.number().int().min(0, 'Phí mở cửa không được âm'),
   perKm: z.number().int().min(0, 'Phí mỗi km không được âm'),
@@ -29,7 +29,7 @@ export const updateShippingRateSchema = z.object({
 
 export type UpdateShippingRateInput = z.infer<typeof updateShippingRateSchema>
 
-export const warehouseSettingsSchema = z.object({
+const warehouseSettingsSchema = z.object({
   name: z.string().min(2, 'Tên kho phải từ 2 ký tự trở lên').max(200),
   address: z.string().min(5, 'Địa chỉ kho phải từ 5 ký tự trở lên').max(500),
   lat: z.number().min(-90).max(90),
@@ -39,7 +39,7 @@ export const warehouseSettingsSchema = z.object({
 
 export type WarehouseSettingsInput = z.infer<typeof warehouseSettingsSchema>
 
-export const updateShipmentDriverSchema = z.object({
+const updateShipmentDriverSchema = z.object({
   shipmentId: z.string().min(1, 'ID chuyến giao không được để trống'),
   driverName: z.string().min(2, 'Tên tài xế phải từ 2 ký tự').max(100),
   driverPhone: z.string().regex(VN_PHONE_REGEX, 'Số điện thoại tài xế không hợp lệ (10 chữ số VN)'),

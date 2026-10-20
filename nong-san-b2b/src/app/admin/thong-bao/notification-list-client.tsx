@@ -102,6 +102,18 @@ export function NotificationListClient({ initialLogs }: NotificationListClientPr
         </div>
       </div>
 
+      {/* Banner chính sách Email mới (DEV-TASK-47) */}
+      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3.5 text-sm text-emerald-900 flex items-start gap-2.5">
+        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+        <div>
+          <span className="font-semibold">Chính sách thông báo Email hiện tại (DEV-TASK-47):</span>{' '}
+          Hệ thống chỉ gửi Email cho <strong>Xác nhận thanh toán (E02)</strong>,{' '}
+          <strong>Giao hàng hoàn tất (E04 - cảnh báo khiếu nại 24h)</strong>,{' '}
+          <strong>Giải quyết khiếu nại (E06)</strong> và <strong>Xác nhận hoàn tiền (REFUND_CONFIRMED)</strong>.{' '}
+          Các sự kiện Đặt hàng (E01), Vận chuyển (E03) và Mở khiếu nại (E05) đã tắt có chủ đích để tinh gọn tần suất gửi thư.
+        </div>
+      </div>
+
       {/* Thẻ thống kê */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="bg-white border-gray-200 shadow-sm">
@@ -183,13 +195,13 @@ export function NotificationListClient({ initialLogs }: NotificationListClientPr
                 onChange={(e) => setEventFilter(e.target.value)}
               >
                 <option value="ALL">Tất cả sự kiện</option>
-                <option value="ORDER_PLACED">Đặt hàng (E01)</option>
-                <option value="PAYMENT_CONFIRMED">Xác nhận thanh toán (E02)</option>
-                <option value="ORDER_SHIPPING">Vận chuyển (E03)</option>
-                <option value="ORDER_COMPLETED">Giao hoàn tất 24h (E04)</option>
-                <option value="COMPLAINT_OPENED">Khiếu nại mở (E05)</option>
-                <option value="COMPLAINT_RESOLVED">Khiếu nại giải quyết (E06)</option>
-                <option value="REFUND_CONFIRMED">Xác nhận hoàn tiền</option>
+                <option value="PAYMENT_CONFIRMED">Xác nhận thanh toán (E02) — Bật</option>
+                <option value="ORDER_COMPLETED">Giao hoàn tất 24h (E04) — Bật</option>
+                <option value="COMPLAINT_RESOLVED">Khiếu nại giải quyết (E06) — Bật</option>
+                <option value="REFUND_CONFIRMED">Xác nhận hoàn tiền — Bật</option>
+                <option value="ORDER_PLACED">Đặt hàng (E01 - Đã tắt / Lưu trữ)</option>
+                <option value="ORDER_SHIPPING">Vận chuyển (E03 - Đã tắt / Lưu trữ)</option>
+                <option value="COMPLAINT_OPENED">Khiếu nại mở (E05 - Đã tắt / Lưu trữ)</option>
               </select>
             </div>
           </div>

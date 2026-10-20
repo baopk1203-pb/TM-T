@@ -13,7 +13,6 @@ import { canTransition } from '@/lib/domain/order-state'
 import { isDraftExpired } from '@/lib/domain/recurring'
 import { processRecurringSchedules, RecurringGeneratorResult } from '@/lib/services/recurring-generator'
 import { recordOrderEvent } from '@/lib/events'
-import { sendOrderNotification } from '@/lib/email'
 import { OrderStatus, PaymentOption, TimeSlot } from '@prisma/client'
 
 const recurringItemInputSchema = z.object({
@@ -910,14 +909,7 @@ export async function confirmRecurringDraft(
       }
     })
 
-    try {
-      await sendOrderNotification({
-        type: 'ORDER_PLACED',
-        orderId: result.orderId,
-      })
-    } catch (err) {
-      console.error('[confirmRecurringDraft] Failed to send order placed notification:', err)
-    }
+    // DEV-TASK-47: E01 (ORDER_PLACED) đã được tắt theo chính sách tinh gọn thông báo email
 
     revalidatePath('/tai-khoan/dinh-ky')
     revalidatePath('/tai-khoan/don-hang')

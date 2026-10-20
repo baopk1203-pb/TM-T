@@ -19,7 +19,6 @@ import { createDynamicShippingCalculator } from '@/lib/services/shipping-config'
 import { computeDepositAmount } from '@/lib/domain/settlement'
 import { recordOrderEvent } from '@/lib/events'
 import { generateOrderCode } from '@/lib/order-code'
-import { sendOrderNotification } from '@/lib/email'
 import {
   OrderStatus,
   OrderType,
@@ -474,16 +473,7 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
       }
     )
 
-    if (result.success && result.orderId) {
-      try {
-        await sendOrderNotification({
-          type: 'ORDER_PLACED',
-          orderId: result.orderId,
-        })
-      } catch (err) {
-        console.error('[placeOrder] Failed to send order placed notification:', err)
-      }
-    }
+    // DEV-TASK-47: E01 (ORDER_PLACED) đã được tắt theo chính sách tinh gọn thông báo email
 
     return result
   } catch (error) {

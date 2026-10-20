@@ -6,7 +6,6 @@ import { db } from '@/lib/db'
 import { requireUser, requireAdmin } from '@/lib/auth'
 import { recordOrderEvent } from '@/lib/events'
 import { generateOrderCode } from '@/lib/order-code'
-import { sendOrderNotification } from '@/lib/email'
 import {
   checkPriceBand,
   computePreorderShortfallRefund,
@@ -246,16 +245,7 @@ export async function placePreorder(input: PlacePreorderInput): Promise<PlacePre
       { timeout: 15000 }
     )
 
-    if (result.success && result.orderId) {
-      try {
-        await sendOrderNotification({
-          type: 'ORDER_PLACED',
-          orderId: result.orderId,
-        })
-      } catch (err) {
-        console.error('[placePreorder] Failed to send order placed notification:', err)
-      }
-    }
+    // DEV-TASK-47: E01 (ORDER_PLACED) đã được tắt theo chính sách tinh gọn thông báo email
 
     return result
   } catch (error) {

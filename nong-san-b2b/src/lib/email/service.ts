@@ -9,6 +9,8 @@ import {
   OrderNotificationInput,
   SendEmailResult,
   EmailTemplateResult,
+  NotificationEventType,
+  ACTIVE_NOTIFICATION_EVENTS,
 } from './types'
 import {
   renderOrderPlacedTemplate,
@@ -56,7 +58,23 @@ export function computeIdempotencyKey(input: OrderNotificationInput): string {
 }
 
 /**
+ * Tập hợp sự kiện email đang được kích hoạt (DEV-TASK-47)
+ */
+export const ACTIVE_NOTIFICATION_SET: ReadonlySet<NotificationEventType> = new Set(
+  ACTIVE_NOTIFICATION_EVENTS
+)
+
+/**
+ * Kiểm tra xem một loại sự kiện có được phép gửi email theo chính sách hiện hành hay không
+ */
+export function isNotificationEventEnabled(type: NotificationEventType): boolean {
+  return ACTIVE_NOTIFICATION_SET.has(type)
+}
+
+/**
  * Gửi thông báo Email cho các sự kiện vòng đời đơn hàng B2B (Phase 9)
+ * - Chính sách tối ưu DEV-TASK-47: Chỉ kích hoạt gửi cho E02, E04, E06 và REFUND_CONFIRMED.
+ *   Các sự kiện E01, E03, E05 đã tắt có chủ đích để tinh gọn tần suất (không gọi SMTP, không ghi DB event).
  * - Thực thi sau khi DB transaction đã commit (được await có kiểm soát timeout để bảo đảm hoàn tất trên Serverless).
  * - Best-effort Sequential Deduplication: Kiểm tra bản ghi EMAIL_SENT_* trong OrderEvent trước khi gửi.
  *   Các bản ghi EMAIL_FAILED_* hoặc EMAIL_SKIPPED_* không chặn lần gửi hợp lệ về sau.
@@ -66,6 +84,19 @@ export async function sendOrderNotification(
   input: OrderNotificationInput,
   options?: SendOrderNotificationOptions
 ): Promise<SendEmailResult> {
+  // 1. Kiểm tra chính sách kích hoạt sự kiện email tập trung (DEV-TASK-47)
+  // Các sự kiện E01 (ORDER_PLACED), E03 (ORDER_SHIPPING), E05 (COMPLAINT_OPENED) đã tắt có chủ đích:
+  // - KHÔNG gọi SMTP adapter
+  // - KHÔNG ghi bất kỳ bản ghi EMAIL_SENT, EMAIL_FAILED hoặc EMAIL_SKIPPED nào vào OrderEvent
+  // - KHÔNG ảnh hưởng bất kỳ luồng nghiệp vụ nào
+  if (!isNotificationEventEnabled(input.type)) {
+    return {
+      success: true,
+      skipped: true,
+      skipReason: `EVENT_DISABLED_BY_POLICY: Sự kiện [${input.type}] đã tắt theo chính sách thông báo email`,
+    }
+  }
+
   // Bảo vệ khi chạy trong các unit test cô lập chỉ mock một phần db
   if (!db?.orderEvent || !db?.order) {
     return {

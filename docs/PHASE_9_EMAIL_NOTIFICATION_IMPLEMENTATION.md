@@ -66,4 +66,27 @@ Theo yêu cầu của Product Owner cho phạm vi MVP/Demo hiện tại:
 4. `npm run build`: **PASS** (Next.js 16.4.0 Turbopack build thành công).
 5. `git diff --check`: **PASS** (0 formatting/whitespace errors).
 
-**Kết luận:** `READY FOR SMTP CONFIGURATION`
+---
+
+## 5. TỐI ƯU HÓA HỆ THỐNG EMAIL THEO QUYẾT ĐỊNH CỦA PO (DEV-TASK-47)
+
+Sau khi kiểm thử runtime thành công trên Vercel Beta, Product Owner yêu cầu tinh gọn tần suất gửi email để tránh làm phiền khách hàng.
+
+### Chính sách Email mới:
+- **TẮT gửi Email:**
+  - `E01 — ORDER_PLACED` (Đặt hàng thành công)
+  - `E03 — ORDER_SHIPPING` (Bàn giao vận chuyển)
+  - `E05 — COMPLAINT_OPENED` (Tiếp nhận khiếu nại)
+- **GIỮ gửi Email:**
+  - `E02 — PAYMENT_CONFIRMED` (Xác nhận nhận tiền cọc / tất toán)
+  - `E04 — ORDER_COMPLETED` (Giao hàng hoàn tất & cảnh báo cửa sổ khiếu nại 24h)
+  - `E06 — COMPLAINT_RESOLVED` (Kết quả giải quyết khiếu nại & bồi hoàn)
+  - `REFUND_CONFIRMED` (Xác nhận hoàn tiền đã hoàn tất giao dịch)
+
+### Kiến trúc & Triển khai:
+1. **Lọc tập trung tại Email Service (`src/lib/email/service.ts`):** `isNotificationEventEnabled()` chặn ngay lập tức E01, E03, E05 trước khi gọi SMTP và trước khi ghi bất kỳ log `EMAIL_*` nào vào `OrderEvent`.
+2. **Dọn sạch Server Actions:** Loại bỏ các lời gọi không cần thiết tại `order.ts`, `preorder.ts`, `recurring.ts`, và `order-lifecycle.ts` (vận chuyển & mở khiếu nại).
+3. **Bảo toàn 100% nghiệp vụ:** Giữ nguyên các `OrderEvent` nghiệp vụ (`ORDER_CREATED`, `STATUS_CHANGED`, `COMPLAINT_OPENED`), Instant Order Completion (PH9-00), và Private Blob Storage.
+4. **Trang Quản trị `/admin/thong-bao`:** Cập nhật thông báo chính sách mới, bảo toàn 100% bộ lọc và lịch sử email đã gửi.
+
+**Kết luận:** `READY FOR BETA RELEASE`

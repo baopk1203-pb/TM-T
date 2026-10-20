@@ -660,7 +660,13 @@ Bảng giá seed (giả định minh họa):
 
 ## Phase 9 – THÔNG BÁO + Hoàn thiện + Deploy (phase cuối, phần 2)
 
-**Mục tiêu (Cập nhật theo quyết định PO tại DEV-TASK-44/45 — EMAIL-ONLY):** Chỉ triển khai thông báo qua **Email** (`nodemailer` SMTP), hủy bỏ tích hợp Zalo ZNS/SMS. Tận dụng bảng `OrderEvent` sẵn có (Zero DB migration), thực thi `await sendOrderNotification(...)` có kiểm soát timeout sau khi transaction commit.
+**Mục tiêu (Cập nhật theo quyết định PO tại DEV-TASK-44/45/47 — EMAIL-ONLY & STREAMLINED):**
+- Chỉ triển khai thông báo qua **Email** (`nodemailer` SMTP), hủy bỏ hoàn toàn tích hợp Zalo ZNS/SMS.
+- **Chính sách tối ưu hóa tần suất Email (DEV-TASK-47):**
+  - **TẮT gửi Email cho:** `E01 — ORDER_PLACED`, `E03 — ORDER_SHIPPING`, `E05 — COMPLAINT_OPENED` (không gọi SMTP, không ghi DB log `EMAIL_*`, giữ nguyên nghiệp vụ).
+  - **GIỮ gửi Email cho:** `E02 — PAYMENT_CONFIRMED`, `E04 — ORDER_COMPLETED` (kèm cảnh báo khiếu nại 24h), `E06 — COMPLAINT_RESOLVED`, `REFUND_CONFIRMED` (khi giao dịch hoàn tiền thực sự hoàn tất).
+- Tận dụng bảng `OrderEvent` sẵn có (Zero DB migration), thực thi `await sendOrderNotification(...)` có kiểm soát timeout sau khi transaction commit.
+- Bộ lọc trung tâm tại `src/lib/email/service.ts` chặn tuyệt đối gửi email và ghi log giả cho các sự kiện đã tắt.
 
 **Thiết kế**
 ```ts

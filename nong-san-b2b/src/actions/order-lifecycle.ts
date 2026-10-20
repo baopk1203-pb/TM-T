@@ -326,14 +326,7 @@ export async function transitionToShipping(input: {
       })
     })
 
-    try {
-      await sendOrderNotification({
-        type: 'ORDER_SHIPPING',
-        orderId: order.id,
-      })
-    } catch (err) {
-      console.error('[transitionToShipping] Failed to send order shipping notification:', err)
-    }
+    // DEV-TASK-47: E03 (ORDER_SHIPPING) đã được tắt theo chính sách tinh gọn thông báo email
 
     revalidatePath(`/admin/don-hang/${order.id}`)
     revalidatePath(`/admin/don-hang/${order.code}`)
@@ -829,7 +822,7 @@ export async function submitComplaint(input: {
       }
     }
 
-    const txResult = await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx) => {
       // Tạo bản ghi Complaint
       const complaint = await tx.complaint.create({
         data: {
@@ -867,15 +860,7 @@ export async function submitComplaint(input: {
       return { complaintId: complaint.id }
     })
 
-    try {
-      await sendOrderNotification({
-        type: 'COMPLAINT_OPENED',
-        orderId: order.id,
-        complaintId: txResult.complaintId,
-      })
-    } catch (err) {
-      console.error('[submitComplaint] Failed to send complaint opened notification:', err)
-    }
+    // DEV-TASK-47: E05 (COMPLAINT_OPENED) đã được tắt theo chính sách tinh gọn thông báo email
 
     revalidatePath(`/tai-khoan/don-hang/${order.code}`)
     revalidatePath(`/admin/don-hang/${order.code}`)

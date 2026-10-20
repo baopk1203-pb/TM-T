@@ -79,7 +79,12 @@ import {
 import {
   computeIdempotencyKey,
   sendOrderNotification,
+  isNotificationEventEnabled,
 } from '@/lib/email/service'
+import {
+  ACTIVE_NOTIFICATION_EVENTS,
+  DISABLED_NOTIFICATION_EVENTS,
+} from '@/lib/email/types'
 
 describe('Email Notification System (Phase 9 & DEV-TASK-45 Reliability Hotfix)', () => {
   let mockAdapter: MockEmailAdapter
@@ -342,7 +347,7 @@ describe('Email Notification System (Phase 9 & DEV-TASK-45 Reliability Hotfix)',
   })
 
   describe('Service Reliability: MISSING_SMTP_CONFIG, Retry after Skip/Fail & Sequential Dedup', () => {
-    it('records EMAIL_SKIPPED with MISSING_SMTP_CONFIG on Vercel without SMTP and does NOT record EMAIL_SENT', async () => {
+    it('records EMAIL_SKIPPED with MISSING_SMTP_CONFIG on Vercel without SMTP and does NOT record EMAIL_SENT for active event', async () => {
       process.env.VERCEL = '1'
       process.env.VERCEL_ENV = 'preview'
       delete process.env.SMTP_HOST
@@ -351,17 +356,18 @@ describe('Email Notification System (Phase 9 & DEV-TASK-45 Reliability Hotfix)',
       delete process.env.SMTP_PASS
 
       const result = await sendOrderNotification({
-        type: 'ORDER_PLACED',
+        type: 'PAYMENT_CONFIRMED',
         orderId: 'order-123',
+        transactionId: 'tx-456',
       })
 
       expect(result.success).toBe(false)
       expect(result.skipped).toBe(true)
       expect(result.skipReason).toBe('MISSING_SMTP_CONFIG')
 
-      // Kiểm tra OrderEvent: Chỉ ghi EMAIL_SKIPPED_ORDER_PLACED, tuyệt đối không có EMAIL_SENT_ORDER_PLACED
+      // Kiểm tra OrderEvent: Chỉ ghi EMAIL_SKIPPED_PAYMENT_CONFIRMED, tuyệt đối không có EMAIL_SENT_PAYMENT_CONFIRMED
       expect(mockOrderEvents).toHaveLength(1)
-      expect(mockOrderEvents[0].type).toBe('EMAIL_SKIPPED_ORDER_PLACED')
+      expect(mockOrderEvents[0].type).toBe('EMAIL_SKIPPED_PAYMENT_CONFIRMED')
       expect(mockOrderEvents[0].note).toContain('MISSING_SMTP_CONFIG')
       expect(
         mockOrderEvents.some((e) => e.type.startsWith('EMAIL_SENT_'))
@@ -369,43 +375,43 @@ describe('Email Notification System (Phase 9 & DEV-TASK-45 Reliability Hotfix)',
     })
 
     it('allows future send to succeed after previous MISSING_SMTP_CONFIG or FAILED attempt, then deduplicates subsequent calls', async () => {
-      // Lần 1: Chưa cấu hình SMTP -> Gặp MISSING_SMTP_CONFIG (ghi EMAIL_SKIPPED_ORDER_PLACED)
+      // Lần 1: Chưa cấu hình SMTP -> Gặp MISSING_SMTP_CONFIG (ghi EMAIL_SKIPPED_PAYMENT_CONFIRMED)
       const unconfiguredAdapter = new UnconfiguredEmailAdapter([
         'SMTP_HOST',
         'SMTP_PORT',
       ])
       const firstAttempt = await sendOrderNotification(
-        { type: 'ORDER_PLACED', orderId: 'order-123' },
+        { type: 'PAYMENT_CONFIRMED', orderId: 'order-123', transactionId: 'tx-456' },
         { adapter: unconfiguredAdapter }
       )
       expect(firstAttempt.success).toBe(false)
       expect(firstAttempt.skipReason).toBe('MISSING_SMTP_CONFIG')
       expect(mockOrderEvents).toHaveLength(1)
-      expect(mockOrderEvents[0].type).toBe('EMAIL_SKIPPED_ORDER_PLACED')
+      expect(mockOrderEvents[0].type).toBe('EMAIL_SKIPPED_PAYMENT_CONFIRMED')
 
-      // Lần 2: SMTP gặp lỗi mạng tạm thời -> Ghi EMAIL_FAILED_ORDER_PLACED
+      // Lần 2: SMTP gặp lỗi mạng tạm thời -> Ghi EMAIL_FAILED_PAYMENT_CONFIRMED
       mockAdapter.simulateFailure('Connection reset by peer')
       const secondAttempt = await sendOrderNotification(
-        { type: 'ORDER_PLACED', orderId: 'order-123' },
+        { type: 'PAYMENT_CONFIRMED', orderId: 'order-123', transactionId: 'tx-456' },
         { adapter: mockAdapter }
       )
       expect(secondAttempt.success).toBe(false)
       expect(mockOrderEvents).toHaveLength(2)
-      expect(mockOrderEvents[1].type).toBe('EMAIL_FAILED_ORDER_PLACED')
+      expect(mockOrderEvents[1].type).toBe('EMAIL_FAILED_PAYMENT_CONFIRMED')
 
-      // Lần 3: SMTP đã hoạt động -> Không bị chặn bởi SKIPPED/FAILED trước đó, gửi thành công và ghi EMAIL_SENT_ORDER_PLACED
+      // Lần 3: SMTP đã hoạt động -> Không bị chặn bởi SKIPPED/FAILED trước đó, gửi thành công và ghi EMAIL_SENT_PAYMENT_CONFIRMED
       const thirdAttempt = await sendOrderNotification(
-        { type: 'ORDER_PLACED', orderId: 'order-123' },
+        { type: 'PAYMENT_CONFIRMED', orderId: 'order-123', transactionId: 'tx-456' },
         { adapter: mockAdapter }
       )
       expect(thirdAttempt.success).toBe(true)
       expect(mockAdapter.getSentMessages()).toHaveLength(1)
       expect(mockOrderEvents).toHaveLength(3)
-      expect(mockOrderEvents[2].type).toBe('EMAIL_SENT_ORDER_PLACED')
+      expect(mockOrderEvents[2].type).toBe('EMAIL_SENT_PAYMENT_CONFIRMED_tx-456')
 
       // Lần 4: Gọi lại tuần tự sau khi đã EMAIL_SENT -> Bị chặn bởi Sequential Deduplication
       const fourthAttempt = await sendOrderNotification(
-        { type: 'ORDER_PLACED', orderId: 'order-123' },
+        { type: 'PAYMENT_CONFIRMED', orderId: 'order-123', transactionId: 'tx-456' },
         { adapter: mockAdapter }
       )
       expect(fourthAttempt.success).toBe(true)
@@ -414,25 +420,43 @@ describe('Email Notification System (Phase 9 & DEV-TASK-45 Reliability Hotfix)',
       expect(mockAdapter.getSentMessages()).toHaveLength(1) // Không gửi thêm email thứ 2
     })
 
-    it('supports all events E01-E06 and REFUND_CONFIRMED end-to-end via sendOrderNotification', async () => {
-      const events = [
+    it('DEV-TASK-47: disables email sending for E01, E03, E05 by policy without DB log or SMTP call', async () => {
+      const disabledEvents = [
         { type: 'ORDER_PLACED' as const, orderId: 'order-123' },
-        {
-          type: 'PAYMENT_CONFIRMED' as const,
-          orderId: 'order-123',
-          transactionId: 'tx-456',
-        },
         {
           type: 'ORDER_SHIPPING' as const,
           orderId: 'order-123',
           shipmentId: 'ship-789',
         },
-        { type: 'ORDER_COMPLETED' as const, orderId: 'order-123' },
         {
           type: 'COMPLAINT_OPENED' as const,
           orderId: 'order-123',
           complaintId: 'comp-001',
         },
+      ]
+
+      for (const evt of disabledEvents) {
+        const res = await sendOrderNotification(evt, { adapter: mockAdapter })
+        expect(res.success).toBe(true)
+        expect(res.skipped).toBe(true)
+        expect(res.skipReason).toContain('EVENT_DISABLED_BY_POLICY')
+      }
+
+      // Tuyệt đối không gọi SMTP adapter
+      expect(mockAdapter.getSentMessages()).toHaveLength(0)
+
+      // Tuyệt đối không tạo EMAIL_SENT, EMAIL_FAILED hoặc EMAIL_SKIPPED trong OrderEvent
+      expect(mockOrderEvents).toHaveLength(0)
+    })
+
+    it('DEV-TASK-47: keeps email sending and sequential dedup for active events (E02, E04, E06, REFUND_CONFIRMED)', async () => {
+      const activeEvents = [
+        {
+          type: 'PAYMENT_CONFIRMED' as const,
+          orderId: 'order-123',
+          transactionId: 'tx-456',
+        },
+        { type: 'ORDER_COMPLETED' as const, orderId: 'order-123' },
         {
           type: 'COMPLAINT_RESOLVED' as const,
           orderId: 'order-123',
@@ -445,16 +469,52 @@ describe('Email Notification System (Phase 9 & DEV-TASK-45 Reliability Hotfix)',
         },
       ]
 
-      for (const evt of events) {
+      for (const evt of activeEvents) {
         const res = await sendOrderNotification(evt, { adapter: mockAdapter })
         expect(res.success).toBe(true)
       }
 
-      expect(mockAdapter.getSentMessages()).toHaveLength(7)
-      expect(mockOrderEvents).toHaveLength(7)
+      // Cả 4 sự kiện được kích hoạt đều gửi SMTP thành công
+      expect(mockAdapter.getSentMessages()).toHaveLength(4)
+      expect(mockOrderEvents).toHaveLength(4)
       expect(
         mockOrderEvents.every((e) => e.type.startsWith('EMAIL_SENT_'))
       ).toBe(true)
+
+      // Thử gửi lại từng sự kiện tuần tự -> đều bị chặn bởi sequential dedup
+      for (const evt of activeEvents) {
+        const dedupRes = await sendOrderNotification(evt, { adapter: mockAdapter })
+        expect(dedupRes.success).toBe(true)
+        expect(dedupRes.skipped).toBe(true)
+        expect(dedupRes.skipReason).toContain('ALREADY_SENT')
+      }
+      expect(mockAdapter.getSentMessages()).toHaveLength(4) // Không tăng thêm email
+    })
+
+    it('DEV-TASK-47: isNotificationEventEnabled correctly reflects the email policy', () => {
+      // Bị tắt có chủ đích
+      expect(isNotificationEventEnabled('ORDER_PLACED')).toBe(false)
+      expect(isNotificationEventEnabled('ORDER_SHIPPING')).toBe(false)
+      expect(isNotificationEventEnabled('COMPLAINT_OPENED')).toBe(false)
+
+      // Được giữ lại
+      expect(isNotificationEventEnabled('PAYMENT_CONFIRMED')).toBe(true)
+      expect(isNotificationEventEnabled('ORDER_COMPLETED')).toBe(true)
+      expect(isNotificationEventEnabled('COMPLAINT_RESOLVED')).toBe(true)
+      expect(isNotificationEventEnabled('REFUND_CONFIRMED')).toBe(true)
+
+      // Kiểm tra danh sách constant
+      expect(DISABLED_NOTIFICATION_EVENTS).toEqual([
+        'ORDER_PLACED',
+        'ORDER_SHIPPING',
+        'COMPLAINT_OPENED',
+      ])
+      expect(ACTIVE_NOTIFICATION_EVENTS).toEqual([
+        'PAYMENT_CONFIRMED',
+        'ORDER_COMPLETED',
+        'COMPLAINT_RESOLVED',
+        'REFUND_CONFIRMED',
+      ])
     })
   })
 

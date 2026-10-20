@@ -371,13 +371,29 @@ export async function settleActualWeights(input: {
         finalTotal: order.finalTotal,
         deliveredAt: order.deliveredAt,
       },
-      OrderStatus.DELIVERED,
+      OrderStatus.COMPLETED,
       'SELLER',
       { hasActualGramsForAllLines: true }
     )
 
     if (!check.ok) {
-      return { success: false, error: check.reason || 'Không thể chốt khối lượng ở trạng thái này' }
+      // Fallback kiểm tra chuyển DELIVERED nếu đơn ở trạng thái trung gian
+      const fallbackCheck = canTransition(
+        {
+          status: order.status,
+          paymentOption: order.paymentOption,
+          total: order.total,
+          depositAmount: order.depositAmount,
+          finalTotal: order.finalTotal,
+          deliveredAt: order.deliveredAt,
+        },
+        OrderStatus.DELIVERED,
+        'SELLER',
+        { hasActualGramsForAllLines: true }
+      )
+      if (!fallbackCheck.ok) {
+        return { success: false, error: check.reason || 'Không thể chốt khối lượng ở trạng thái này' }
+      }
     }
 
     // Chuẩn bị dữ liệu tính toán quyết toán khối lượng
@@ -424,18 +440,18 @@ export async function settleActualWeights(input: {
         })
       }
 
-      // Cập nhật order sang DELIVERED
+      // Cập nhật order sang COMPLETED ngay lập tức theo chuẩn BR-01
       await tx.order.update({
         where: { id: order.id },
         data: {
           finalSubtotal: settlement.finalSubtotal,
           finalTotal: settlement.finalTotal,
-          status: OrderStatus.DELIVERED,
+          status: OrderStatus.COMPLETED,
           deliveredAt: new Date(),
         },
       })
 
-      // Đồng bộ trạng thái chuyến giao nếu có
+      // Đồng bộ trạng thái chuyến giao nếu có: VẪN LÀ DELIVERED theo BR-01
       const existingShipment = await tx.shipment.findUnique({
         where: { orderId: order.id },
       })
@@ -472,9 +488,9 @@ export async function settleActualWeights(input: {
         orderId: order.id,
         type: 'WEIGHTS_SETTLED',
         fromStatus: order.status,
-        toStatus: OrderStatus.DELIVERED,
+        toStatus: OrderStatus.COMPLETED,
         actorId: admin.id,
-        note: `Chốt khối lượng thực tế: Tổng quyết toán ${settlement.finalTotal.toLocaleString('vi-VN')} đ. ${
+        note: `Chốt khối lượng thực tế & Hoàn thành đơn hàng ngay lập tức (COMPLETED): Tổng quyết toán ${settlement.finalTotal.toLocaleString('vi-VN')} đ. ${
           settlement.customerToPay > 0
             ? `Khách thanh toán phần còn lại: ${settlement.customerToPay.toLocaleString('vi-VN')} đ.`
             : settlement.refundAmount > 0
@@ -499,7 +515,7 @@ export async function settleActualWeights(input: {
 
     return {
       success: true,
-      message: `Đã chốt khối lượng thực tế và chuyển đơn sang ĐÃ GIAO (DELIVERED). Tổng tiền: ${settlement.finalTotal.toLocaleString('vi-VN')} đ.`,
+      message: `Đã chốt khối lượng thực tế và hoàn thành đơn hàng (COMPLETED). Tổng tiền: ${settlement.finalTotal.toLocaleString('vi-VN')} đ.`,
     }
   } catch (error) {
     console.error('Error settling weights:', error)
@@ -538,6 +554,28 @@ export async function confirmRefundDone(input: {
           note: input.note ? `${txRecord.note || ''} | ${input.note}` : txRecord.note,
         },
       })
+
+      // BR-05: Nếu đơn đang ở COMPLAINT, không còn khiếu nại OPEN và không còn refund pending, chuyển về COMPLETED
+      const [remainingOpenComplaints, remainingPendingRefunds] = await Promise.all([
+        tx.complaint.count({
+          where: { orderId: txRecord.orderId, status: ComplaintStatus.OPEN },
+        }),
+        tx.paymentTransaction.count({
+          where: {
+            orderId: txRecord.orderId,
+            id: { not: txRecord.id },
+            type: TxType.REFUND,
+            status: TxStatus.PENDING,
+          },
+        }),
+      ])
+
+      if (remainingOpenComplaints === 0 && remainingPendingRefunds === 0) {
+        await tx.order.update({
+          where: { id: txRecord.orderId },
+          data: { status: OrderStatus.COMPLETED },
+        })
+      }
 
       await recordOrderEvent(tx, {
         orderId: txRecord.orderId,
@@ -676,6 +714,25 @@ export async function submitComplaint(input: {
       return { success: false, error: 'Vui lòng tải lên ít nhất 1 ảnh minh chứng' }
     }
 
+    if (input.photos.length > 5) {
+      return { success: false, error: 'Tối đa 5 ảnh minh chứng cho một khiếu nại' }
+    }
+
+    // Xác thực an toàn: Mỗi ảnh phải gắn với đúng orderId này, ngăn chặn arbitrary URLs/keys
+    for (const photo of input.photos) {
+      const isLegitForOrder =
+        photo.includes(`complaints%2F${input.orderId}%2F`) ||
+        photo.includes(`complaints/${input.orderId}/`) ||
+        photo.startsWith(`complaints/${input.orderId}/`) ||
+        photo.startsWith('/uploads/')
+      if (!isLegitForOrder) {
+        return {
+          success: false,
+          error: 'Ảnh minh chứng không hợp lệ hoặc không thuộc đơn hàng này',
+        }
+      }
+    }
+
     const order = await db.order.findUnique({
       where: { id: input.orderId },
       include: { items: true },
@@ -685,6 +742,19 @@ export async function submitComplaint(input: {
 
     if (order.userId !== session.user.id && session.user.role !== Role.ADMIN) {
       return { success: false, error: 'Bạn không có quyền khiếu nại cho đơn này' }
+    }
+
+    if (!order.deliveredAt) {
+      return { success: false, error: 'Đơn hàng chưa ghi nhận thời điểm giao hàng thực tế' }
+    }
+
+    const now = new Date()
+    const diffMs = now.getTime() - new Date(order.deliveredAt).getTime()
+    if (diffMs < 0 || diffMs >= 24 * 60 * 60 * 1000) {
+      return {
+        success: false,
+        error: 'Đã quá thời hạn khiếu nại 24 giờ kể từ thời điểm nhận hàng',
+      }
     }
 
     const check = canTransition(
@@ -700,7 +770,7 @@ export async function submitComplaint(input: {
       'CUSTOMER',
       {
         photosCount: input.photos.length,
-        now: new Date(),
+        now,
       }
     )
 
@@ -841,6 +911,25 @@ export async function resolveComplaint(input: {
             note: `Khoản bồi hoàn khiếu nại hao hụt (${compensation.toLocaleString('vi-VN')} đ cho ${(input.verifiedGrams / 1000).toLocaleString('vi-VN')} kg)`,
           },
         })
+      }
+
+      // BR-05: Khiếu nại bị từ chối hoặc bù hàng (không tạo hoàn tiền pending):
+      // Nếu không còn khiếu nại OPEN nào khác trên đơn, đơn được quay lại COMPLETED ngay!
+      if (isRejected || input.resolution === Resolution.REPLACE) {
+        const remainingOpenComplaints = await tx.complaint.count({
+          where: {
+            orderId: complaint.orderId,
+            id: { not: complaint.id },
+            status: ComplaintStatus.OPEN,
+          },
+        })
+
+        if (remainingOpenComplaints === 0) {
+          await tx.order.update({
+            where: { id: complaint.orderId },
+            data: { status: OrderStatus.COMPLETED },
+          })
+        }
       }
 
       // Ghi OrderEvent

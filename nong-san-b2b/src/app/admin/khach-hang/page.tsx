@@ -39,6 +39,13 @@ export default async function AdminCustomersPage() {
                 amount: true,
               },
             },
+            complaints: {
+              select: {
+                status: true,
+                resolution: true,
+                compensation: true,
+              },
+            },
           },
         },
       },
@@ -55,6 +62,7 @@ export default async function AdminCustomersPage() {
         status: o.status,
         total: o.total,
         finalTotal: o.finalTotal,
+        complaints: o.complaints,
       }))
     )
 

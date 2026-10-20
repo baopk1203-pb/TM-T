@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/dialog'
 import { formatVND } from '@/lib/money'
 import { formatVietnamDate, formatVietnamDateTime } from '@/lib/utils'
+import { getComplaintPhotoUrl } from '@/lib/storage-helpers'
 import { confirmPayment } from '@/actions/admin-order'
 import {
   cancelOrder,
@@ -1097,12 +1098,15 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                     <div className="text-slate-600">{c.description}</div>
                     {c.photos.length > 0 && (
                       <div className="flex gap-2 pt-1 overflow-x-auto">
-                        {c.photos.map((p, i) => (
-                          <a key={i} href={p} target="_blank" rel="noreferrer">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={p} alt="Minh chứng" className="w-14 h-14 object-cover rounded-lg border border-slate-200" />
-                          </a>
-                        ))}
+                        {c.photos.map((p, i) => {
+                          const photoUrl = getComplaintPhotoUrl(p)
+                          return (
+                            <a key={i} href={photoUrl} target="_blank" rel="noreferrer">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={photoUrl} alt="Minh chứng" className="w-14 h-14 object-cover rounded-lg border border-slate-200" />
+                            </a>
+                          )
+                        })}
                       </div>
                     )}
                     {c.compensation && (
@@ -1740,7 +1744,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
               disabled={isPending || settlePreview.hasOver105}
               className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs gap-1.5"
             >
-              {isPending ? 'Đang quyết toán...' : 'Xác nhận chốt cân & Giao hàng'}
+              {isPending ? 'Đang quyết toán...' : 'Xác nhận chốt cân & Hoàn thành đơn'}
             </Button>
           </DialogFooter>
         </DialogContent>

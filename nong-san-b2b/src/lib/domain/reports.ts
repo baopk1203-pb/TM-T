@@ -4,6 +4,7 @@ import {
   PaymentOption,
   CancelActor,
   ComplaintStatus,
+  Resolution,
   TxType,
   TxStatus,
 } from '@prisma/client'
@@ -169,6 +170,8 @@ export interface ReportOrderInput {
   complaints?: Array<{
     id: string
     status: ComplaintStatus
+    resolution?: Resolution | null
+    compensation?: number | null
   }>
 }
 
@@ -179,6 +182,65 @@ export interface PaymentTransactionInput {
   status: TxStatus
   amount: number
   createdAt: Date
+}
+
+/**
+ * Kiểm tra xem một đơn hàng có đủ điều kiện để ghi nhận vào doanh thu và sản lượng hay không (BR-01, BR-04, BR-05)
+ * - Điều kiện 1: Đơn hàng đã ở trạng thái COMPLETED
+ * - Điều kiện 2: Không có khiếu nại nào đang mở (OPEN)
+ */
+export function isOrderEligibleForRevenue(order: {
+  status: OrderStatus | string
+  complaints?: Array<{
+    id?: string
+    status: ComplaintStatus | string
+    resolution?: Resolution | string | null
+    compensation?: number | null
+  }>
+}): boolean {
+  if (order.status !== OrderStatus.COMPLETED) {
+    return false
+  }
+
+  // BR-04: Đang có khiếu nại chưa giải quyết -> loại khỏi doanh thu đủ điều kiện
+  if (order.complaints && order.complaints.some((c) => c.status === ComplaintStatus.OPEN)) {
+    return false
+  }
+
+  return true
+}
+
+/**
+ * Tính doanh thu thực tế được ghi nhận của đơn hàng sau khi trừ các khoản bồi hoàn khiếu nại đã giải quyết (BR-02, BR-05)
+ */
+export function getOrderEligibleRevenue(order: {
+  total: number
+  finalTotal?: number | null
+  complaints?: Array<{
+    id?: string
+    status: ComplaintStatus | string
+    resolution?: Resolution | string | null
+    compensation?: number | null
+  }>
+}): number {
+  const baseTotal =
+    order.finalTotal !== null && order.finalTotal !== undefined ? order.finalTotal : order.total
+
+  let refundCompensation = 0
+  if (order.complaints) {
+    for (const c of order.complaints) {
+      if (
+        c.status === ComplaintStatus.RESOLVED &&
+        c.resolution === Resolution.REFUND &&
+        c.compensation &&
+        c.compensation > 0
+      ) {
+        refundCompensation += c.compensation
+      }
+    }
+  }
+
+  return Math.max(0, baseTotal - refundCompensation)
 }
 
 // 1. DOANH THU THEO NGÀY / TUẦN
@@ -209,7 +271,7 @@ export function computeRevenueTimeline(
   endDate: Date,
   grouping: ReportGrouping = 'DAY'
 ): RevenueTimelineResult {
-  const completedOrders = orders.filter((o) => o.status === OrderStatus.COMPLETED)
+  const completedOrders = orders.filter(isOrderEligibleForRevenue)
 
   if (grouping === 'DAY') {
     // Tạo danh sách tất cả các ngày liên tục trong khoảng
@@ -227,7 +289,7 @@ export function computeRevenueTimeline(
     for (const order of completedOrders) {
       const ymd = formatVietnamDateString(order.createdAt)
       const existing = dayMap.get(ymd)
-      const effectiveTotal = order.finalTotal !== null && order.finalTotal !== undefined ? order.finalTotal : order.total
+      const effectiveTotal = getOrderEligibleRevenue(order)
 
       let orderGrams = 0
       for (const item of order.items) {
@@ -297,7 +359,7 @@ export function computeRevenueTimeline(
     const weekKey = `${mYear}-${mMonth}-${mDay}`
     const label = `Tuần ${mDay}/${mMonth}`
 
-    const effectiveTotal = order.finalTotal !== null && order.finalTotal !== undefined ? order.finalTotal : order.total
+    const effectiveTotal = getOrderEligibleRevenue(order)
     let orderGrams = 0
     for (const item of order.items) {
       if (!item.isSample) {
@@ -374,7 +436,7 @@ export function computeTopProducts(
   orders: ReportOrderInput[],
   topN: number = 10
 ): TopProductsResult {
-  const completedOrders = orders.filter((o) => o.status === OrderStatus.COMPLETED)
+  const completedOrders = orders.filter(isOrderEligibleForRevenue)
   const productMap = new Map<
     string,
     {
@@ -554,7 +616,7 @@ export interface ShrinkageStats {
  * - Tính theo tổng trọng lượng (weighted aggregate), KHÔNG tính trung bình số học các tỷ lệ
  */
 export function computeShrinkageStats(orders: ReportOrderInput[]): ShrinkageStats {
-  const completedOrders = orders.filter((o) => o.status === OrderStatus.COMPLETED)
+  const completedOrders = orders.filter(isOrderEligibleForRevenue)
 
   let totalOrderedGrams = 0
   let totalActualGrams = 0
@@ -625,7 +687,7 @@ export interface RevenueByCustomerGroupResult {
 export function computeRevenueByCustomerGroup(
   orders: ReportOrderInput[]
 ): RevenueByCustomerGroupResult {
-  const completedOrders = orders.filter((o) => o.status === OrderStatus.COMPLETED)
+  const completedOrders = orders.filter(isOrderEligibleForRevenue)
   const groupMap = new Map<
     string,
     {
@@ -640,7 +702,7 @@ export function computeRevenueByCustomerGroup(
   let totalRevenue = 0
 
   for (const order of completedOrders) {
-    const effectiveTotal = order.finalTotal !== null && order.finalTotal !== undefined ? order.finalTotal : order.total
+    const effectiveTotal = getOrderEligibleRevenue(order)
     totalRevenue += effectiveTotal
 
     const group = order.user.group
@@ -698,8 +760,8 @@ export function computeCashflowMetrics(
   transactions: PaymentTransactionInput[] = []
 ): CashflowSummary {
   const completedRevenue = orders
-    .filter((o) => o.status === OrderStatus.COMPLETED)
-    .reduce((sum, o) => sum + (o.finalTotal !== null && o.finalTotal !== undefined ? o.finalTotal : o.total), 0)
+    .filter(isOrderEligibleForRevenue)
+    .reduce((sum, o) => sum + getOrderEligibleRevenue(o), 0)
 
   let totalPaid = 0
   let totalRefunded = 0

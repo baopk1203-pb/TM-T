@@ -60,8 +60,16 @@ export function canTransition(
     return { ok: false, reason: `Đơn hàng đã ở trạng thái ${fromStatus}` }
   }
 
-  // Trạng thái kết thúc: CANCELLED và COMPLETED không thể chuyển đi đâu nữa
-  if (fromStatus === OrderStatus.CANCELLED || fromStatus === OrderStatus.COMPLETED) {
+  // Trạng thái kết thúc: CANCELLED không thể chuyển đi đâu nữa
+  if (fromStatus === OrderStatus.CANCELLED) {
+    return {
+      ok: false,
+      reason: `Đơn hàng đã ở trạng thái kết thúc (${fromStatus}), không thể chuyển tiếp`,
+    }
+  }
+
+  // Đối với COMPLETED: Chỉ cho phép chuyển sang COMPLAINT nếu khách khiếu nại trong 24h (PH9-00)
+  if (fromStatus === OrderStatus.COMPLETED && toStatus !== OrderStatus.COMPLAINT) {
     return {
       ok: false,
       reason: `Đơn hàng đã ở trạng thái kết thúc (${fromStatus}), không thể chuyển tiếp`,
@@ -176,6 +184,18 @@ export function canTransition(
         }
         return { ok: true }
       }
+      if (toStatus === OrderStatus.COMPLETED) {
+        if (actor !== 'SELLER') {
+          return { ok: false, reason: 'Chỉ ban quản trị mới có quyền xác nhận hoàn thành đơn hàng' }
+        }
+        if (context?.hasActualGramsForAllLines === false) {
+          return {
+            ok: false,
+            reason: 'Bắt buộc phải nhập khối lượng thực giao cho từng dòng trước khi hoàn thành đơn',
+          }
+        }
+        return { ok: true }
+      }
       return { ok: false, reason: `Không thể chuyển từ SHIPPING sang ${toStatus}` }
 
     case OrderStatus.DELIVERED:
@@ -187,7 +207,7 @@ export function canTransition(
           return { ok: false, reason: 'Đơn hàng chưa ghi nhận thời điểm giao hàng' }
         }
         const diffMs = now.getTime() - order.deliveredAt.getTime()
-        if (diffMs > 24 * 60 * 60 * 1000) {
+        if (diffMs < 0 || diffMs >= 24 * 60 * 60 * 1000) {
           return { ok: false, reason: 'Đã quá thời hạn khiếu nại 24h kể từ khi nhận hàng' }
         }
         if (context?.photosCount !== undefined && context.photosCount < 1) {
@@ -216,15 +236,7 @@ export function canTransition(
             reason: `Chưa tất toán đủ giá trị đơn hàng (${paid.toLocaleString('vi-VN')} đ !== ${targetTotal.toLocaleString('vi-VN')} đ)`,
           }
         }
-        if (order.deliveredAt) {
-          const diffMs = now.getTime() - order.deliveredAt.getTime()
-          if (diffMs <= 24 * 60 * 60 * 1000) {
-            return {
-              ok: false,
-              reason: 'Chưa hết thời hạn 24h để khách hàng khiếu nại sau khi giao',
-            }
-          }
-        }
+        // BR-01: Cho phép hoàn thành ngay mà không phải chờ 24h
         return { ok: true }
       }
       return { ok: false, reason: `Không thể chuyển từ DELIVERED sang ${toStatus}` }
@@ -257,6 +269,25 @@ export function canTransition(
         return { ok: true }
       }
       return { ok: false, reason: `Không thể chuyển từ COMPLAINT sang ${toStatus}` }
+
+    case OrderStatus.COMPLETED:
+      if (toStatus === OrderStatus.COMPLAINT) {
+        if (actor !== 'CUSTOMER') {
+          return { ok: false, reason: 'Chỉ khách hàng mới có quyền tạo khiếu nại' }
+        }
+        if (!order.deliveredAt) {
+          return { ok: false, reason: 'Đơn hàng chưa ghi nhận thời điểm giao hàng' }
+        }
+        const diffMs = now.getTime() - order.deliveredAt.getTime()
+        if (diffMs < 0 || diffMs >= 24 * 60 * 60 * 1000) {
+          return { ok: false, reason: 'Đã quá thời hạn khiếu nại 24h kể từ khi nhận hàng' }
+        }
+        if (context?.photosCount !== undefined && context.photosCount < 1) {
+          return { ok: false, reason: 'Khiếu nại phải kèm theo ít nhất 1 hình ảnh sản phẩm' }
+        }
+        return { ok: true }
+      }
+      return { ok: false, reason: `Không thể chuyển từ COMPLETED sang ${toStatus}` }
 
     default:
       return { ok: false, reason: `Trạng thái không hợp lệ: ${fromStatus}` }

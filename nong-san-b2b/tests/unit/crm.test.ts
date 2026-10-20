@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { OrderStatus, Role } from '@prisma/client'
+import { OrderStatus, Role, ComplaintStatus, Resolution } from '@prisma/client'
 import {
   validateDiscountPercent,
   computeCustomerOrderStats,
@@ -8,6 +8,7 @@ import {
   formatCustomerGroupBadge,
   filterCustomers,
 } from '@/lib/domain/crm'
+import { getOrderEligibleRevenue } from '@/lib/domain/reports'
 import { priceCart } from '@/lib/domain/pricing'
 
 // Mock next/cache, @/lib/db, and @/lib/auth for Server Action integration tests (CRM-02, CRM-03, CRM-04, CRM-06, CRM-07)
@@ -125,6 +126,78 @@ describe('Phase 7 — Batch 7A: CRM Khách hàng & Nhóm chiết khấu (CRM-01.
 
       // Doanh thu COMPLETED = 4,850,000 + 3,200,000 = 8,050,000 đ
       expect(stats.completedRevenue).toBe(8050000)
+    })
+
+    it('OBS-40-01: CRM Revenue Parity — đơn COMPLETED có REFUND đã giải quyết trừ chính xác bồi hoàn, đồng nhất với Báo cáo', () => {
+      const orderWithRefund = {
+        status: OrderStatus.COMPLETED,
+        total: 10000000,
+        finalTotal: 9500000,
+        complaints: [
+          {
+            status: ComplaintStatus.RESOLVED,
+            resolution: Resolution.REFUND,
+            compensation: 500000,
+          },
+        ],
+      }
+
+      const orderNormal = {
+        status: OrderStatus.COMPLETED,
+        total: 5000000,
+        finalTotal: 5000000,
+        complaints: [],
+      }
+
+      const orderWithRejectedComplaint = {
+        status: OrderStatus.COMPLETED,
+        total: 3000000,
+        finalTotal: 3000000,
+        complaints: [
+          {
+            status: ComplaintStatus.REJECTED,
+            resolution: null,
+            compensation: null,
+          },
+        ],
+      }
+
+      const orderWithOpenComplaint = {
+        status: OrderStatus.COMPLETED,
+        total: 4000000,
+        finalTotal: 4000000,
+        complaints: [
+          {
+            status: ComplaintStatus.OPEN,
+          },
+        ],
+      }
+
+      // Xác minh parity từng đơn với getOrderEligibleRevenue
+      expect(getOrderEligibleRevenue(orderWithRefund)).toBe(9000000)
+      expect(getOrderEligibleRevenue(orderNormal)).toBe(5000000)
+      expect(getOrderEligibleRevenue(orderWithRejectedComplaint)).toBe(3000000)
+
+      const stats = computeCustomerOrderStats([
+        orderWithRefund,
+        orderNormal,
+        orderWithRejectedComplaint,
+        orderWithOpenComplaint,
+      ])
+
+      // 4 đơn: 3 đơn COMPLETED hợp lệ, 1 đơn đang có khiếu nại OPEN tính vào active dispute
+      expect(stats.orderCount).toBe(4)
+      expect(stats.completedOrderCount).toBe(3)
+      expect(stats.activeOrderCount).toBe(1)
+      // Doanh thu CRM: 9,000,000 + 5,000,000 + 3,000,000 = 17,000,000 đ
+      expect(stats.completedRevenue).toBe(17000000)
+
+      // Parity check: Tổng doanh thu CRM phải bằng đúng tổng doanh thu đủ điều kiện của Báo cáo
+      const expectedReportRevenue =
+        getOrderEligibleRevenue(orderWithRefund) +
+        getOrderEligibleRevenue(orderNormal) +
+        getOrderEligibleRevenue(orderWithRejectedComplaint)
+      expect(stats.completedRevenue).toBe(expectedReportRevenue)
     })
 
     it('trả về 0 cho tất cả chỉ số khi khách hàng chưa có đơn hàng nào', () => {

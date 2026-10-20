@@ -92,6 +92,8 @@ export async function getBusinessReports(
             select: {
               id: true,
               status: true,
+              resolution: true,
+              compensation: true,
             },
           },
         },

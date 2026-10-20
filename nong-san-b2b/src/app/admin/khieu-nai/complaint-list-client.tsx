@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatVND } from '@/lib/money'
+import { getComplaintPhotoUrl } from '@/lib/storage-helpers'
 import { resolveComplaint } from '@/actions/order-lifecycle'
 import { toast } from 'sonner'
 import { ComplaintStatus, Resolution } from '@prisma/client'
@@ -300,16 +301,19 @@ export function ComplaintListClient({ initialComplaints }: ComplaintListClientPr
                         Ảnh minh chứng nhận hàng ({c.photos.length}):
                       </div>
                       <div className="flex gap-2.5 overflow-x-auto pb-1">
-                        {c.photos.map((photo, i) => (
-                          <a key={i} href={photo} target="_blank" rel="noreferrer" className="shrink-0">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={photo}
-                              alt="Minh chứng"
-                              className="w-20 h-20 object-cover rounded-xl border border-slate-200 hover:opacity-90 shadow-sm"
-                            />
-                          </a>
-                        ))}
+                        {c.photos.map((photo, i) => {
+                          const photoUrl = getComplaintPhotoUrl(photo)
+                          return (
+                            <a key={i} href={photoUrl} target="_blank" rel="noreferrer" className="shrink-0">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={photoUrl}
+                                alt="Minh chứng"
+                                className="w-20 h-20 object-cover rounded-xl border border-slate-200 hover:opacity-90 shadow-sm"
+                              />
+                            </a>
+                          )
+                        })}
                       </div>
                     </div>
                   )}

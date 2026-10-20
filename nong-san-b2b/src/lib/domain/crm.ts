@@ -1,4 +1,5 @@
-import { OrderStatus, Role } from '@prisma/client'
+import { OrderStatus, Role, ComplaintStatus, Resolution } from '@prisma/client'
+import { isOrderEligibleForRevenue, getOrderEligibleRevenue } from './reports'
 
 export const MIN_GROUP_DISCOUNT_PERCENT = 0
 export const MAX_GROUP_DISCOUNT_PERCENT = 50
@@ -53,6 +54,11 @@ export interface CustomerOrderSummaryInput {
   status: OrderStatus | string
   total: number
   finalTotal?: number | null
+  complaints?: Array<{
+    status: ComplaintStatus | string
+    resolution?: Resolution | string | null
+    compensation?: number | null
+  }>
 }
 
 export interface CustomerOrderStats {
@@ -67,7 +73,7 @@ export interface CustomerOrderStats {
 /**
  * Tính toán thống kê đơn hàng và doanh thu của một khách hàng B2B (Mục 3 — CRM-01)
  * - Số đơn (orderCount): không tính đơn DRAFT chưa xác nhận
- * - Doanh thu (completedRevenue): chỉ tính đơn có status = COMPLETED, lấy (finalTotal ?? total)
+ * - Doanh thu (completedRevenue): chỉ tính đơn có status = COMPLETED không có khiếu nại OPEN, lấy (finalTotal ?? total) - bồi hoàn
  */
 export function computeCustomerOrderStats(
   orders: CustomerOrderSummaryInput[]
@@ -88,9 +94,13 @@ export function computeCustomerOrderStats(
     orderCount++
 
     if (order.status === OrderStatus.COMPLETED) {
-      completedOrderCount++
-      const effectiveTotal = order.finalTotal ?? order.total
-      completedRevenue += effectiveTotal
+      if (!isOrderEligibleForRevenue(order)) {
+        // Đơn COMPLETED nhưng đang có khiếu nại chưa xử lý -> tính là đơn active dispute (BR-04)
+        activeOrderCount++
+      } else {
+        completedOrderCount++
+        completedRevenue += getOrderEligibleRevenue(order)
+      }
     } else if (order.status === OrderStatus.CANCELLED) {
       cancelledOrderCount++
     } else {

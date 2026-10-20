@@ -121,8 +121,8 @@ describe('SRC-SEC-04: File Upload Security & Magic Bytes Validation', () => {
       )
     })
 
-    it('6. Từ chối file vượt quá 5MB', async () => {
-      // Tạo file lớn hơn 5MB
+    it('6. Từ chối file vượt quá kích thước tối đa cho phép', async () => {
+      // Tạo file lớn hơn MAX_FILE_SIZE
       const largeBuffer = Buffer.alloc(MAX_FILE_SIZE + 1024)
       // Giả lập header JPEG ở đầu
       validJpegBytes.copy(largeBuffer, 0, 0, validJpegBytes.length)
@@ -130,7 +130,7 @@ describe('SRC-SEC-04: File Upload Security & Magic Bytes Validation', () => {
       const largeFile = createMockFile(largeBuffer, 'large.jpg', 'image/jpeg')
 
       await expect(saveUpload(largeFile, { uploadDir: tempUploadDir })).rejects.toThrow(
-        /Kích thước ảnh tối đa cho phép là 5MB/
+        /Kích thước ảnh tối đa cho phép/
       )
     })
 

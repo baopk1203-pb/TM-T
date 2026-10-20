@@ -1,25 +1,47 @@
 import path from 'path'
 import fs from 'fs/promises'
 import { existsSync, mkdirSync } from 'fs'
-import crypto from 'crypto'
+import {
+  ALLOWED_MIME_TYPES,
+  MAX_FILE_SIZE,
+  MAX_PHOTOS_PER_COMPLAINT,
+  SupportedImageType,
+  ImageDetectionResult,
+  COMPLAINT_PHOTO_KEY_REGEX,
+  isValidComplaintPhotoKey,
+  parseComplaintPhotoKey,
+  getComplaintPhotoUrl,
+  generateComplaintPhotoKey,
+} from './storage-helpers'
+
+export {
+  ALLOWED_MIME_TYPES,
+  MAX_FILE_SIZE,
+  MAX_PHOTOS_PER_COMPLAINT,
+  isValidComplaintPhotoKey,
+  parseComplaintPhotoKey,
+  getComplaintPhotoUrl,
+  generateComplaintPhotoKey,
+  COMPLAINT_PHOTO_KEY_REGEX,
+}
+
+export type { SupportedImageType, ImageDetectionResult }
 
 export interface StorageService {
   saveUpload(file: File, options?: { uploadDir?: string }): Promise<string>
 }
 
-export const ALLOWED_MIME_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/jpg',
-]
-export const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+export interface SaveComplaintPhotoResult {
+  url: string
+  key: string
+  size: number
+  contentType: SupportedImageType
+}
 
-export type SupportedImageType = 'image/jpeg' | 'image/png' | 'image/webp'
-
-export interface ImageDetectionResult {
-  mime: SupportedImageType
-  extension: '.jpg' | '.png' | '.webp'
+export interface ComplaintPhotoPayload {
+  stream: ReadableStream<Uint8Array> | NodeJS.ReadableStream | Buffer
+  contentType: string
+  size?: number
 }
 
 /**
@@ -70,16 +92,42 @@ export function detectImageSignature(buffer: Buffer): ImageDetectionResult | nul
 }
 
 /**
- * Lưu file upload vào thư mục lưu trữ (mặc định public/uploads)
- * - Kiểm tra dung lượng tối đa 5MB
- * - Xác minh Magic bytes thực tế (JPEG, PNG, WebP)
- * - Sinh tên file an toàn bằng crypto.randomUUID() chống Path Traversal và ghi đè
- * - Cho phép truyền options.uploadDir để unit tests chạy trong thư mục tạm cô lập
+ * Kiểm tra xem môi trường hiện tại có cấu hình thông tin xác thực Vercel Blob hay không
+ * Hỗ trợ 2 cơ chế:
+ * 1. OIDC mới: Có BLOB_STORE_ID (VERCEL_OIDC_TOKEN được runtime Vercel tự quản lý và SDK tự tìm)
+ * 2. Legacy: Có BLOB_READ_WRITE_TOKEN hoặc options.blobToken được truyền vào
  */
-export async function saveUpload(
+export function hasBlobCredentials(options?: { blobToken?: string }): boolean {
+  if (options?.blobToken && options.blobToken.trim().length > 0) {
+    return true
+  }
+  if (process.env.BLOB_READ_WRITE_TOKEN && process.env.BLOB_READ_WRITE_TOKEN.trim().length > 0) {
+    return true
+  }
+  if (process.env.BLOB_STORE_ID && process.env.BLOB_STORE_ID.trim().length > 0) {
+    return true
+  }
+  return false
+}
+
+/**
+ * Lưu ảnh khiếu nại vào Vercel Private Blob (hoặc local mock trong môi trường dev/test)
+ * - Giới hạn tối đa 4.000.000 bytes
+ * - Xác minh Magic bytes thực tế (JPEG, PNG, WebP)
+ * - Tên file sinh ngẫu nhiên an toàn, cô lập theo orderId
+ * - Sử dụng access: 'private'
+ * - Hỗ trợ cả 2 cơ chế: Vercel OIDC (BLOB_STORE_ID) và Legacy token (BLOB_READ_WRITE_TOKEN)
+ * - Không fallback âm thầm sang filesystem trên Vercel runtime
+ */
+export async function saveComplaintPhoto(
   file: File,
-  options?: { uploadDir?: string }
-): Promise<string> {
+  context: { orderId: string },
+  options?: {
+    uploadDir?: string
+    blobToken?: string
+    forceLocalStorage?: boolean
+  }
+): Promise<SaveComplaintPhotoResult> {
   if (!file) {
     throw new Error('Không tìm thấy file để tải lên')
   }
@@ -89,7 +137,7 @@ export async function saveUpload(
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    throw new Error('Kích thước ảnh tối đa cho phép là 5MB')
+    throw new Error('Kích thước ảnh tối đa cho phép là 4MB (4.000.000 bytes)')
   }
 
   // Đọc buffer dữ liệu
@@ -107,24 +155,192 @@ export async function saveUpload(
     throw new Error('Chỉ chấp nhận file ảnh định dạng JPG, PNG hoặc WebP')
   }
 
-  const uploadDir = options?.uploadDir || path.join(process.cwd(), 'public', 'uploads')
-  if (!existsSync(/*turbopackIgnore: true*/ uploadDir)) {
-    mkdirSync(/*turbopackIgnore: true*/ uploadDir, { recursive: true })
+  const key = generateComplaintPhotoKey(context.orderId, detected.extension)
+  const isVercelRuntime = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production'
+  const hasCreds = hasBlobCredentials(options)
+  const shouldUseBlob = hasCreds && !options?.forceLocalStorage
+  const explicitToken = options?.blobToken || process.env.BLOB_READ_WRITE_TOKEN
+
+  // Trường hợp 1: Có cấu hình Vercel Blob (OIDC hoặc Legacy token)
+  if (shouldUseBlob) {
+    const { put } = await import('@vercel/blob')
+    const putOptions: {
+      access: 'private'
+      contentType: string
+      addRandomSuffix: boolean
+      token?: string
+    } = {
+      access: 'private',
+      contentType: detected.mime,
+      addRandomSuffix: false,
+    }
+    // Chỉ truyền token khi dùng Legacy token (BLOB_READ_WRITE_TOKEN hoặc options.blobToken).
+    // Nếu là cơ chế OIDC (BLOB_STORE_ID), KHÔNG truyền token và KHÔNG đọc VERCEL_OIDC_TOKEN,
+    // để @vercel/blob SDK tự động xử lý OIDC và tự động làm mới token theo đúng khuyến nghị của Vercel.
+    if (explicitToken && explicitToken.trim().length > 0) {
+      putOptions.token = explicitToken.trim()
+    }
+
+    const blob = await put(key, buffer, putOptions)
+
+    const storedKey = blob.pathname || key
+    return {
+      url: getComplaintPhotoUrl(storedKey),
+      key: storedKey,
+      size: buffer.length,
+      contentType: detected.mime,
+    }
   }
 
-  // Sinh tên file ngẫu nhiên an toàn bằng UUID, phần mở rộng gán theo Magic Bytes đã phát hiện
-  const uniqueId = crypto.randomUUID()
-  const filename = `${Date.now()}-${uniqueId}${detected.extension}`
-  const filePath = path.join(uploadDir, filename)
+  // Trường hợp 2: Trên môi trường Vercel nhưng chưa cấu hình Blob (thiếu cả OIDC và Legacy) -> Báo lỗi an toàn, tuyệt đối không ghi đĩa
+  if (isVercelRuntime && !options?.forceLocalStorage) {
+    throw new Error('Dịch vụ lưu trữ Vercel Blob chưa được cấu hình. Vui lòng liên hệ ban quản trị.')
+  }
 
-  // Kiểm tra chống Path Traversal
-  const resolvedFilePath = path.resolve(filePath)
-  const resolvedUploadDir = path.resolve(/*turbopackIgnore: true*/ uploadDir)
+  // Trường hợp 3: Local Development / Unit Tests mà không có Blob credentials -> Lưu vào thư mục mock local an toàn
+  const baseDir = options?.uploadDir || path.join(process.cwd(), '.local-storage')
+  const fullPath = path.join(/*turbopackIgnore: true*/ baseDir, key)
+  const resolvedPath = path.resolve(/*turbopackIgnore: true*/ fullPath)
+  const resolvedBaseDir = path.resolve(/*turbopackIgnore: true*/ baseDir)
+
+  if (!resolvedPath.startsWith(resolvedBaseDir)) {
+    throw new Error('Đường dẫn file không hợp lệ (Path Traversal detected)')
+  }
+
+  const dir = path.dirname(fullPath)
+  if (!existsSync(/*turbopackIgnore: true*/ dir)) {
+    mkdirSync(/*turbopackIgnore: true*/ dir, { recursive: true })
+  }
+
+  await fs.writeFile(/*turbopackIgnore: true*/ fullPath, buffer)
+
+  return {
+    url: getComplaintPhotoUrl(key),
+    key,
+    size: buffer.length,
+    contentType: detected.mime,
+  }
+}
+
+/**
+ * Lấy dữ liệu ảnh khiếu nại từ Vercel Private Blob hoặc local mock storage
+ */
+export async function getComplaintPhoto(
+  key: string,
+  options?: {
+    uploadDir?: string
+    blobToken?: string
+    forceLocalStorage?: boolean
+  }
+): Promise<ComplaintPhotoPayload | null> {
+  const parsed = parseComplaintPhotoKey(key)
+  if (!parsed) return null
+
+  const isVercelRuntime = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production'
+  const hasCreds = hasBlobCredentials(options)
+  const shouldUseBlob = hasCreds && !options?.forceLocalStorage
+  const explicitToken = options?.blobToken || process.env.BLOB_READ_WRITE_TOKEN
+
+  // Trường hợp 1: Truy xuất từ Vercel Private Blob (OIDC hoặc Legacy token)
+  if (shouldUseBlob) {
+    try {
+      const { get } = await import('@vercel/blob')
+      const getOptions: {
+        access: 'private'
+        token?: string
+      } = {
+        access: 'private',
+      }
+      if (explicitToken && explicitToken.trim().length > 0) {
+        getOptions.token = explicitToken.trim()
+      }
+
+      const result = await get(key, getOptions)
+
+      if (!result || result.statusCode !== 200 || !result.stream) {
+        return null
+      }
+
+      return {
+        stream: result.stream,
+        contentType: result.blob.contentType || 'image/jpeg',
+        size: result.blob.size,
+      }
+    } catch (err: unknown) {
+      console.error('Error fetching private blob:', err)
+      return null
+    }
+  }
+
+  // Trường hợp 2: Trên Vercel nhưng thiếu credentials Blob -> Fail-closed, không fallback sang disk
+  if (isVercelRuntime && !options?.forceLocalStorage) {
+    return null
+  }
+
+  // Trường hợp 3: Local Development / Tests mock storage
+  const baseDir = options?.uploadDir || path.join(process.cwd(), '.local-storage')
+  const fullPath = path.join(/*turbopackIgnore: true*/ baseDir, key)
+  const resolvedPath = path.resolve(/*turbopackIgnore: true*/ fullPath)
+  const resolvedBaseDir = path.resolve(/*turbopackIgnore: true*/ baseDir)
+
+  if (!resolvedPath.startsWith(resolvedBaseDir) || !existsSync(/*turbopackIgnore: true*/ fullPath)) {
+    return null
+  }
+
+  const buffer = await fs.readFile(/*turbopackIgnore: true*/ fullPath)
+  const detected = detectImageSignature(buffer)
+  return {
+    stream: buffer,
+    contentType: detected?.mime || 'image/jpeg',
+    size: buffer.length,
+  }
+}
+
+/**
+ * Hàm tương thích ngược dành cho các unit test và legacy upload
+ */
+export async function saveUpload(
+  file: File,
+  options?: { uploadDir?: string }
+): Promise<string> {
+  if (!file) {
+    throw new Error('Không tìm thấy file để tải lên')
+  }
+
+  if (file.size <= 0) {
+    throw new Error('File tải lên không có dữ liệu')
+  }
+
+  if (file.size > MAX_FILE_SIZE) {
+    throw new Error('Kích thước ảnh tối đa cho phép là 4MB (4.000.000 bytes)')
+  }
+
+  const arrayBuffer = await file.arrayBuffer()
+  const buffer = Buffer.from(arrayBuffer)
+
+  const detected = detectImageSignature(buffer)
+  if (!detected) {
+    throw new Error('Định dạng nội dung file không hợp lệ. Chỉ chấp nhận file ảnh JPG, PNG hoặc WebP thực tế')
+  }
+
+  if (file.type && !ALLOWED_MIME_TYPES.includes(file.type.toLowerCase())) {
+    throw new Error('Chỉ chấp nhận file ảnh định dạng JPG, PNG hoặc WebP')
+  }
+
+  const baseDir = options?.uploadDir || path.join(process.cwd(), 'public', 'uploads')
+  const filename = `${Date.now()}-${crypto.randomUUID()}${detected.extension}`
+  const filePath = path.join(/*turbopackIgnore: true*/ baseDir, filename)
+
+  const resolvedFilePath = path.resolve(/*turbopackIgnore: true*/ filePath)
+  const resolvedUploadDir = path.resolve(/*turbopackIgnore: true*/ baseDir)
   if (!resolvedFilePath.startsWith(resolvedUploadDir)) {
     throw new Error('Đường dẫn file không hợp lệ (Path Traversal detected)')
   }
 
-  await fs.writeFile(filePath, buffer)
+  if (!existsSync(/*turbopackIgnore: true*/ baseDir)) {
+    mkdirSync(/*turbopackIgnore: true*/ baseDir, { recursive: true })
+  }
 
+  await fs.writeFile(/*turbopackIgnore: true*/ filePath, buffer)
   return `/uploads/${filename}`
 }

@@ -400,7 +400,7 @@ export function computeComplaintCompensation(input: {
   let isExpired = false
   if (input.deliveredAt && input.submittedAt) {
     const diffMs = input.submittedAt.getTime() - input.deliveredAt.getTime()
-    if (diffMs > 24 * 60 * 60 * 1000) {
+    if (diffMs < 0 || diffMs >= 24 * 60 * 60 * 1000) {
       isExpired = true
     }
   }

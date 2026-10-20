@@ -312,6 +312,7 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
       for (const file of Array.from(files)) {
         const formData = new FormData()
         formData.append('file', file)
+        formData.append('orderId', order.id)
         const res = await fetch('/api/upload', {
           method: 'POST',
           body: formData,
@@ -405,11 +406,15 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
     })
   }
 
-  // Check 24h complaint deadline
+  // Check 24h complaint deadline (hỗ trợ cả DELIVERED và COMPLETED theo chuẩn PH9-00)
   const canComplaint = (() => {
-    if (order.status !== OrderStatus.DELIVERED || !order.deliveredAt) return false
+    if (
+      (order.status !== OrderStatus.DELIVERED && order.status !== OrderStatus.COMPLETED) ||
+      !order.deliveredAt
+    )
+      return false
     const diffMs = new Date().getTime() - new Date(order.deliveredAt).getTime()
-    return diffMs <= 24 * 60 * 60 * 1000
+    return diffMs >= 0 && diffMs < 24 * 60 * 60 * 1000
   })()
 
   const isUnpaid = order.paymentStatus === 'AWAITING_PAYMENT'

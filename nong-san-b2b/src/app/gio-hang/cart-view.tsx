@@ -17,6 +17,8 @@ import {
   ShieldCheck,
   Building2,
   RefreshCw,
+  Truck,
+  CreditCard,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -137,7 +139,7 @@ export function CartView() {
 
   if (!isMounted) {
     return (
-      <div className="py-20 text-center">
+      <div className="py-24 text-center">
         <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin mx-auto mb-3" />
         <p className="text-sm text-slate-500 font-medium">Đang tải giỏ hàng...</p>
       </div>
@@ -147,19 +149,20 @@ export function CartView() {
   if (items.length === 0) {
     return (
       <div className="max-w-2xl mx-auto py-16 px-4 text-center">
-        <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-200">
+        <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-emerald-200/80 shadow-xs">
           <ShoppingCart className="w-10 h-10 text-emerald-600" />
         </div>
-        <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+        <h2 className="font-heading text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
           Giỏ hàng của bạn đang trống
         </h2>
         <p className="text-slate-600 text-sm mt-2 max-w-md mx-auto leading-relaxed">
-          Chưa có sản phẩm trái cây nào trong giỏ. Hãy khám phá danh mục vụ mùa tuyển chọn từ các nhà vườn đạt chuẩn VietGAP & GlobalGAP.
+          Chưa có sản phẩm trái cây nào trong giỏ. Hãy khám phá danh mục vụ mùa tuyển chọn từ các nhà vườn đạt chuẩn VietGAP &amp; GlobalGAP.
         </p>
         <div className="mt-8">
           <Link href="/san-pham">
-            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-6 py-2.5 shadow-sm">
-              Khám phá sản phẩm vụ mùa
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-8 py-6 rounded-full shadow-btn-glow gap-2 hover:-translate-y-0.5 transition-all">
+              <span>Khám phá sản phẩm vụ mùa</span>
+              <ArrowRight className="w-4 h-4" />
             </Button>
           </Link>
         </div>
@@ -171,10 +174,10 @@ export function CartView() {
     if (quoteError) {
       return (
         <div className="max-w-md mx-auto py-16 px-4 text-center space-y-4">
-          <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mx-auto border border-rose-200">
+          <div className="w-16 h-16 bg-rose-50 rounded-3xl flex items-center justify-center mx-auto border border-rose-200">
             <AlertTriangle className="w-8 h-8 text-rose-600" />
           </div>
-          <h2 className="text-xl font-bold text-slate-900">Không thể tải báo giá giỏ hàng</h2>
+          <h2 className="font-heading text-xl font-bold text-slate-900">Không thể tải báo giá giỏ hàng</h2>
           <p className="text-xs text-slate-500">{quoteError}</p>
           <Button
             onClick={() => {
@@ -185,7 +188,7 @@ export function CartView() {
                 .catch(() => setQuoteError('Không thể kết nối máy chủ, vui lòng thử lại sau.'))
                 .finally(() => setIsQuoting(false))
             }}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-full px-6"
           >
             Thử lại
           </Button>
@@ -195,32 +198,18 @@ export function CartView() {
 
     return (
       <div className="space-y-8 animate-pulse">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
-          <div className="space-y-2">
-            <div className="h-8 w-48 bg-slate-200 rounded-lg" />
-            <div className="h-4 w-72 bg-slate-100 rounded-md" />
-          </div>
-          <div className="h-9 w-36 bg-slate-100 rounded-xl" />
-        </div>
-
+        <div className="h-20 bg-white rounded-3xl border border-slate-200 p-6" />
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           <div className="lg:col-span-8 space-y-4">
-            <div className="h-44 bg-white rounded-2xl border border-slate-200 p-6 flex flex-col justify-center items-center text-center">
+            <div className="h-44 bg-white rounded-3xl border border-slate-200 p-6 flex flex-col justify-center items-center text-center">
               <RefreshCw className="w-6 h-6 text-emerald-600 animate-spin mb-2" />
               <p className="text-xs text-slate-500 font-medium">
-                Đang đối chiếu bậc giá sỉ & chiết khấu nhóm đối tác...
+                Đang đối chiếu bậc giá sỉ &amp; chiết khấu nhóm đối tác...
               </p>
             </div>
           </div>
           <div className="lg:col-span-4">
-            <div className="h-64 bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
-              <div className="h-5 w-32 bg-slate-200 rounded" />
-              <div className="space-y-2 pt-4">
-                <div className="h-4 w-full bg-slate-100 rounded" />
-                <div className="h-4 w-3/4 bg-slate-100 rounded" />
-                <div className="h-10 w-full bg-slate-200 rounded-lg mt-6" />
-              </div>
-            </div>
+            <div className="h-64 bg-white rounded-3xl border border-slate-200 p-6 space-y-4" />
           </div>
         </div>
       </div>
@@ -250,10 +239,63 @@ export function CartView() {
 
   return (
     <div className="space-y-8">
-      {/* Tiêu đề & thông tin nhóm khách hàng */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+      {/* STITCH 4-STEP PROGRESS STEPPER */}
+      <div className="w-full bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-xs">
+        <div className="grid grid-cols-4 relative max-w-4xl mx-auto">
+          <div className="absolute top-1/2 left-[12.5%] right-[12.5%] -translate-y-1/2 h-1 bg-slate-100 pointer-events-none -z-0">
+            <div className="h-full bg-emerald-600 transition-all duration-500 rounded-full" style={{ width: '0%' }} />
+          </div>
+
+          {/* Bước 1: Active */}
+          <div className="relative z-10 flex flex-col items-center text-center">
+            <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shadow-md ring-4 ring-emerald-100">
+              <ShoppingCart className="w-5 h-5" />
+            </div>
+            <div className="mt-2 flex flex-col items-center">
+              <span className="text-[10px] text-emerald-700 font-extrabold uppercase tracking-wider">Bước 1</span>
+              <span className="text-xs sm:text-sm font-bold text-slate-900">Giỏ hàng</span>
+            </div>
+          </div>
+
+          {/* Bước 2: Inactive */}
+          <div className="relative z-10 flex flex-col items-center text-center opacity-60">
+            <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold text-sm">
+              <Truck className="w-5 h-5" />
+            </div>
+            <div className="mt-2 flex flex-col items-center">
+              <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Bước 2</span>
+              <span className="text-xs sm:text-sm font-medium text-slate-600">Giao nhận</span>
+            </div>
+          </div>
+
+          {/* Bước 3: Inactive */}
+          <div className="relative z-10 flex flex-col items-center text-center opacity-60">
+            <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold text-sm">
+              <CreditCard className="w-5 h-5" />
+            </div>
+            <div className="mt-2 flex flex-col items-center">
+              <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Bước 3</span>
+              <span className="text-xs sm:text-sm font-medium text-slate-600">Thanh toán</span>
+            </div>
+          </div>
+
+          {/* Bước 4: Inactive */}
+          <div className="relative z-10 flex flex-col items-center text-center opacity-60">
+            <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold text-sm">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div className="mt-2 flex flex-col items-center">
+              <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Bước 4</span>
+              <span className="text-xs sm:text-sm font-medium text-slate-600">Hoàn tất</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* HEADER & PARTNER STATUS BAR */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/90 shadow-xs">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
+          <h1 className="font-heading text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
             <ShoppingCart className="w-7 h-7 text-emerald-600" />
             Giỏ Hàng Sỉ B2B
           </h1>
@@ -263,12 +305,12 @@ export function CartView() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="bg-emerald-50/70 border border-emerald-200 px-3.5 py-2 rounded-xl flex items-center gap-2.5 text-xs text-emerald-900">
+          <div className="bg-emerald-50 border border-emerald-200 px-4 py-2 rounded-full flex items-center gap-2.5 text-xs text-emerald-900 shadow-2xs">
             <Building2 className="w-4 h-4 text-emerald-600" />
             <div>
-              <span>Nhóm: <strong>{groupName}</strong></span>
+              <span>Nhóm đối tác: <strong>{groupName}</strong></span>
               {userDiscount > 0 && (
-                <Badge className="ml-2 bg-emerald-600 text-white text-[10px] px-1.5 py-0">
+                <Badge className="ml-2 bg-emerald-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
                   -{userDiscount}%
                 </Badge>
               )}
@@ -286,16 +328,17 @@ export function CartView() {
                 setQuoteError(null)
               }
             }}
-            className="text-slate-400 hover:text-rose-600 text-xs gap-1.5"
+            className="text-slate-400 hover:text-rose-600 text-xs gap-1.5 rounded-full px-3"
           >
-            <Trash2 className="w-3.5 h-3.5" /> Xóa giỏ
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Xóa giỏ</span>
           </Button>
         </div>
       </div>
 
-      {/* Grid: Danh sách sản phẩm (8 cols) & Tóm tắt đơn hàng (4 cols) */}
+      {/* MAIN TWO COLUMN LAYOUT: ITEMS (8 COLS) & STICKY SUMMARY (4 COLS) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Cột trái: Các sản phẩm trong giỏ */}
+        {/* CỘT TRÁI: CÁC SẢN PHẨM TRONG GIỎ */}
         <div className="lg:col-span-8 space-y-6">
           {allProductIds.map((productId) => {
             const meta = metadata[productId]
@@ -319,23 +362,23 @@ export function CartView() {
             return (
               <div
                 key={productId}
-                className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs"
+                className="bg-white rounded-3xl border border-slate-200/90 overflow-hidden shadow-card hover:border-emerald-300 transition-all"
               >
                 {/* Header sản phẩm */}
                 <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3.5">
                     {meta?.image && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={meta.image}
                         alt={meta.name}
-                        className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0"
+                        className="w-14 h-14 rounded-2xl object-cover border border-slate-200/80 shrink-0 shadow-2xs"
                       />
                     )}
                     <div>
                       <Link
                         href={meta ? `/san-pham/${meta.slug}` : '#'}
-                        className="font-bold text-slate-900 hover:text-emerald-700 transition-colors text-base"
+                        className="font-heading font-bold text-slate-900 hover:text-emerald-700 transition-colors text-base line-clamp-1"
                       >
                         {meta?.name || 'Sản phẩm sỉ'}
                       </Link>
@@ -351,12 +394,12 @@ export function CartView() {
                   {prodRegularLines.length > 0 && (
                     <div>
                       {meetsMoq ? (
-                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-xs gap-1">
+                        <Badge className="bg-emerald-50 text-emerald-800 border-emerald-300 font-bold text-xs gap-1.5 px-3 py-1 rounded-full shadow-2xs">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                           Đạt MOQ ({totalKg} kg)
                         </Badge>
                       ) : (
-                        <Badge variant="destructive" className="bg-rose-100 text-rose-800 border-rose-300 font-bold text-xs gap-1">
+                        <Badge variant="destructive" className="bg-rose-50 text-rose-800 border-rose-300 font-bold text-xs gap-1.5 px-3 py-1 rounded-full shadow-2xs">
                           <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
                           Chưa đạt MOQ (Thiếu {missingKg} kg)
                         </Badge>
@@ -367,14 +410,14 @@ export function CartView() {
 
                 {/* Khối thanh tiến trình bậc giá cho sản phẩm */}
                 {prodRegularLines.length > 0 && summary && (
-                  <div className="px-4 sm:px-5 py-3.5 bg-slate-50 border-b border-slate-100 space-y-2">
+                  <div className="px-4 sm:px-6 py-4 bg-emerald-50/20 border-b border-slate-100 space-y-2.5">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-slate-600 font-medium">
-                        Tổng sản lượng quy cách thường: <strong>{totalKg} kg</strong>
+                        Tổng sản lượng quy cách thường: <strong className="text-slate-900">{totalKg} kg</strong>
                       </span>
                       <div className="flex items-center gap-1.5 font-bold">
                         <span className="text-slate-500">Đơn giá bậc:</span>
-                        <span className="text-emerald-700 text-sm">
+                        <span className="font-heading text-emerald-700 text-sm font-extrabold">
                           {formatVND(summary.unitPricePerKg)}/kg
                         </span>
                         {userDiscount > 0 && (
@@ -386,7 +429,7 @@ export function CartView() {
                     </div>
 
                     {/* Progress bar */}
-                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                    <div className="w-full bg-slate-200/80 h-2 rounded-full overflow-hidden">
                       <div
                         className={`h-full transition-all duration-300 ${
                           meetsMoq ? 'bg-emerald-600' : 'bg-amber-500'
@@ -399,8 +442,9 @@ export function CartView() {
 
                     {/* Hint */}
                     {!meetsMoq ? (
-                      <p className="text-[11px] text-rose-600 font-medium">
-                        ⚠️ Cần đặt thêm tối thiểu <strong>{missingKg} kg</strong> của sản phẩm này để có thể đặt hàng.
+                      <p className="text-[11px] text-rose-600 font-medium flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        Cần đặt thêm tối thiểu <strong>{missingKg} kg</strong> của sản phẩm này để có thể đặt hàng.
                       </p>
                     ) : summary.nextTier ? (
                       <p className="text-[11px] text-blue-700 font-medium flex items-center gap-1">
@@ -443,22 +487,22 @@ export function CartView() {
                     return (
                       <div
                         key={line.packagingId}
-                        className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                        className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/40 transition-colors"
                       >
                         <div className="space-y-1">
                           <div className="font-semibold text-sm text-slate-900 flex items-center gap-2">
-                            <Package className="w-4 h-4 text-slate-400" />
+                            <Package className="w-4 h-4 text-emerald-600" />
                             {line.packagingName}
                           </div>
                           <div className="text-xs text-slate-500">
-                            Quy cách: {packagingWeightKg} kg/kiện • Tổng:{' '}
+                            Quy cách: {packagingWeightKg} kg/kiện • Tổng khối lượng:{' '}
                             <strong className="text-slate-800">{lineKg} kg</strong>
                           </div>
                         </div>
 
                         <div className="flex items-center justify-between sm:justify-end gap-6">
-                          {/* Bộ tăng giảm số lượng */}
-                          <div className="flex items-center border border-slate-200 rounded-lg bg-white overflow-hidden shadow-2xs">
+                          {/* Segmented Stepper Pill */}
+                          <div className="flex items-center bg-slate-100/90 rounded-full p-1 border border-slate-200/80 shadow-inner">
                             <button
                               type="button"
                               onClick={() => {
@@ -466,15 +510,22 @@ export function CartView() {
                                 setQuoteError(null)
                                 incrementQuantity(line.productId, line.packagingId, -1)
                               }}
-                              className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors"
+                              className="w-7 h-7 rounded-full bg-white text-slate-700 flex items-center justify-center hover:bg-emerald-600 hover:text-white transition-colors font-bold shadow-xs"
                               aria-label={`Giảm số lượng ${line.packagingName}`}
                               title="Giảm số lượng"
                             >
                               <Minus className="w-3.5 h-3.5" />
                             </button>
-                            <span className="w-12 h-8 flex items-center justify-center text-xs font-bold text-slate-900 border-x border-slate-200">
-                              {currentQuantity}
-                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={currentQuantity}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || 0
+                                updateQuantity(line.productId, line.packagingId, Math.max(0, val))
+                              }}
+                              className="w-10 text-center text-xs font-bold text-slate-900 bg-transparent focus:outline-none"
+                            />
                             <button
                               type="button"
                               onClick={() => {
@@ -482,7 +533,7 @@ export function CartView() {
                                 setQuoteError(null)
                                 incrementQuantity(line.productId, line.packagingId, 1)
                               }}
-                              className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors"
+                              className="w-7 h-7 rounded-full bg-white text-slate-700 flex items-center justify-center hover:bg-emerald-600 hover:text-white transition-colors font-bold shadow-xs"
                               aria-label={`Tăng số lượng ${line.packagingName}`}
                               title="Tăng số lượng"
                             >
@@ -492,7 +543,7 @@ export function CartView() {
 
                           {/* Thành tiền dòng */}
                           <div className="text-right min-w-[120px]">
-                            <div className="text-sm font-extrabold text-slate-900">
+                            <div className="font-heading text-sm sm:text-base font-extrabold text-slate-900">
                               {formatVND(displayLineTotal)}
                             </div>
                             <div className="text-[11px] text-slate-500">
@@ -508,7 +559,7 @@ export function CartView() {
                               setQuoteError(null)
                               removeItem(line.productId, line.packagingId)
                             }}
-                            className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                            className="text-slate-400 hover:text-rose-600 transition-colors p-1.5 rounded-full hover:bg-rose-50"
                             aria-label={`Xóa ${line.packagingName} khỏi giỏ hàng`}
                             title="Xóa quy cách này"
                           >
@@ -529,7 +580,7 @@ export function CartView() {
                         <div className="font-semibold text-sm text-amber-950 flex items-center gap-2">
                           <Sparkles className="w-4 h-4 text-amber-600" />
                           {sample.packagingName}
-                          <Badge className="bg-amber-600 text-white text-[10px]">
+                          <Badge className="bg-amber-600 text-white text-[10px] rounded-full">
                             Hàng mẫu thử
                           </Badge>
                         </div>
@@ -564,7 +615,7 @@ export function CartView() {
                         </div>
 
                         <div className="text-right min-w-[120px]">
-                          <div className="text-sm font-extrabold text-amber-900">
+                          <div className="font-heading text-sm font-extrabold text-amber-900">
                             {formatVND(sample.lineTotal)}
                           </div>
                           <div className="text-[11px] text-amber-700">
@@ -579,7 +630,7 @@ export function CartView() {
                             setQuoteError(null)
                             removeItem(sample.productId, sample.packagingId)
                           }}
-                          className="text-amber-600 hover:text-rose-600 transition-colors p-1"
+                          className="text-amber-600 hover:text-rose-600 transition-colors p-1.5 rounded-full hover:bg-amber-100/50"
                           aria-label={`Xóa gói mẫu ${sample.packagingName} khỏi giỏ hàng`}
                           title="Xóa gói mẫu"
                         >
@@ -594,21 +645,24 @@ export function CartView() {
           })}
         </div>
 
-        {/* Cột phải: Tóm tắt đơn hàng B2B */}
+        {/* CỘT PHẢI: TÓM TẮT ĐƠN HÀNG B2B (STICKY ORDER SUMMARY) */}
         <div className="lg:col-span-4 sticky top-24 space-y-4">
-          <Card className="border border-slate-200 shadow-sm rounded-2xl overflow-hidden">
-            <div className="bg-slate-900 text-white p-4">
-              <h3 className="font-bold text-sm tracking-wide uppercase flex items-center gap-2">
+          <Card className="border border-slate-200/90 shadow-card rounded-3xl overflow-hidden bg-white">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              <h3 className="font-heading font-bold text-sm tracking-wide uppercase flex items-center gap-2">
                 <Layers className="w-4 h-4 text-emerald-400" /> Tóm Tắt Đơn Hàng Sỉ
               </h3>
+              <Badge className="bg-emerald-600 text-white text-[10px] rounded-full px-2 py-0.5">
+                B2B Order
+              </Badge>
             </div>
 
-            <CardContent className="p-5 space-y-4">
+            <CardContent className="p-5 sm:p-6 space-y-5">
               {/* Chi tiết tiền */}
-              <div className="space-y-2 text-xs">
+              <div className="space-y-3 text-xs">
                 <div className="flex justify-between text-slate-600">
                   <span>Tạm tính tiền hàng:</span>
-                  <strong className="text-slate-900 text-sm">
+                  <strong className="font-heading text-slate-900 text-sm font-bold">
                     {formatVND(quote?.subtotal || 0)}
                   </strong>
                 </div>
@@ -638,7 +692,7 @@ export function CartView() {
                   )
                 })()}
 
-                <div className="flex justify-between text-slate-600 pt-2 border-t border-slate-100">
+                <div className="flex justify-between text-slate-600 pt-3 border-t border-slate-100">
                   <span>Phí vận chuyển:</span>
                   <span className="text-slate-500 italic">Tính ở bước thanh toán</span>
                 </div>
@@ -654,7 +708,7 @@ export function CartView() {
                   <span className="text-[11px] text-slate-400">Chưa gồm phí ship</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-2xl font-black text-emerald-700">
+                  <span className="font-heading text-2xl font-black text-emerald-700 tracking-tight">
                     {formatVND(quote?.subtotal || 0)}
                   </span>
                 </div>
@@ -662,7 +716,7 @@ export function CartView() {
 
               {/* Thông báo lỗi khi tính giá thất bại */}
               {quoteError && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 space-y-1">
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-800 space-y-1">
                   <div className="font-bold flex items-center gap-1.5 text-rose-900">
                     <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                     Lỗi tính giá giỏ hàng:
@@ -673,7 +727,7 @@ export function CartView() {
 
               {/* Thông báo lỗi MOQ nếu có (chỉ hiển thị khi báo giá đã khớp với giỏ hàng hiện tại) */}
               {!isCartValid && isQuoteFresh && !quoteError && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 space-y-1">
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-800 space-y-1">
                   <div className="font-bold flex items-center gap-1.5 text-rose-900">
                     <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                     Chưa đủ điều kiện đặt hàng:
@@ -687,33 +741,39 @@ export function CartView() {
               )}
 
               {/* Nút hành động */}
-              <div className="pt-2 space-y-2">
+              <div className="pt-2 space-y-2.5">
                 <Link href={canCheckout ? '/thanh-toan' : '#'}>
                   <Button
                     disabled={!canCheckout}
-                    className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm gap-2 shadow-sm disabled:bg-slate-300 disabled:cursor-not-allowed"
+                    className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-full shadow-btn-glow gap-2 disabled:bg-slate-300 disabled:cursor-not-allowed hover:-translate-y-0.5 transition-all"
                   >
-                    {quoteError
-                      ? 'Không thể tính giá - Vui lòng thử lại'
-                      : isQuoting || !isQuoteFresh
-                      ? 'Đang cập nhật giá...'
-                      : 'Tiến hành đặt hàng'}{' '}
+                    <span>
+                      {quoteError
+                        ? 'Không thể tính giá - Vui lòng thử lại'
+                        : isQuoting || !isQuoteFresh
+                        ? 'Đang cập nhật giá...'
+                        : 'Tiến hành đặt hàng'}
+                    </span>
                     <ArrowRight className="w-4 h-4" />
                   </Button>
                 </Link>
 
                 <Link href="/san-pham" className="block text-center">
-                  <Button variant="ghost" size="sm" className="w-full text-xs text-slate-600 hover:text-slate-900">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-xs text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/50 rounded-full"
+                  >
                     ← Tiếp tục mua sắm vụ mùa
                   </Button>
                 </Link>
               </div>
 
               {/* Cam kết B2B */}
-              <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-500 space-y-1.5">
+              <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-500 space-y-1.5 leading-relaxed">
                 <div className="flex items-center gap-1.5 text-slate-700 font-semibold">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  Chính sách sỉ & bảo vệ quyền lợi
+                  Chính sách sỉ &amp; bảo vệ quyền lợi
                 </div>
                 <p>• Hỗ trợ cọc 30% linh hoạt hoặc chuyển khoản 100%.</p>
                 <p>• Cân trọng lượng thực tế tại thời điểm bàn giao hàng.</p>

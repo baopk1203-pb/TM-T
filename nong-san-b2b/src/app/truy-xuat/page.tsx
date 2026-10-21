@@ -1,4 +1,5 @@
 import { StorefrontHeader } from '@/components/shop/storefront-header'
+import { StorefrontFooter } from '@/components/shop/storefront-footer'
 import { QrCode } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { TraceabilitySearchForm } from './search-form'
@@ -34,9 +35,7 @@ export default function TraceabilityIndexPage() {
         </Card>
       </main>
 
-      <footer className="bg-white border-t border-slate-200 py-8 text-center text-xs text-slate-500">
-        <p>© 2026 Nông Sản B2B - Đồ án môn Thương mại Điện tử</p>
-      </footer>
+      <StorefrontFooter />
     </div>
   )
 }

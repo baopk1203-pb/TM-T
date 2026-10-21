@@ -17,11 +17,11 @@ import {
   Truck,
   Bell,
   ExternalLink,
-  ShieldCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { SignOutButton } from '@/components/auth/sign-out-button'
+import { BrandLogo } from '@/components/ui/brand-logo'
 
 const navItems = [
   { label: 'Bảng điều khiển', href: '/admin', icon: LayoutDashboard },
@@ -59,17 +59,12 @@ export default async function AdminLayout({
       {/* Sidebar */}
       <aside className="w-full md:w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0">
         <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-bold">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="font-bold text-white text-base tracking-tight block">
-                ADMIN B2B
-              </span>
-              <span className="text-[11px] text-slate-400 block">Ban Vận Hành Hệ Thống</span>
-            </div>
-          </div>
+          <BrandLogo
+            variant="dark"
+            size="md"
+            subtitleText="Ban Vận Hành B2B"
+            showSubtitle={true}
+          />
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">

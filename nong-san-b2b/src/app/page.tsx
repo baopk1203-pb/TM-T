@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { StorefrontHeader } from '@/components/shop/storefront-header'
+import { StorefrontFooter } from '@/components/shop/storefront-footer'
 import { ProductCard } from '@/components/shop/product-card'
 import { getStorefrontProducts } from '@/server/actions/product'
 import { getServerAuthSession } from '@/lib/auth'
@@ -289,12 +290,7 @@ export default async function HomePage() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-500 space-y-2">
-          <p className="font-semibold text-slate-700">NÔNG SẢN B2B - HỆ THỐNG CUNG ỨNG TRÁI CÂY TẬN VƯỜN</p>
-          <p>© 2026 Đồ án môn Thương mại Điện tử. Mọi quyền được bảo lưu.</p>
-        </div>
-      </footer>
+      <StorefrontFooter />
     </div>
   )
 }

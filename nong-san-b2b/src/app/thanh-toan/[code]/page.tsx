@@ -4,10 +4,11 @@ import { db } from '@/lib/db'
 import { getServerAuthSession } from '@/lib/auth'
 import { computePayableAmount } from '@/lib/domain/settlement'
 import { StorefrontHeader } from '@/components/shop/storefront-header'
+import { StorefrontFooter } from '@/components/shop/storefront-footer'
 import { PaymentView } from './payment-view'
 
 export const metadata: Metadata = {
-  title: 'Thanh Toán Đơn Hàng | Nông Sản B2B',
+  title: 'Thanh Toán Đơn Hàng | E Vibe',
   description: 'Mã QR thanh toán chuyển khoản VietQR cho đơn hàng nông sản B2B.',
 }
 
@@ -68,11 +69,7 @@ export default async function OrderPaymentPage({
         />
       </main>
 
-      <footer className="bg-white border-t border-slate-200 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-500">
-          <p>© 2026 Nông Sản B2B - Đồ án môn Thương mại Điện tử</p>
-        </div>
-      </footer>
+      <StorefrontFooter />
     </div>
   )
 }

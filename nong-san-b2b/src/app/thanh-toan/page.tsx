@@ -3,10 +3,11 @@ import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getServerAuthSession } from '@/lib/auth'
 import { StorefrontHeader } from '@/components/shop/storefront-header'
+import { StorefrontFooter } from '@/components/shop/storefront-footer'
 import { CheckoutView } from './checkout-view'
 
 export const metadata: Metadata = {
-  title: 'Thanh Toán & Đặt Hàng | Nông Sản B2B',
+  title: 'Thanh Toán & Đặt Hàng | E Vibe',
   description: 'Xác nhận thông tin giao nhận, lựa chọn hình thức cọc 30% hoặc 100% qua VietQR.',
 }
 
@@ -45,11 +46,7 @@ export default async function CheckoutPage() {
         <CheckoutView addresses={addresses} userName={session.user.name || 'Khách hàng B2B'} />
       </main>
 
-      <footer className="bg-white border-t border-slate-200 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-500">
-          <p>© 2026 Nông Sản B2B - Đồ án môn Thương mại Điện tử</p>
-        </div>
-      </footer>
+      <StorefrontFooter />
     </div>
   )
 }

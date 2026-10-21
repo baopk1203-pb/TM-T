@@ -9,10 +9,10 @@ import {
   LayoutDashboard,
   Building2,
   Sparkles,
-  Leaf,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { SignOutButton } from '@/components/auth/sign-out-button'
+import { BrandLogo } from '@/components/ui/brand-logo'
 import { formatCustomerGroupBadge } from '@/lib/domain/crm'
 
 export default async function AccountLayout({
@@ -39,14 +39,7 @@ export default async function AccountLayout({
       {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-sm">
-              <Leaf className="w-5 h-5" />
-            </div>
-            <span className="text-xl font-bold tracking-tight text-slate-900">
-              NÔNG SẢN <span className="text-emerald-600">B2B</span>
-            </span>
-          </Link>
+          <BrandLogo href="/" size="md" />
 
           <div className="flex items-center gap-3">
             <span className="hidden sm:inline text-xs text-slate-500">

@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { StorefrontHeader } from '@/components/shop/storefront-header'
+import { StorefrontFooter } from '@/components/shop/storefront-footer'
 import { getProductBySlug } from '@/server/actions/product'
 import { getServerAuthSession } from '@/lib/auth'
 import { checkSamplePurchased } from '@/actions/cart'
@@ -47,11 +48,7 @@ export default async function ProductDetailPage({
         />
       </main>
 
-      <footer className="bg-white border-t border-slate-200 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-500">
-          <p>© 2026 Nông Sản B2B - Đồ án môn Thương mại Điện tử</p>
-        </div>
-      </footer>
+      <StorefrontFooter />
     </div>
   )
 }

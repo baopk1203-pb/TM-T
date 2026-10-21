@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { StorefrontHeader } from '@/components/shop/storefront-header'
+import { StorefrontFooter } from '@/components/shop/storefront-footer'
 import { getBatchByCode } from '@/server/actions/batch'
 import {
   ShieldCheck,
@@ -230,11 +231,7 @@ export default async function BatchTraceabilityPage({
         </div>
       </main>
 
-      <footer className="bg-white border-t border-slate-200 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-500">
-          <p>© 2026 Nông Sản B2B - Cổng thông tin truy xuất nguồn gốc nông sản</p>
-        </div>
-      </footer>
+      <StorefrontFooter />
     </div>
   )
 }

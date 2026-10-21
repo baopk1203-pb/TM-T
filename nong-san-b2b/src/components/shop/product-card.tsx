@@ -48,26 +48,26 @@ export function ProductCard({
 
   return (
     <Link href={`/san-pham/${slug}`} className="group block h-full">
-      <Card className="h-full overflow-hidden border-slate-200 hover:border-emerald-500 hover:shadow-lg transition-all flex flex-col">
-        {/* Product Image */}
-        <div className="relative h-48 w-full bg-slate-100 overflow-hidden">
+      <Card className="h-full rounded-2xl bg-white border border-slate-200/90 hover:border-emerald-400 hover:shadow-card-hover transition-all duration-300 flex flex-col overflow-hidden hover:-translate-y-1">
+        {/* Product Image Chamber */}
+        <div className="relative h-52 w-full bg-gradient-to-tr from-slate-100 via-slate-50 to-emerald-50/40 overflow-hidden">
           {images[0] ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={images[0]}
               alt={name}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-50">
+            <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-50 text-xs">
               Chưa có ảnh
             </div>
           )}
 
-          {/* Badges */}
-          <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 items-start">
+          {/* Badges Cluster */}
+          <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5 items-start z-10">
             <Badge
-              className={`text-[11px] font-semibold shadow-sm ${
+              className={`text-[11px] font-semibold shadow-xs px-2.5 py-0.5 rounded-full ${
                 seasonStatus === SeasonStatus.HARVESTING
                   ? 'bg-emerald-600 text-white'
                   : seasonStatus === SeasonStatus.UPCOMING
@@ -75,15 +75,20 @@ export function ProductCard({
                   : 'bg-slate-700 text-white'
               }`}
             >
-              {seasonStatus === SeasonStatus.HARVESTING
-                ? 'Đang thu hoạch'
-                : seasonStatus === SeasonStatus.UPCOMING
-                ? 'Sắp vào vụ'
-                : 'Hết vụ'}
+              {seasonStatus === SeasonStatus.HARVESTING ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-lime-300 animate-pulse" />
+                  Đang thu hoạch
+                </span>
+              ) : seasonStatus === SeasonStatus.UPCOMING ? (
+                'Sắp vào vụ'
+              ) : (
+                'Hết vụ'
+              )}
             </Badge>
 
             {preorderOpen && (
-              <Badge className="bg-purple-600 text-white text-[10px] shadow-sm flex items-center gap-1">
+              <Badge className="bg-purple-600 text-white text-[10px] shadow-xs flex items-center gap-1 px-2 py-0.5 rounded-full">
                 <Sparkles className="w-3 h-3" /> Vụ mới (Phase 6)
               </Badge>
             )}
@@ -91,43 +96,50 @@ export function ProductCard({
             {requiresCold && (
               <Badge
                 variant="secondary"
-                className="bg-blue-50/90 backdrop-blur-sm text-blue-700 border-blue-200 text-[10px]"
+                className="bg-white/95 backdrop-blur-md text-blue-700 border border-blue-200 text-[10px] font-medium shadow-xs px-2 py-0.5 rounded-full"
               >
                 <Snowflake className="w-3 h-3 mr-0.5" /> Xe lạnh
               </Badge>
             )}
           </div>
+
+          {/* Farm Origin Capsule on Image */}
+          <div className="absolute bottom-2.5 left-2.5 z-10">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md text-[11px] font-medium text-slate-700 shadow-xs border border-white/60">
+              <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
+              <span className="truncate max-w-[190px]">{farm.province}</span>
+            </span>
+          </div>
         </div>
 
-        {/* Content */}
-        <CardContent className="p-4 flex-1 flex flex-col justify-between space-y-3">
-          <div>
-            <div className="text-xs text-slate-500 flex items-center gap-1 mb-1">
-              <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span className="line-clamp-1">{farm.name} • {farm.province}</span>
+        {/* Content Body */}
+        <CardContent className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3.5">
+          <div className="space-y-1.5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700 line-clamp-1">
+              Vườn: {farm.name}
             </div>
-            <h3 className="font-bold text-slate-900 text-base line-clamp-2 group-hover:text-emerald-700 transition-colors">
+            <h3 className="font-heading font-bold text-slate-900 text-base leading-snug line-clamp-2 group-hover:text-emerald-700 transition-colors">
               {name}
             </h3>
           </div>
 
-          <div className="pt-2 border-t border-slate-100 space-y-2">
-            {/* MOQ */}
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span className="flex items-center gap-1">
-                <Scale className="w-3.5 h-3.5" /> Mức tối thiểu (MOQ):
+          <div className="space-y-2.5 pt-1 border-t border-slate-100">
+            {/* MOQ Indicator */}
+            <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50/80 px-2.5 py-1.5 rounded-lg border border-slate-100">
+              <span className="flex items-center gap-1 text-[11px]">
+                <Scale className="w-3.5 h-3.5 text-slate-400" /> MOQ tối thiểu:
               </span>
-              <strong className="text-slate-800">{gramsToKg(moqGrams)} kg</strong>
+              <strong className="text-slate-800 font-bold">{gramsToKg(moqGrams)} kg</strong>
             </div>
 
-            {/* Price Preview */}
-            <div className="bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-100 flex items-baseline justify-between">
+            {/* Price Preview Matrix Chamber */}
+            <div className="bg-gradient-to-r from-emerald-50/90 via-emerald-50/40 to-slate-50/60 p-3 rounded-xl border border-emerald-100/80 flex items-baseline justify-between">
               <div>
-                <span className="text-[11px] text-emerald-800 block">
-                  {preorderOpen && preorderPricePerKg ? 'Giá dự kiến vụ mới:' : 'Giá sỉ tại MOQ:'}
+                <span className="text-[10px] uppercase font-semibold tracking-wider text-emerald-800 block">
+                  {preorderOpen && preorderPricePerKg ? 'Giá dự kiến vụ mới' : 'Giá sỉ tại MOQ'}
                 </span>
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-base font-extrabold text-emerald-700">
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="font-heading text-lg sm:text-xl font-extrabold text-emerald-700 tracking-tight">
                     {formatVND(
                       preorderOpen && preorderPricePerKg
                         ? preorderPricePerKg
@@ -143,7 +155,7 @@ export function ProductCard({
                   <span className="text-[10px] text-slate-400 line-through block">
                     {formatVND(baseStartingPrice)}/kg
                   </span>
-                  <Badge variant="outline" className="text-[10px] py-0 px-1 border-emerald-300 text-emerald-700 bg-white">
+                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-emerald-300 text-emerald-700 bg-white font-bold">
                     -{userDiscountPercent}%
                   </Badge>
                 </div>
@@ -151,8 +163,12 @@ export function ProductCard({
             </div>
           </div>
 
-          <div className="text-xs font-semibold text-emerald-600 group-hover:text-emerald-700 flex items-center justify-end gap-1 pt-1">
-            Xem bảng giá bậc <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
+          {/* Quick Action Footer */}
+          <div className="text-xs font-semibold text-emerald-700 group-hover:text-emerald-800 flex items-center justify-between pt-1">
+            <span className="text-[11px]">Xem bảng giá bậc</span>
+            <div className="w-6 h-6 rounded-full bg-emerald-100/70 group-hover:bg-emerald-600 group-hover:text-white flex items-center justify-center transition-colors">
+              <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+            </div>
           </div>
         </CardContent>
       </Card>

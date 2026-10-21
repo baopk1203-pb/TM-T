@@ -195,7 +195,7 @@ export function ProductOrderBox({
   }
 
   return (
-    <div className="space-y-6 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
+    <div className="space-y-6 bg-white p-5 sm:p-7 rounded-3xl border border-slate-200/90 shadow-card">
       <div className="flex items-center justify-between border-b border-slate-100 pb-4">
         <div>
           <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -369,7 +369,7 @@ export function ProductOrderBox({
         <Button
           onClick={handleAddToCart}
           disabled={isPending || currentTotalKg === 0}
-          className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 text-sm shadow-sm"
+          className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 text-sm rounded-full shadow-btn-glow hover:-translate-y-0.5 transition-all"
         >
           <ShoppingCart className="w-4 h-4" />
           Thêm {currentTotalKg > 0 ? `${currentTotalKg} kg` : ''} vào giỏ hàng

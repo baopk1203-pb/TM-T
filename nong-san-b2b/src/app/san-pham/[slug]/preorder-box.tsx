@@ -198,7 +198,7 @@ export function PreorderBox({ product, user }: PreorderBoxProps) {
   const harvestToStr = formatHarvestDate(product.expectedHarvestTo)
 
   return (
-    <Card className="border-2 border-purple-200 bg-linear-to-br from-purple-50/60 via-white to-purple-50/30 shadow-md rounded-2xl overflow-hidden">
+    <Card className="border-2 border-purple-200/90 bg-linear-to-br from-purple-50/60 via-white to-purple-50/30 shadow-card rounded-3xl overflow-hidden">
       <div className="bg-purple-700 text-white px-5 py-3.5 flex items-center justify-between">
         <div className="flex items-center gap-2.5 font-bold text-sm sm:text-base">
           <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
@@ -443,7 +443,7 @@ export function PreorderBox({ product, user }: PreorderBoxProps) {
             <Button
               onClick={handlePlacePreorder}
               disabled={isPending || !isMoqMet || !addressId}
-              className="w-full h-11 text-sm font-bold bg-purple-700 hover:bg-purple-800 text-white shadow-md flex items-center justify-center gap-2"
+              className="w-full h-12 text-sm font-bold bg-purple-700 hover:bg-purple-800 text-white shadow-md rounded-full flex items-center justify-center gap-2 hover:-translate-y-0.5 transition-all"
             >
               {isPending ? (
                 <span>Đang xử lý đặt trước...</span>
@@ -458,7 +458,7 @@ export function PreorderBox({ product, user }: PreorderBoxProps) {
             <Link href={`/dang-nhap?callbackUrl=/san-pham/${product.slug}`}>
               <Button
                 variant="default"
-                className="w-full h-11 text-sm font-bold bg-purple-700 hover:bg-purple-800 text-white shadow-md flex items-center justify-center gap-2"
+                className="w-full h-12 text-sm font-bold bg-purple-700 hover:bg-purple-800 text-white shadow-md rounded-full flex items-center justify-center gap-2 hover:-translate-y-0.5 transition-all"
               >
                 <span>Đăng nhập đối tác để đặt trước vụ mùa</span>
                 <ArrowRight className="w-4 h-4" />

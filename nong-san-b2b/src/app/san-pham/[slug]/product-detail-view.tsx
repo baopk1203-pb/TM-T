@@ -13,6 +13,8 @@ import {
   Layers,
   ExternalLink,
   AlertTriangle,
+  ChevronRight,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -87,66 +89,83 @@ export function ProductDetailView({
 
   return (
     <div className="space-y-10">
-      {/* Breadcrumb */}
-      <nav className="text-xs text-slate-500 flex items-center gap-2">
-        <Link href="/" className="hover:text-emerald-700">Trang chủ</Link>
-        <span>/</span>
-        <Link href="/san-pham" className="hover:text-emerald-700">Sản phẩm vụ mùa</Link>
-        <span>/</span>
-        <span className="text-slate-900 font-semibold">{product.name}</span>
+      {/* STITCH EDITORIAL BREADCRUMB */}
+      <nav className="text-xs text-slate-500 flex items-center gap-2 flex-wrap">
+        <Link href="/" className="hover:text-emerald-700 transition-colors">
+          Trang chủ
+        </Link>
+        <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+        <Link href="/san-pham" className="hover:text-emerald-700 transition-colors">
+          Sản phẩm vụ mùa
+        </Link>
+        <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+        <span className="text-slate-900 font-semibold truncate max-w-xs">{product.name}</span>
       </nav>
 
-      {/* Main Grid: Gallery & Main Info */}
+      {/* MAIN SHOWCASE GRID: GALLERY (5 COLS) & B2B SPECS / PRICING MATRIX (7 COLS) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-        {/* Left Column: Image Gallery (5 cols) */}
+        {/* Left Column: Image Gallery Chamber (5 cols) */}
         <div className="lg:col-span-5 space-y-4">
-          <div className="h-96 w-full rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shadow-xs relative">
+          <div className="h-96 sm:h-[420px] w-full rounded-3xl overflow-hidden bg-slate-100 border border-slate-200/90 shadow-card relative group">
             {activeImage ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={activeImage}
                 alt={product.name}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-slate-400">
+              <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs">
                 Chưa có ảnh
               </div>
             )}
 
-            <div className="absolute top-3 left-3 flex flex-col gap-1.5 items-start">
+            {/* Floating Status Badges */}
+            <div className="absolute top-4 left-4 flex flex-col gap-2 items-start z-10">
               <Badge
-                className={
+                className={`text-xs font-semibold shadow-xs px-3 py-1 rounded-full ${
                   product.seasonStatus === SeasonStatus.HARVESTING
                     ? 'bg-emerald-600 text-white'
                     : product.seasonStatus === SeasonStatus.UPCOMING
                     ? 'bg-amber-600 text-white'
                     : 'bg-slate-700 text-white'
-                }
+                }`}
               >
-                {product.seasonStatus === SeasonStatus.HARVESTING
-                  ? 'Đang thu hoạch'
-                  : product.seasonStatus === SeasonStatus.UPCOMING
-                  ? 'Sắp vào vụ'
-                  : 'Hết vụ mùa'}
+                {product.seasonStatus === SeasonStatus.HARVESTING ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-lime-300 animate-pulse" />
+                    Đang thu hoạch
+                  </span>
+                ) : product.seasonStatus === SeasonStatus.UPCOMING ? (
+                  'Sắp vào vụ'
+                ) : (
+                  'Hết vụ mùa'
+                )}
               </Badge>
+
               {product.requiresCold && (
-                <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
+                <Badge
+                  variant="secondary"
+                  className="bg-white/95 backdrop-blur-md text-blue-700 border border-blue-200 text-xs font-medium shadow-xs px-2.5 py-1 rounded-full"
+                >
                   <Snowflake className="w-3.5 h-3.5 mr-1" /> Vận chuyển xe lạnh
                 </Badge>
               )}
             </div>
           </div>
 
-          {/* Thumbnails */}
+          {/* Thumbnails Strip */}
           {product.images.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto pb-1">
+            <div className="flex gap-2.5 overflow-x-auto pb-1">
               {product.images.map((img, i) => (
                 <button
                   key={i}
+                  type="button"
                   onClick={() => setActiveImage(img)}
-                  className={`w-16 h-16 rounded-xl overflow-hidden border-2 shrink-0 transition-all ${
-                    activeImage === img ? 'border-emerald-600 shadow-sm' : 'border-slate-200 opacity-70'
+                  className={`w-18 h-18 rounded-2xl overflow-hidden border-2 shrink-0 transition-all ${
+                    activeImage === img
+                      ? 'border-emerald-600 ring-2 ring-emerald-500/20 shadow-sm'
+                      : 'border-slate-200 opacity-70 hover:opacity-100'
                   }`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -159,12 +178,15 @@ export function ProductDetailView({
 
         {/* Right Column: Key Details & Pricing Matrix (7 cols) */}
         <div className="lg:col-span-7 space-y-6">
-          <div>
-            <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 text-xs font-semibold">
               <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Vườn: <strong>{product.farm.name}</strong> ({product.farm.province})</span>
+              <span>
+                Vườn liên kết: <strong>{product.farm.name}</strong> ({product.farm.province})
+              </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+
+            <h1 className="font-heading text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
               {product.name}
             </h1>
           </div>
@@ -173,47 +195,59 @@ export function ProductDetailView({
             {product.description}
           </p>
 
-          {/* Quick specs */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-200">
-            <div>
-              <span className="text-slate-500 block flex items-center gap-1">
-                <Scale className="w-3.5 h-3.5" /> MOQ (Đặt tối thiểu):
+          {/* Quick specs matrix */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-1">
+              <span className="text-slate-500 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider">
+                <Scale className="w-3.5 h-3.5 text-emerald-600" /> MOQ Tối thiểu
               </span>
-              <strong className="text-slate-900 text-sm font-bold">
+              <div className="font-heading text-base font-bold text-slate-900">
                 {gramsToKg(product.moqGrams)} kg
-              </strong>
+              </div>
             </div>
-            <div>
-              <span className="text-slate-500 block flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5" /> Thời gian chuẩn bị:
+
+            <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-1">
+              <span className="text-slate-500 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider">
+                <Clock className="w-3.5 h-3.5 text-blue-600" /> Thời gian chuẩn bị
               </span>
-              <strong className="text-slate-900 text-sm font-bold">
+              <div className="font-heading text-base font-bold text-slate-900">
                 {product.leadTimeDays} ngày
-              </strong>
+              </div>
             </div>
-            <div>
-              <span className="text-slate-500 block flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Tiêu chuẩn vườn:
+
+            <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-1">
+              <span className="text-slate-500 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Tiêu chuẩn vườn
               </span>
-              <strong className={filterActiveCertificates(product.farm.certificates).length > 0 ? "text-emerald-700 text-sm font-bold" : "text-slate-500 text-xs font-semibold"}>
+              <div
+                className={`font-heading text-sm font-bold truncate ${
+                  filterActiveCertificates(product.farm.certificates).length > 0
+                    ? 'text-emerald-700'
+                    : 'text-slate-500'
+                }`}
+              >
                 {formatActiveCertificatesSummary(product.farm.certificates)}
-              </strong>
+              </div>
             </div>
           </div>
 
-          {/* BẢNG GIÁ BẬC CHI TIẾT (PRICE TIERS TABLE) */}
+          {/* BẢNG GIÁ BẬC CHI TIẾT (STITCH TIERED PRICING MATRIX) */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <h3 className="font-heading text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                 <Layers className="w-4 h-4 text-emerald-600" /> Bảng Giá Sỉ Theo Bậc Khối Lượng
               </h3>
               {userDiscount > 0 ? (
-                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-xs">
+                <Badge
+                  variant="outline"
+                  className="bg-emerald-50 text-emerald-800 border-emerald-300 text-xs font-semibold px-2.5 py-0.5 rounded-full"
+                >
+                  <Sparkles className="w-3 h-3 text-emerald-600 mr-1" />
                   Chiết khấu đối tác của bạn: -{userDiscount}%
                 </Badge>
               ) : (
                 <span className="text-xs text-slate-500">
-                  <Link href="/dang-nhap" className="text-emerald-600 hover:underline">
+                  <Link href="/dang-nhap" className="text-emerald-600 hover:underline font-semibold">
                     Đăng nhập đối tác
                   </Link>{' '}
                   để xem giá chiết khấu thêm
@@ -221,14 +255,16 @@ export function ProductDetailView({
               )}
             </div>
 
-            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+            <div className="border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs bg-white">
               <Table>
-                <TableHeader className="bg-slate-50">
+                <TableHeader className="bg-slate-50/80">
                   <TableRow>
-                    <TableHead className="font-bold text-slate-900">Mức Sản Lượng (Kg)</TableHead>
-                    <TableHead className="font-bold text-slate-900 text-right">Đơn Giá Chuẩn</TableHead>
+                    <TableHead className="font-bold text-slate-900 text-xs">Mức Sản Lượng (Kg)</TableHead>
+                    <TableHead className="font-bold text-slate-900 text-right text-xs">
+                      Đơn Giá Chuẩn
+                    </TableHead>
                     {user && (
-                      <TableHead className="font-bold text-emerald-700 text-right bg-emerald-50/50">
+                      <TableHead className="font-bold text-emerald-800 text-right bg-emerald-50/60 text-xs">
                         Giá Của Bạn (-{userDiscount}%)
                       </TableHead>
                     )}
@@ -251,7 +287,7 @@ export function ProductDetailView({
                           {formatVND(tier.pricePerKg)}/kg
                         </TableCell>
                         {user && (
-                          <TableCell className="text-right font-bold text-emerald-700 text-xs sm:text-sm bg-emerald-50/30">
+                          <TableCell className="text-right font-heading font-bold text-emerald-700 text-xs sm:text-sm bg-emerald-50/30">
                             {formatVND(userUnitPrice)}/kg
                           </TableCell>
                         )}
@@ -270,7 +306,7 @@ export function ProductDetailView({
             hasPurchasedSample={hasPurchasedSample}
           />
 
-          {/* PRE-ORDER SECTION (IF APPLICABLE - BATCH 6B) */}
+          {/* PRE-ORDER SECTION (IF APPLICABLE) */}
           {product.preorderOpen && (
             <PreorderBox
               product={product}
@@ -279,9 +315,13 @@ export function ProductDetailView({
           )}
 
           {/* Back link */}
-          <div className="pt-1">
+          <div className="pt-2">
             <Link href="/san-pham">
-              <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900 text-xs">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/40 text-xs rounded-full px-4"
+              >
                 ← Quay lại danh mục sỉ
               </Button>
             </Link>
@@ -290,13 +330,19 @@ export function ProductDetailView({
       </div>
 
       {/* TABS: HỒ SƠ NHÀ VƯỜN & BẢN ĐỒ GOOGLE MAPS */}
-      <div className="pt-8 border-t border-slate-200">
+      <div className="pt-10 border-t border-slate-200/90">
         <Tabs defaultValue="farm" className="space-y-6">
-          <TabsList className="bg-slate-100 p-1">
-            <TabsTrigger value="farm" className="text-xs sm:text-sm font-semibold">
-              Hồ Sơ Nhà Vườn & Bản Đồ Tọa Độ
+          <TabsList className="bg-slate-100/90 p-1 rounded-full inline-flex">
+            <TabsTrigger
+              value="farm"
+              className="text-xs sm:text-sm font-semibold rounded-full px-5 py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-xs transition-all"
+            >
+              Hồ Sơ Nhà Vườn &amp; Bản Đồ Tọa Độ
             </TabsTrigger>
-            <TabsTrigger value="certs" className="text-xs sm:text-sm font-semibold">
+            <TabsTrigger
+              value="certs"
+              className="text-xs sm:text-sm font-semibold rounded-full px-5 py-2 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-xs transition-all"
+            >
               Chứng Nhận Tiêu Chuẩn ({product.farm.certificates.length})
             </TabsTrigger>
           </TabsList>
@@ -306,7 +352,7 @@ export function ProductDetailView({
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
               <div className="lg:col-span-6 space-y-4">
                 <div>
-                  <h3 className="text-xl font-bold text-slate-900">{product.farm.name}</h3>
+                  <h3 className="font-heading text-xl font-bold text-slate-900">{product.farm.name}</h3>
                   <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
                     <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>{product.farm.addressText}, {product.farm.province}</span>
@@ -319,7 +365,11 @@ export function ProductDetailView({
 
                 <div className="pt-2">
                   <Link href={`/nha-vuon/${product.farm.slug}`}>
-                    <Button variant="outline" size="sm" className="text-xs gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs gap-1.5 rounded-full px-4 border-slate-300 hover:border-emerald-400 hover:bg-emerald-50/40"
+                    >
                       Xem trang hồ sơ đầy đủ của vườn <ExternalLink className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
@@ -328,7 +378,7 @@ export function ProductDetailView({
 
               {/* Embedded Google Maps iframe */}
               <div className="lg:col-span-6 space-y-2">
-                <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm h-72 w-full bg-slate-100">
+                <div className="rounded-3xl overflow-hidden border border-slate-200/90 shadow-card h-72 w-full bg-slate-100">
                   <iframe
                     title="Vị trí nhà vườn"
                     width="100%"
@@ -340,13 +390,13 @@ export function ProductDetailView({
                     src={`https://www.google.com/maps?q=${product.farm.lat},${product.farm.lng}&output=embed`}
                   />
                 </div>
-                <div className="text-[11px] text-slate-500 flex items-center justify-between px-1">
+                <div className="text-[11px] text-slate-500 flex items-center justify-between px-2">
                   <span>Tọa độ GPS: {product.farm.lat}, {product.farm.lng}</span>
                   <a
                     href={`https://maps.google.com/?q=${product.farm.lat},${product.farm.lng}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-emerald-600 hover:underline font-medium inline-flex items-center gap-1"
+                    className="text-emerald-700 hover:underline font-semibold inline-flex items-center gap-1"
                   >
                     Mở Google Maps <ExternalLink className="w-3 h-3" />
                   </a>
@@ -358,13 +408,13 @@ export function ProductDetailView({
           {/* Tab 2: Certificates */}
           <TabsContent value="certs" className="space-y-4">
             {product.farm.certificates.length === 0 ? (
-              <div className="p-6 rounded-2xl border border-slate-200 text-center text-slate-500 text-xs col-span-2 bg-slate-50">
+              <div className="p-8 rounded-3xl border border-slate-200/90 text-center text-slate-500 text-xs col-span-2 bg-white shadow-2xs">
                 Chưa có chứng nhận nào được ghi nhận cho nhà vườn này.
               </div>
             ) : (
               <>
                 {filterActiveCertificates(product.farm.certificates).length === 0 && (
-                  <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-xs flex items-center gap-2">
+                  <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50 text-amber-900 text-xs flex items-center gap-2.5">
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                     <span>
                       Nhà vườn này hiện chưa có chứng nhận nào còn hiệu lực. Danh sách chứng nhận đã từng được cấp hiển thị bên dưới.
@@ -375,19 +425,19 @@ export function ProductDetailView({
                   {product.farm.certificates.map((cert) => {
                     const isExpired = new Date(cert.expiresAt).getTime() < nowTimestamp
                     return (
-                      <Card key={cert.id} className="border-slate-200">
-                        <CardContent className="p-4 flex items-start gap-4">
-                          <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                      <Card key={cert.id} className="rounded-2xl border-slate-200/90 shadow-2xs">
+                        <CardContent className="p-5 flex items-start gap-4">
+                          <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-100">
                             <Award className="w-5 h-5" />
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                             <div className="flex items-center gap-2">
                               <Badge
                                 variant="outline"
                                 className={
                                   isExpired
-                                    ? 'border-rose-300 text-rose-700 bg-rose-50'
-                                    : 'border-emerald-300 text-emerald-700 bg-emerald-50'
+                                    ? 'border-rose-300 text-rose-700 bg-rose-50 rounded-full text-[10px]'
+                                    : 'border-emerald-300 text-emerald-800 bg-emerald-50 rounded-full text-[10px]'
                                 }
                               >
                                 {cert.type}: {cert.code}
@@ -395,7 +445,7 @@ export function ProductDetailView({
                               {isExpired ? (
                                 <span className="text-[10px] text-rose-600 font-bold">Hết hạn</span>
                               ) : (
-                                <span className="text-[10px] text-emerald-600 font-medium">Còn hiệu lực</span>
+                                <span className="text-[10px] text-emerald-600 font-semibold">Còn hiệu lực</span>
                               )}
                             </div>
                             <div className="text-xs text-slate-500">

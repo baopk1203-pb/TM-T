@@ -3,7 +3,7 @@
 import { useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { signIn } from 'next-auth/react'
+import { signIn, getSession } from 'next-auth/react'
 import { ArrowRight, Loader2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { BrandLogo } from '@/components/ui/brand-logo'
 import { toast } from 'sonner'
+import { resolveLoginRedirectUrl } from '@/lib/auth-redirect'
 
 function LoginForm() {
   const router = useRouter()
@@ -36,7 +37,15 @@ function LoginForm() {
         toast.error(res.error || 'Email hoặc mật khẩu không chính xác')
       } else {
         toast.success('Đăng nhập thành công!')
-        router.push(callbackUrl)
+        let session = await getSession()
+        if (!session?.user) {
+          // Chờ một khoảng ngắn nếu cookie phiên làm việc cần đồng bộ
+          await new Promise((resolve) => setTimeout(resolve, 80))
+          session = await getSession()
+        }
+        const origin = typeof window !== 'undefined' ? window.location.origin : undefined
+        const targetUrl = resolveLoginRedirectUrl(session?.user?.role, callbackUrl, origin)
+        router.push(targetUrl)
         router.refresh()
       }
     } catch {

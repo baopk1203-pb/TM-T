@@ -441,17 +441,18 @@ export function FarmManagement({ initialFarms }: { initialFarms: FarmWithDetails
 
       {/* DIALOG: Thêm / Sửa Nhà Vườn */}
       <Dialog open={farmDialogOpen} onOpenChange={setFarmDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
+        <DialogContent className="w-[95vw] sm:max-w-3xl lg:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="border-b pb-3">
+            <DialogTitle className="text-lg font-bold text-slate-900 font-heading">
               {editingFarm ? 'Cập Nhật Hồ Sơ Nhà Vườn' : 'Thêm Nhà Vườn Mới'}
             </DialogTitle>
           </DialogHeader>
 
-          <form onSubmit={handleSaveFarm} className="space-y-4 pt-2">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form onSubmit={handleSaveFarm} className="space-y-5 pt-2">
+            {/* Hàng 1 — Hai cột: Tên nhà vườn & Slug định danh */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="farm-name">Tên Nhà Vườn *</Label>
+                <Label htmlFor="farm-name" className="text-xs font-semibold text-slate-700">Tên Nhà Vườn *</Label>
                 <Input
                   id="farm-name"
                   placeholder="HTX Sầu Riêng Cai Lậy..."
@@ -461,7 +462,7 @@ export function FarmManagement({ initialFarms }: { initialFarms: FarmWithDetails
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="farm-slug">Slug định danh *</Label>
+                <Label htmlFor="farm-slug" className="text-xs font-semibold text-slate-700">Slug định danh *</Label>
                 <Input
                   id="farm-slug"
                   placeholder="htx-sau-rieng-cai-lay"
@@ -474,9 +475,10 @@ export function FarmManagement({ initialFarms }: { initialFarms: FarmWithDetails
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Hàng 2 — Hai cột: Chủ vườn / Đại diện & Tỉnh / Thành phố */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="farm-owner">Chủ vườn / Đại diện</Label>
+                <Label htmlFor="farm-owner" className="text-xs font-semibold text-slate-700">Chủ vườn / Đại diện</Label>
                 <Input
                   id="farm-owner"
                   placeholder="Nguyễn Văn A"
@@ -487,7 +489,7 @@ export function FarmManagement({ initialFarms }: { initialFarms: FarmWithDetails
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="farm-province">Tỉnh / Thành phố *</Label>
+                <Label htmlFor="farm-province" className="text-xs font-semibold text-slate-700">Tỉnh / Thành phố *</Label>
                 <Input
                   id="farm-province"
                   placeholder="Tiền Giang, Bến Tre, Đắk Lắk..."
@@ -500,8 +502,9 @@ export function FarmManagement({ initialFarms }: { initialFarms: FarmWithDetails
               </div>
             </div>
 
+            {/* Hàng 3 — Toàn chiều rộng: Địa chỉ chi tiết vườn */}
             <div className="space-y-1.5">
-              <Label htmlFor="farm-address">Địa chỉ chi tiết vườn *</Label>
+              <Label htmlFor="farm-address" className="text-xs font-semibold text-slate-700">Địa chỉ chi tiết vườn *</Label>
               <Input
                 id="farm-address"
                 placeholder="Ấp 4, Xã Ngũ Hiệp, Huyện Cai Lậy"
@@ -513,9 +516,10 @@ export function FarmManagement({ initialFarms }: { initialFarms: FarmWithDetails
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {/* Hàng 4 — Hai cột: Vĩ độ & Kinh độ */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="farm-lat">Vĩ độ (Latitude) *</Label>
+                <Label htmlFor="farm-lat" className="text-xs font-semibold text-slate-700">Vĩ độ (Latitude) *</Label>
                 <Input
                   id="farm-lat"
                   type="number"
@@ -528,7 +532,7 @@ export function FarmManagement({ initialFarms }: { initialFarms: FarmWithDetails
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="farm-lng">Kinh độ (Longitude) *</Label>
+                <Label htmlFor="farm-lng" className="text-xs font-semibold text-slate-700">Kinh độ (Longitude) *</Label>
                 <Input
                   id="farm-lng"
                   type="number"
@@ -542,11 +546,12 @@ export function FarmManagement({ initialFarms }: { initialFarms: FarmWithDetails
               </div>
             </div>
 
+            {/* Hàng 5 — Toàn chiều rộng: Mô tả vườn và quy trình canh tác */}
             <div className="space-y-1.5">
-              <Label htmlFor="farm-desc">Mô tả vườn và quy trình canh tác *</Label>
+              <Label htmlFor="farm-desc" className="text-xs font-semibold text-slate-700">Mô tả vườn và quy trình canh tác *</Label>
               <Textarea
                 id="farm-desc"
-                rows={3}
+                rows={4}
                 placeholder="Vườn chuyên canh trên 50ha, đất phù sa màu mỡ ven sông Tiền..."
                 required
                 value={farmForm.description}
@@ -556,8 +561,9 @@ export function FarmManagement({ initialFarms }: { initialFarms: FarmWithDetails
               />
             </div>
 
+            {/* Hàng 6 — Toàn chiều rộng: Link hình ảnh */}
             <div className="space-y-1.5">
-              <Label htmlFor="farm-images">Link hình ảnh (mỗi dòng 1 link URL)</Label>
+              <Label htmlFor="farm-images" className="text-xs font-semibold text-slate-700">Link hình ảnh (mỗi dòng 1 link URL)</Label>
               <Textarea
                 id="farm-images"
                 rows={2}
@@ -567,18 +573,20 @@ export function FarmManagement({ initialFarms }: { initialFarms: FarmWithDetails
               />
             </div>
 
-            <div className="flex justify-end gap-3 pt-3">
+            {/* Footer Buttons */}
+            <div className="flex items-center justify-end gap-3 pt-4 border-t sticky bottom-0 bg-white/95 backdrop-blur-xs py-2">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setFarmDialogOpen(false)}
+                className="rounded-xl"
               >
                 Hủy
               </Button>
               <Button
                 type="submit"
                 disabled={loading}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-btn-glow px-6"
               >
                 {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 {editingFarm ? 'Lưu Thay Đổi' : 'Tạo Nhà Vườn'}

@@ -1,43 +1,11 @@
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { getServerAuthSession } from '@/lib/auth'
 import { Role } from '@prisma/client'
-import {
-  LayoutDashboard,
-  ShoppingCart,
-  Apple,
-  Warehouse,
-  QrCode,
-  CalendarRange,
-  Users,
-  Percent,
-  AlertCircle,
-  Repeat,
-  BarChart3,
-  Truck,
-  Bell,
-  ExternalLink,
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { ExternalLink, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { SignOutButton } from '@/components/auth/sign-out-button'
-import { BrandLogo } from '@/components/ui/brand-logo'
-
-const navItems = [
-  { label: 'Bảng điều khiển', href: '/admin', icon: LayoutDashboard },
-  { label: 'Quản lý đơn hàng', href: '/admin/don-hang', icon: ShoppingCart },
-  { label: 'Sản phẩm & Giá bậc', href: '/admin/san-pham', icon: Apple },
-  { label: 'Nhà vườn & Chứng nhận', href: '/admin/nha-vuon', icon: Warehouse },
-  { label: 'Lô hàng & Mã QR', href: '/admin/lo-hang', icon: QrCode },
-  { label: 'Sản lượng theo tuần', href: '/admin/san-luong', icon: CalendarRange },
-  { label: 'Khách hàng & Đối tác', href: '/admin/khach-hang', icon: Users },
-  { label: 'Nhóm khách & Chiết khấu', href: '/admin/nhom-khach', icon: Percent },
-  { label: 'Xử lý khiếu nại', href: '/admin/khieu-nai', icon: AlertCircle },
-  { label: 'Lịch đơn định kỳ', href: '/admin/dinh-ky', icon: Repeat },
-  { label: 'Báo cáo & Thống kê', href: '/admin/bao-cao', icon: BarChart3 },
-  { label: 'Quản lý vận chuyển', href: '/admin/van-chuyen', icon: Truck, badge: 'Phase 8' },
-  { label: 'Nhật ký thông báo', href: '/admin/thong-bao', icon: Bell, badge: 'Phase 9' },
-]
+import { Button } from '@/components/ui/button'
+import { AdminSidebar } from '@/components/admin/admin-sidebar'
 
 export default async function AdminLayout({
   children,
@@ -54,78 +22,63 @@ export default async function AdminLayout({
     redirect('/')
   }
 
+  const userName = session.user.name || 'Quản trị viên'
+  const userEmail = session.user.email || ''
+  const initials = userName
+    ? userName
+        .split(' ')
+        .map((n) => n[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase()
+    : 'AD'
+
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row">
-      {/* Sidebar */}
-      <aside className="w-full md:w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0">
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-          <BrandLogo
-            variant="dark"
-            size="md"
-            subtitleText="Ban Vận Hành B2B"
-            showSubtitle={true}
-          />
-        </div>
-
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className="w-4 h-4 text-slate-400" />
-                  <span>{item.label}</span>
-                </div>
-                {item.badge && (
-                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-slate-700 text-slate-400">
-                    {item.badge}
-                  </Badge>
-                )}
-              </Link>
-            )
-          })}
-        </nav>
-
-        <div className="p-4 border-t border-slate-800 space-y-2">
-          <Link href="/" target="_blank">
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 text-xs justify-start"
-            >
-              <ExternalLink className="w-3.5 h-3.5 mr-2" /> Xem Website Storefront
-            </Button>
-          </Link>
-          <SignOutButton
-            variant="ghost"
-            size="sm"
-            className="w-full text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-xs justify-start"
-          >
-            Đăng xuất Admin
-          </SignOutButton>
-        </div>
-      </aside>
+    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+      {/* Sidebar (Desktop & Mobile Drawer) */}
+      <AdminSidebar
+        user={{
+          name: userName,
+          email: userEmail,
+        }}
+      />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="bg-white border-b border-slate-200 h-16 px-6 flex items-center justify-between">
+        <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/90 h-16 px-4 sm:px-6 lg:px-8 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
           <div className="flex items-center gap-3">
-            <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300">
-              Quyền: Quản trị viên tối cao
+            <Badge className="bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold text-xs px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Quyền: Quản trị viên tối cao</span>
             </Badge>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-slate-600">
-            <span>
-              Người trực: <strong>{session.user.name}</strong> ({session.user.email})
+            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-slate-400 font-medium">
+              • Trung tâm điều hành B2B E Vibe
             </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Link href="/" target="_blank" className="hidden lg:inline-block">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-full h-8 px-3 gap-1.5 font-medium transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Storefront</span>
+              </Button>
+            </Link>
+            <div className="flex items-center gap-2 pl-3 border-l border-slate-200 text-xs text-slate-600">
+              <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[11px] ring-1 ring-emerald-300/50">
+                {initials}
+              </div>
+              <span className="hidden md:inline">
+                Người trực: <strong className="text-slate-900">{userName}</strong>
+              </span>
+            </div>
           </div>
         </header>
 
-        <main className="flex-1 p-6 overflow-y-auto">{children}</main>
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto bg-slate-50/70">{children}</main>
       </div>
     </div>
   )

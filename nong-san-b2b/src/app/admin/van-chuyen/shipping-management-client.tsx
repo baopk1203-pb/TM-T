@@ -390,26 +390,27 @@ export function ShippingManagementClient({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-            Quản lý Vận chuyển & Điều phối Chuyến giao
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-card">
+        <div className="space-y-1">
+          <h1 className="font-heading text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
+            <Truck className="w-6 h-6 text-emerald-600" />
+            Quản Lý Vận Chuyển &amp; Điều Phối Chuyến Giao
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          <p className="text-xs sm:text-sm text-slate-500">
             Điều phối đội xe, theo dõi hành trình giao hàng B2B, quản lý bảng cước động và cấu hình kho.
           </p>
         </div>
 
         {/* Action button on top */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {diagnostic.status === 'EMPTY_DB' && activeTab === 'rates' && (
             <Button
               size="sm"
               onClick={handleInitDefaultRates}
               disabled={isPending}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs gap-1.5"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 rounded-full px-4 h-9 shadow-btn-glow"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Khởi tạo 4 bậc cước mặc định vào DB
@@ -423,7 +424,7 @@ export function ShippingManagementClient({
                 size="sm"
                 onClick={handleRecoverDefaultRates}
                 disabled={isPending}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs gap-1.5"
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs gap-1.5 rounded-full px-4 h-9 shadow-xs"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 Bổ sung bậc cước mặc định còn thiếu
@@ -450,7 +451,7 @@ export function ShippingManagementClient({
                 })
                 setRateModalOpen(true)
               }}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs gap-1.5"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 rounded-full px-4 h-9 shadow-btn-glow"
             >
               <Plus className="w-4 h-4" />
               Thêm bậc cước mới

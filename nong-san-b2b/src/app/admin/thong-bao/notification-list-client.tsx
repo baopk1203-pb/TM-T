@@ -9,13 +9,12 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  Filter,
   Eye,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -84,28 +83,29 @@ export function NotificationListClient({ initialLogs }: NotificationListClientPr
   })
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       {/* Tiêu đề & Giới thiệu */}
-      <div>
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-emerald-100 text-emerald-800 rounded-lg">
-            <Mail className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">
-              Nhật ký Thông báo Email
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-card">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5">
+            <h1 className="font-heading text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
+              <Mail className="w-6 h-6 text-emerald-600" />
+              Nhật Ký Thông Báo Email
             </h1>
-            <p className="text-sm text-gray-500">
-              Theo dõi toàn bộ email giao dịch và vòng đời đơn hàng B2B (Phase 9)
-            </p>
+            <Badge className="bg-emerald-50 text-emerald-800 border-emerald-300 rounded-full text-xs font-semibold px-2.5 py-0.5">
+              Phase 9 Live
+            </Badge>
           </div>
+          <p className="text-xs sm:text-sm text-slate-500">
+            Theo dõi toàn bộ email giao dịch và vòng đời đơn hàng B2B E Vibe.
+          </p>
         </div>
       </div>
 
       {/* Banner chính sách Email mới (DEV-TASK-47) */}
-      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3.5 text-sm text-emerald-900 flex items-start gap-2.5">
+      <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 text-xs sm:text-sm text-emerald-900 flex items-start gap-3">
         <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-        <div>
+        <div className="leading-relaxed">
           <span className="font-semibold">Chính sách thông báo Email hiện tại (DEV-TASK-47):</span>{' '}
           Hệ thống chỉ gửi Email cho <strong>Xác nhận thanh toán (E02)</strong>,{' '}
           <strong>Giao hàng hoàn tất (E04 - cảnh báo khiếu nại 24h)</strong>,{' '}
@@ -115,101 +115,90 @@ export function NotificationListClient({ initialLogs }: NotificationListClientPr
       </div>
 
       {/* Thẻ thống kê */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-white border-gray-200 shadow-sm">
-          <CardContent className="p-4">
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Tổng số thông báo
-            </div>
-            <div className="mt-2 text-2xl font-bold text-gray-900">{totalCount}</div>
-            <div className="mt-1 text-xs text-gray-400">Tất cả sự kiện ghi nhận</div>
-          </CardContent>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+        <Card className="rounded-3xl bg-white border-slate-200/90 shadow-card p-5">
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            Tổng số thông báo
+          </div>
+          <div className="mt-2 text-2xl font-black text-slate-900 font-heading">{totalCount}</div>
+          <div className="mt-1 text-xs text-slate-400 font-medium">Tất cả sự kiện ghi nhận</div>
         </Card>
 
-        <Card className="bg-white border-gray-200 shadow-sm">
-          <CardContent className="p-4">
-            <div className="text-xs font-medium text-emerald-600 uppercase tracking-wider flex items-center gap-1">
-              <CheckCircle2 className="w-4 h-4" /> Thành công
-            </div>
-            <div className="mt-2 text-2xl font-bold text-emerald-700">{successCount}</div>
-            <div className="mt-1 text-xs text-emerald-600/80">Tỷ lệ đạt {successRate}%</div>
-          </CardContent>
+        <Card className="rounded-3xl bg-white border-slate-200/90 shadow-card p-5">
+          <div className="text-xs font-semibold text-emerald-700 uppercase tracking-wider flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Thành công
+          </div>
+          <div className="mt-2 text-2xl font-black text-emerald-700 font-heading">{successCount}</div>
+          <div className="mt-1 text-xs text-emerald-600/80 font-medium">Tỷ lệ đạt {successRate}%</div>
         </Card>
 
-        <Card className="bg-white border-gray-200 shadow-sm">
-          <CardContent className="p-4">
-            <div className="text-xs font-medium text-rose-600 uppercase tracking-wider flex items-center gap-1">
-              <AlertCircle className="w-4 h-4" /> Gặp sự cố
-            </div>
-            <div className="mt-2 text-2xl font-bold text-rose-700">{failedCount}</div>
-            <div className="mt-1 text-xs text-rose-600/80">Cần kiểm tra SMTP / hòm thư</div>
-          </CardContent>
+        <Card className="rounded-3xl bg-white border-slate-200/90 shadow-card p-5">
+          <div className="text-xs font-semibold text-rose-700 uppercase tracking-wider flex items-center gap-1.5">
+            <AlertCircle className="w-4 h-4 text-rose-600" /> Gặp sự cố
+          </div>
+          <div className="mt-2 text-2xl font-black text-rose-700 font-heading">{failedCount}</div>
+          <div className="mt-1 text-xs text-rose-600/80 font-medium">Cần kiểm tra SMTP / hòm thư</div>
         </Card>
 
-        <Card className="bg-white border-gray-200 shadow-sm">
-          <CardContent className="p-4">
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-1">
-              <Clock className="w-4 h-4" /> Bỏ qua (Trùng/Thiếu Email)
-            </div>
-            <div className="mt-2 text-2xl font-bold text-gray-700">{skippedCount}</div>
-            <div className="mt-1 text-xs text-gray-400">Idempotency & dữ liệu thiếu</div>
-          </CardContent>
+        <Card className="rounded-3xl bg-white border-slate-200/90 shadow-card p-5">
+          <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+            <Clock className="w-4 h-4 text-slate-500" /> Bỏ qua (Trùng/Thiếu Email)
+          </div>
+          <div className="mt-2 text-2xl font-black text-slate-700 font-heading">{skippedCount}</div>
+          <div className="mt-1 text-xs text-slate-400 font-medium">Idempotency &amp; dữ liệu thiếu</div>
         </Card>
       </div>
 
       {/* Bộ lọc và Tìm kiếm */}
-      <Card className="bg-white border-gray-200 shadow-sm">
-        <CardContent className="p-4 space-y-3">
-          <div className="flex flex-col md:flex-row gap-3">
-            {/* Ô tìm kiếm */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Tìm theo mã đơn, email nhận, tên khách, tiêu đề..."
-                className="pl-9"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-
-            {/* Lọc trạng thái */}
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-gray-400" />
-              <select
-                aria-label="Lọc theo trạng thái"
-                className="border border-gray-300 rounded-md text-sm px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-              >
-                <option value="ALL">Tất cả trạng thái</option>
-                <option value="SUCCESS">Thành công</option>
-                <option value="FAILED">Thất bại</option>
-                <option value="SKIPPED">Bỏ qua</option>
-              </select>
-
-              {/* Lọc loại sự kiện */}
-              <select
-                aria-label="Lọc theo loại sự kiện"
-                className="border border-gray-300 rounded-md text-sm px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                value={eventFilter}
-                onChange={(e) => setEventFilter(e.target.value)}
-              >
-                <option value="ALL">Tất cả sự kiện</option>
-                <option value="PAYMENT_CONFIRMED">Xác nhận thanh toán (E02) — Bật</option>
-                <option value="ORDER_COMPLETED">Giao hoàn tất 24h (E04) — Bật</option>
-                <option value="COMPLAINT_RESOLVED">Khiếu nại giải quyết (E06) — Bật</option>
-                <option value="REFUND_CONFIRMED">Xác nhận hoàn tiền — Bật</option>
-                <option value="ORDER_PLACED">Đặt hàng (E01 - Đã tắt / Lưu trữ)</option>
-                <option value="ORDER_SHIPPING">Vận chuyển (E03 - Đã tắt / Lưu trữ)</option>
-                <option value="COMPLAINT_OPENED">Khiếu nại mở (E05 - Đã tắt / Lưu trữ)</option>
-              </select>
-            </div>
+      <Card className="rounded-3xl bg-white border-slate-200/90 shadow-card p-5">
+        <div className="flex flex-col md:flex-row gap-3">
+          {/* Ô tìm kiếm */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder="Tìm theo mã đơn, email nhận, tên khách, tiêu đề..."
+              className="pl-10 text-xs h-10 rounded-2xl border-slate-200/90 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
-        </CardContent>
+
+          {/* Lọc trạng thái */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              aria-label="Lọc theo trạng thái"
+              className="border border-slate-200 rounded-2xl text-xs px-3.5 h-10 bg-white text-slate-700 font-medium focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+            >
+              <option value="ALL">Tất cả trạng thái</option>
+              <option value="SUCCESS">Thành công</option>
+              <option value="FAILED">Thất bại</option>
+              <option value="SKIPPED">Bỏ qua</option>
+            </select>
+
+            {/* Lọc loại sự kiện */}
+            <select
+              aria-label="Lọc theo loại sự kiện"
+              className="border border-slate-200 rounded-2xl text-xs px-3.5 h-10 bg-white text-slate-700 font-medium focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              value={eventFilter}
+              onChange={(e) => setEventFilter(e.target.value)}
+            >
+              <option value="ALL">Tất cả sự kiện</option>
+              <option value="PAYMENT_CONFIRMED">Xác nhận thanh toán (E02) — Bật</option>
+              <option value="ORDER_COMPLETED">Giao hoàn tất 24h (E04) — Bật</option>
+              <option value="COMPLAINT_RESOLVED">Khiếu nại giải quyết (E06) — Bật</option>
+              <option value="REFUND_CONFIRMED">Xác nhận hoàn tiền — Bật</option>
+              <option value="ORDER_PLACED">Đặt hàng (E01 - Đã tắt / Lưu trữ)</option>
+              <option value="ORDER_SHIPPING">Vận chuyển (E03 - Đã tắt / Lưu trữ)</option>
+              <option value="COMPLAINT_OPENED">Khiếu nại mở (E05 - Đã tắt / Lưu trữ)</option>
+            </select>
+          </div>
+        </div>
       </Card>
 
       {/* Bảng danh sách nhật ký */}
-      <Card className="bg-white border-gray-200 shadow-sm overflow-hidden">
+      <Card className="rounded-3xl bg-white border-slate-200/90 shadow-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-600">
             <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">

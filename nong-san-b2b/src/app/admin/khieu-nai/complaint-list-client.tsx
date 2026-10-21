@@ -10,11 +10,11 @@ import {
   Package,
   User,
   Scale,
+  AlertCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -153,71 +153,72 @@ export function ComplaintListClient({ initialComplaints }: ComplaintListClientPr
   const openCount = initialComplaints.filter((c) => c.status === ComplaintStatus.OPEN).length
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h1 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            Tiếp Nhận & Xử Lý Khiếu Nại Hao Hụt
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-card">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5">
+            <h1 className="font-heading text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
+              <AlertCircle className="w-6 h-6 text-rose-600" />
+              Tiếp Nhận &amp; Xử Lý Khiếu Nại Hao Hụt
+            </h1>
             {openCount > 0 && (
-              <Badge className="bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs">
+              <Badge className="bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-full px-2.5 py-0.5">
                 {openCount} chờ xử lý
               </Badge>
             )}
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
+          </div>
+          <p className="text-xs sm:text-sm text-slate-500">
             Xác minh ảnh đồng kiểm, tính bồi hoàn hao hụt vượt định mức 3% theo đúng quy định.
           </p>
         </div>
       </div>
 
       {/* Filter Tabs & Search */}
-      <Card className="border-slate-200 shadow-sm">
-        <CardContent className="p-4 space-y-4">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-100 text-xs">
-            {statusTabs.map((tab) => {
-              const active = statusFilter === tab.value
-              const count =
-                tab.value === 'ALL'
-                  ? initialComplaints.length
-                  : initialComplaints.filter((c) => c.status === tab.value).length
-              return (
-                <button
-                  key={tab.value}
-                  onClick={() => setStatusFilter(tab.value)}
-                  className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${
-                    active
-                      ? 'bg-slate-900 text-white font-semibold'
-                      : 'text-slate-600 hover:bg-slate-100'
+      <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-card space-y-4">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+          {statusTabs.map((tab) => {
+            const active = statusFilter === tab.value
+            const count =
+              tab.value === 'ALL'
+                ? initialComplaints.length
+                : initialComplaints.filter((c) => c.status === tab.value).length
+            return (
+              <button
+                key={tab.value}
+                onClick={() => setStatusFilter(tab.value)}
+                className={`px-4 py-2 rounded-full font-medium whitespace-nowrap transition-all flex items-center gap-2 ${
+                  active
+                    ? 'bg-slate-900 text-white font-bold shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    active ? 'bg-slate-700 text-slate-200' : 'bg-slate-200 text-slate-700'
                   }`}
                 >
-                  <span>{tab.label}</span>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                      active ? 'bg-slate-700 text-slate-200' : 'bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
 
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <Input
-              placeholder="Tìm theo mã đơn (DH-...), tên khách, hoặc sản phẩm..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 text-xs h-9"
-            />
-          </div>
-        </CardContent>
-      </Card>
+        <div className="relative pt-1 border-t border-slate-100">
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Input
+            placeholder="Tìm theo mã đơn (DH-...), tên khách, hoặc sản phẩm..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10 text-xs h-10 rounded-2xl border-slate-200/90 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+          />
+        </div>
+      </div>
 
       {/* Complaints List Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-card overflow-hidden">
         {filteredComplaints.length === 0 ? (
           <div className="text-center py-16 px-4">
             <ShieldAlert className="w-10 h-10 text-slate-300 mx-auto mb-3" />

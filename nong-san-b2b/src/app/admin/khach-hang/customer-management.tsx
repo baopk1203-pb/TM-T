@@ -221,19 +221,20 @@ export function CustomerManagementClient({
   }, [groupFilter, groups])
 
   return (
-    <div className="space-y-6 max-w-7xl">
+    <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Quản lý Khách hàng sỉ & Phân hạng B2B (CRM)
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-card">
+        <div className="space-y-1">
+          <h1 className="font-heading text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
+            <Users className="w-6 h-6 text-emerald-600" />
+            Quản lý Khách hàng sỉ &amp; Phân hạng B2B (CRM)
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-xs sm:text-sm text-slate-500">
             Tra cứu hồ sơ pháp nhân, mã số thuế, sổ địa chỉ, lịch sử mua hàng và nâng/hạ hạng đối tác chiến lược.
           </p>
         </div>
         <Link href="/admin/nhom-khach">
-          <Button variant="outline" size="sm" className="gap-1.5 bg-white">
+          <Button variant="outline" size="sm" className="gap-1.5 bg-white rounded-full border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 h-9 px-4 font-semibold text-xs">
             <Sparkles className="w-4 h-4 text-emerald-600" />
             Cấu hình % Chiết khấu Nhóm
           </Button>
@@ -241,94 +242,94 @@ export function CustomerManagementClient({
       </div>
 
       {/* KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="border-slate-200">
-          <CardContent className="p-4 flex items-center justify-between">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+        <Card className="rounded-3xl border-slate-200/90 shadow-card bg-white p-5 sm:p-6">
+          <div className="flex items-center justify-between">
             <div>
-              <div className="text-xs font-medium text-slate-500 uppercase">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Tổng đối tác B2B
               </div>
-              <div className="text-2xl font-bold text-slate-900 mt-1">
+              <div className="text-2xl font-black text-slate-900 mt-1 font-heading">
                 {summary.totalCustomers}
               </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
+              <div className="text-[11px] text-slate-500 mt-0.5 font-medium">
                 Tài khoản khách hàng sỉ
               </div>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
-              <Users className="w-5 h-5" />
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-700 border border-blue-100 flex items-center justify-center shrink-0">
+              <Users className="w-6 h-6" />
             </div>
-          </CardContent>
+          </div>
         </Card>
 
-        <Card className="border-slate-200">
-          <CardContent className="p-4 flex items-center justify-between">
+        <Card className="rounded-3xl border-slate-200/90 shadow-card bg-white p-5 sm:p-6">
+          <div className="flex items-center justify-between">
             <div>
-              <div className="text-xs font-medium text-slate-500 uppercase">
-                Đại lý cấp 1 & Siêu thị
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Đại lý cấp 1 &amp; Siêu thị
               </div>
-              <div className="text-2xl font-bold text-emerald-700 mt-1">
+              <div className="text-2xl font-black text-emerald-700 mt-1 font-heading">
                 {summary.upgradedCustomers}
               </div>
-              <div className="text-[11px] text-emerald-600 mt-0.5">
+              <div className="text-[11px] text-emerald-600 mt-0.5 font-semibold">
                 Đang hưởng chiết khấu nhóm
               </div>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
-              <UserCheck className="w-5 h-5" />
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center justify-center shrink-0">
+              <UserCheck className="w-6 h-6" />
             </div>
-          </CardContent>
+          </div>
         </Card>
 
-        <Card className="border-slate-200">
-          <CardContent className="p-4 flex items-center justify-between">
+        <Card className="rounded-3xl border-slate-200/90 shadow-card bg-white p-5 sm:p-6">
+          <div className="flex items-center justify-between">
             <div>
-              <div className="text-xs font-medium text-slate-500 uppercase">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Tổng đơn thương mại
               </div>
-              <div className="text-2xl font-bold text-slate-900 mt-1">
+              <div className="text-2xl font-black text-slate-900 mt-1 font-heading">
                 {summary.totalOrders}
               </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
+              <div className="text-[11px] text-slate-500 mt-0.5 font-medium">
                 Không tính đơn nháp chưa duyệt
               </div>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
-              <ShoppingBag className="w-5 h-5" />
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-700 border border-amber-100 flex items-center justify-center shrink-0">
+              <ShoppingBag className="w-6 h-6" />
             </div>
-          </CardContent>
+          </div>
         </Card>
 
-        <Card className="border-slate-200">
-          <CardContent className="p-4 flex items-center justify-between">
+        <Card className="rounded-3xl border-slate-200/90 shadow-card bg-white p-5 sm:p-6">
+          <div className="flex items-center justify-between">
             <div>
-              <div className="text-xs font-medium text-slate-500 uppercase">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Tổng doanh thu hoàn thành
               </div>
-              <div className="text-xl font-bold text-emerald-700 mt-1 font-mono">
+              <div className="text-xl font-black text-emerald-700 mt-1 font-mono">
                 {formatVND(summary.totalCompletedRevenue)}
               </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
+              <div className="text-[11px] text-slate-500 mt-0.5 font-medium">
                 Chỉ tính đơn COMPLETED
               </div>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5" />
+            <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-700 border border-purple-100 flex items-center justify-center shrink-0">
+              <TrendingUp className="w-6 h-6" />
             </div>
-          </CardContent>
+          </div>
         </Card>
       </div>
 
       {/* Filters */}
-      <Card className="border-slate-200">
-        <CardContent className="p-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+      <Card className="rounded-3xl border-slate-200/90 shadow-card bg-white">
+        <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <Input
               placeholder="Tìm theo tên doanh nghiệp, mã số thuế, người đại diện, SĐT, email..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 text-sm"
+              className="pl-10 text-xs h-10 rounded-2xl border-slate-200/90 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
             />
           </div>
 
@@ -337,7 +338,7 @@ export function CustomerManagementClient({
               value={groupFilter}
               onValueChange={(val) => setGroupFilter(val || 'ALL')}
             >
-              <SelectTrigger className="w-full bg-white text-sm">
+              <SelectTrigger className="w-full bg-white text-xs h-10 rounded-2xl border-slate-200/90">
                 <SelectValue placeholder="Lọc theo nhóm khách">
                   {selectedGroupFilterLabel}
                 </SelectValue>
@@ -356,9 +357,9 @@ export function CustomerManagementClient({
       </Card>
 
       {/* Customer Table */}
-      <Card className="border-slate-200 overflow-hidden">
-        <CardHeader className="py-4 px-6 border-b border-slate-100 bg-slate-50/60">
-          <CardTitle className="text-base font-bold text-slate-900 flex items-center justify-between">
+      <Card className="rounded-3xl border-slate-200/90 shadow-card bg-white overflow-hidden">
+        <CardHeader className="py-4 px-6 border-b border-slate-100 bg-slate-50/80">
+          <CardTitle className="text-base font-bold text-slate-900 flex items-center justify-between flex-wrap gap-2">
             <span>Danh sách khách hàng doanh nghiệp ({filteredCustomers.length})</span>
             <span className="text-xs font-normal text-slate-500">
               Doanh thu tính theo tổng quyết toán (finalTotal) của các đơn COMPLETED

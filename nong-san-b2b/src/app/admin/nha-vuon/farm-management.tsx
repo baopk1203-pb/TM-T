@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   Building,
+  Warehouse,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -303,35 +304,37 @@ export function FarmManagement({ initialFarms }: { initialFarms: FarmWithDetails
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Nhà Vườn & Chứng Nhận Chất Lượng
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-card">
+        <div className="space-y-1">
+          <h1 className="font-heading text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
+            <Warehouse className="w-6 h-6 text-emerald-600" />
+            Nhà Vườn &amp; Chứng Nhận Chất Lượng
           </h1>
-          <p className="text-sm text-slate-600">
-            Quản lý mạng lưới vườn đối tác liên kết, tọa độ GPS bản đồ và chứng chỉ GAP/Organic
+          <p className="text-xs sm:text-sm text-slate-500">
+            Quản lý mạng lưới vườn đối tác liên kết, tọa độ GPS bản đồ và chứng chỉ GAP/Organic.
           </p>
         </div>
-        <Button onClick={openCreateFarmModal} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-          <Plus className="w-4 h-4 mr-2" /> Thêm Nhà Vườn Mới
+        <Button onClick={openCreateFarmModal} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full font-bold text-xs h-10 px-5 gap-2 shadow-btn-glow hover:-translate-y-0.5 transition-all">
+          <Plus className="w-4 h-4" /> Thêm Nhà Vườn Mới
         </Button>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/90 shadow-card flex items-center gap-4">
         <Input
           placeholder="Tìm theo tên vườn, tỉnh thành hoặc slug..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="max-w-md bg-white"
+          className="max-w-md bg-white rounded-2xl border-slate-200/90 text-xs h-10 pl-4"
         />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredFarms.map((farm) => {
           return (
-            <Card key={farm.id} className="overflow-hidden border-slate-200 hover:shadow-md transition-shadow">
-              <div className="h-44 w-full bg-slate-100 relative overflow-hidden">
+            <Card key={farm.id} className="rounded-3xl border border-slate-200/90 shadow-card hover:shadow-md transition-shadow overflow-hidden bg-white">
+              <div className="h-48 w-full bg-slate-100 relative overflow-hidden">
                 {farm.images[0] ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img

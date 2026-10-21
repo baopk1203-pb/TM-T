@@ -120,19 +120,20 @@ export function GroupManagementClient({ initialGroups }: GroupManagementProps) {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Nhóm Khách hàng & Tỷ lệ Chiết khấu B2B
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-card">
+        <div className="space-y-1">
+          <h1 className="font-heading text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
+            <Percent className="w-6 h-6 text-emerald-600" />
+            Nhóm Khách Hàng &amp; Tỷ Lệ Chiết Khấu B2B
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-xs sm:text-sm text-slate-500">
             Quản lý chính sách chiết khấu cộng thêm theo từng hạng đối tác mua sỉ trên bảng giá bậc.
           </p>
         </div>
         <Link href="/admin/khach-hang">
-          <Button variant="outline" size="sm" className="gap-1.5 bg-white">
+          <Button variant="outline" size="sm" className="gap-1.5 bg-white rounded-full border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 h-9 px-4 font-semibold text-xs">
             <ArrowLeft className="w-4 h-4" />
             Danh sách Khách hàng CRM
           </Button>
@@ -140,7 +141,7 @@ export function GroupManagementClient({ initialGroups }: GroupManagementProps) {
       </div>
 
       {/* Policy Notice Banner */}
-      <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-start gap-3 text-xs text-emerald-900">
+      <div className="p-5 rounded-3xl bg-emerald-50/80 border border-emerald-200 flex items-start gap-3 text-xs text-emerald-900">
         <Info className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
         <div className="space-y-1 leading-relaxed">
           <div className="font-bold text-sm text-emerald-950">

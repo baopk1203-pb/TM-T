@@ -115,50 +115,50 @@ export function ReportsClient({ initialData }: ReportsClientProps) {
   }))
 
   return (
-    <div className="space-y-6 max-w-7xl pb-12">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-card">
+        <div className="space-y-1">
+          <h1 className="font-heading text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
             <BarChart3 className="w-6 h-6 text-emerald-600" />
-            Báo cáo & Thống kê kinh doanh
+            Báo Cáo &amp; Thống Kê Kinh Doanh
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Tổng hợp doanh thu đơn hoàn thành, sản lượng bán, hao hụt thực tế và cơ cấu khách hàng
+          <p className="text-xs sm:text-sm text-slate-500">
+            Tổng hợp doanh thu đơn hoàn thành, sản lượng bán, hao hụt thực tế và cơ cấu khách hàng.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-800 border-emerald-300">
+          <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-800 border-emerald-300 rounded-full px-3 py-1 font-semibold">
             Múi giờ Asia/Ho_Chi_Minh
           </Badge>
         </div>
       </div>
 
       {/* Required Clarification Alert (Mục B4) */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
+      <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-4 flex items-start gap-3">
         <Info className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
-        <div className="text-sm text-blue-900 leading-relaxed">
+        <div className="text-xs sm:text-sm text-blue-900 leading-relaxed">
           <span className="font-semibold">Quy tắc ghi nhận:</span>{' '}
           <strong>Doanh thu từ các đơn được tạo trong kỳ và hiện đã hoàn thành.</strong> Bộ lọc áp
-          dụng theo ngày tạo đơn (<code className="bg-blue-100 px-1 py-0.5 rounded text-xs font-mono">Order.createdAt</code>
+          dụng theo ngày tạo đơn (<code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs font-mono font-semibold">Order.createdAt</code>
           ) theo múi giờ Việt Nam. Doanh thu tính theo giá trị tất toán cuối cùng (
-          <code className="bg-blue-100 px-1 py-0.5 rounded text-xs font-mono">finalTotal ?? total</code>), không cộng dồn trực tiếp giao dịch cọc để tránh trùng số liệu.
+          <code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs font-mono font-semibold">finalTotal ?? total</code>), không cộng dồn trực tiếp giao dịch cọc để tránh trùng số liệu.
         </div>
       </div>
 
       {/* Date Filter & Grouping Controls */}
-      <Card className="border-slate-200 shadow-sm">
-        <CardContent className="p-4 sm:p-5">
+      <Card className="rounded-3xl border-slate-200/90 shadow-card bg-white">
+        <CardContent className="p-5">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             {/* Presets */}
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-slate-500 flex items-center gap-1.5 mr-1">
-                <Calendar className="w-3.5 h-3.5" /> Chu kỳ:
+              <span className="text-xs font-bold text-slate-500 flex items-center gap-1.5 mr-1 uppercase font-mono">
+                <Calendar className="w-3.5 h-3.5 text-emerald-600" /> Chu kỳ:
               </span>
               <Button
                 size="sm"
                 variant={preset === '7D' ? 'default' : 'outline'}
-                className={preset === '7D' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}
+                className={`rounded-full text-xs font-semibold px-4 h-9 ${preset === '7D' ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs' : 'border-slate-200 text-slate-700'}`}
                 onClick={() => handleApplyFilter('7D')}
                 disabled={isPending}
               >
@@ -167,7 +167,7 @@ export function ReportsClient({ initialData }: ReportsClientProps) {
               <Button
                 size="sm"
                 variant={preset === '30D' ? 'default' : 'outline'}
-                className={preset === '30D' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}
+                className={`rounded-full text-xs font-semibold px-4 h-9 ${preset === '30D' ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs' : 'border-slate-200 text-slate-700'}`}
                 onClick={() => handleApplyFilter('30D')}
                 disabled={isPending}
               >
@@ -176,7 +176,7 @@ export function ReportsClient({ initialData }: ReportsClientProps) {
               <Button
                 size="sm"
                 variant={preset === 'THIS_MONTH' ? 'default' : 'outline'}
-                className={preset === 'THIS_MONTH' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}
+                className={`rounded-full text-xs font-semibold px-4 h-9 ${preset === 'THIS_MONTH' ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs' : 'border-slate-200 text-slate-700'}`}
                 onClick={() => handleApplyFilter('THIS_MONTH')}
                 disabled={isPending}
               >
@@ -185,7 +185,7 @@ export function ReportsClient({ initialData }: ReportsClientProps) {
               <Button
                 size="sm"
                 variant={preset === 'CUSTOM' ? 'default' : 'outline'}
-                className={preset === 'CUSTOM' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}
+                className={`rounded-full text-xs font-semibold px-4 h-9 ${preset === 'CUSTOM' ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs' : 'border-slate-200 text-slate-700'}`}
                 onClick={() => setPreset('CUSTOM')}
                 disabled={isPending}
               >
@@ -195,17 +195,17 @@ export function ReportsClient({ initialData }: ReportsClientProps) {
 
             {/* Grouping */}
             <div className="flex items-center gap-3">
-              <span className="text-xs font-medium text-slate-500 flex items-center gap-1.5">
-                <Filter className="w-3.5 h-3.5" /> Gom theo:
+              <span className="text-xs font-bold text-slate-500 flex items-center gap-1.5 uppercase font-mono">
+                <Filter className="w-3.5 h-3.5 text-emerald-600" /> Gom theo:
               </span>
-              <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+              <div className="inline-flex rounded-full border border-slate-200 p-1 bg-slate-100">
                 <button
                   type="button"
                   onClick={() => handleApplyFilter(preset, 'DAY')}
                   disabled={isPending}
-                  className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+                  className={`text-xs font-semibold px-3.5 py-1 rounded-full transition-all ${
                     grouping === 'DAY'
-                      ? 'bg-white text-slate-900 shadow-sm'
+                      ? 'bg-white text-emerald-950 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -215,9 +215,9 @@ export function ReportsClient({ initialData }: ReportsClientProps) {
                   type="button"
                   onClick={() => handleApplyFilter(preset, 'WEEK')}
                   disabled={isPending}
-                  className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+                  className={`text-xs font-semibold px-3.5 py-1 rounded-full transition-all ${
                     grouping === 'WEEK'
-                      ? 'bg-white text-slate-900 shadow-sm'
+                      ? 'bg-white text-emerald-950 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >

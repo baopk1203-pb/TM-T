@@ -10,6 +10,10 @@ import {
   sortBatchesByFefo,
   allocateBatchesFefo,
   calculateAvailableStock,
+  verifyInventoryInvariants,
+  calculateUnreleasedAllocationGrams,
+  calculatePartialDispatchAllocation,
+  calculateReleaseAllocation,
   BatchCandidate,
   LedgerEntry,
 } from '@/lib/domain/inventory'
@@ -698,6 +702,203 @@ describe('Domain: Inventory & FEFO Engine (EV-IMP-01A)', () => {
       // Tổng tồn vật lý các lô sầu riêng = 50 + 60 + 30 + 100 = 240 kg
       expect(summary.totalPhysicalStockGrams).toBe(240000)
       expect(summary.totalReservedGrams).toBe(10000)
+    })
+  })
+
+  // ==========================================================================
+  // NHÓM 8: KIỂM ĐỊNH INVARIANT & PHÁT HIỆN THIẾU HỤT KHÔNG CHE GIẤU (EV-IMP-01B)
+  // ==========================================================================
+  describe('Kiểm định Invariant Tồn kho (verifyInventoryInvariants)', () => {
+    it('Tình huống 1: Nhập 100kg, giữ 60kg, xuất 20kg => Mọi Invariant PASS', () => {
+      const entries: LedgerEntry[] = [
+        { type: 'IMPORT', quantityGrams: 100000 },
+        { type: 'RESERVATION_HOLD', quantityGrams: 60000 },
+        { type: 'DISPATCH_OUT', quantityGrams: 20000 },
+      ]
+      const summary = calculateStockFromLedger(entries)
+
+      expect(summary.physicalStockGrams).toBe(80000) // 100 - 20 = 80 kg
+      expect(summary.reservedGrams).toBe(40000)       // 60 - 20 = 40 kg
+      expect(summary.availableGrams).toBe(40000)      // 80 - 40 = 40 kg
+      expect(summary.hasDeficit).toBe(false)
+      expect(summary.warnings).toHaveLength(0)
+
+      const invCheck = verifyInventoryInvariants(summary)
+      expect(invCheck.valid).toBe(true)
+      expect(invCheck.violations).toHaveLength(0)
+    })
+
+    it('Tình huống 2: Nhập 100kg, xuất 10kg mà KHÔNG có giữ chỗ => Phát hiện RESERVATION_DEFICIT', () => {
+      const entries: LedgerEntry[] = [
+        { type: 'IMPORT', quantityGrams: 100000 },
+        { type: 'DISPATCH_OUT', quantityGrams: 10000 }, // Xuất không có HOLD
+      ]
+      const summary = calculateStockFromLedger(entries)
+
+      // rawReserved = 0 - 0 - 10 = -10kg
+      expect(summary.rawReservedGrams).toBe(-10000)
+      expect(summary.reservedGrams).toBe(0) // Math.max(0) bảo vệ runtime
+      expect(summary.hasDeficit).toBe(true)
+      expect(summary.warnings.some((w) => w.includes('GIỮ CHỖ ÂM'))).toBe(true)
+
+      const invCheck = verifyInventoryInvariants(summary)
+      expect(invCheck.valid).toBe(false)
+      expect(invCheck.violations.some((v) => v.includes('RESERVED_DEFICIT'))).toBe(true)
+    })
+
+    it('Tình huống 3: Nhập 100kg, giữ 90kg, hao hụt 20kg => Phát hiện AVAILABLE_DEFICIT (Hàng giữ vượt tồn kho)', () => {
+      const entries: LedgerEntry[] = [
+        { type: 'IMPORT', quantityGrams: 100000 },          // Nhập 100 kg
+        { type: 'RESERVATION_HOLD', quantityGrams: 90000 }, // Giữ 90 kg
+        { type: 'SHRINKAGE_LOSS', quantityGrams: 20000 },   // Hư hỏng 20 kg
+      ]
+      const summary = calculateStockFromLedger(entries)
+
+      // Physical = 100 - 20 = 80kg
+      // Reserved = 90kg
+      // rawAvailable = 80 - 90 = -10kg!
+      expect(summary.physicalStockGrams).toBe(80000)
+      expect(summary.reservedGrams).toBe(90000)
+      expect(summary.rawAvailableGrams).toBe(-10000)
+      expect(summary.availableGrams).toBe(0) // Không cho bán thêm
+      expect(summary.hasDeficit).toBe(true)
+      expect(summary.warnings.some((w) => w.includes('THIẾU HỤT PHÂN BỔ'))).toBe(true)
+
+      const invCheck = verifyInventoryInvariants(summary)
+      expect(invCheck.valid).toBe(false)
+      expect(invCheck.violations.some((v) => v.includes('OVER_ALLOCATED'))).toBe(true)
+    })
+
+    it('Tình huống 4: Xuất kho vượt quá lượng nhập => Phát hiện PHYSICAL_DEFICIT', () => {
+      const entries: LedgerEntry[] = [
+        { type: 'IMPORT', quantityGrams: 50000 },          // Nhập 50 kg
+        { type: 'DISPATCH_OUT', quantityGrams: 70000 },    // Xuất lố 70 kg
+      ]
+      const summary = calculateStockFromLedger(entries)
+
+      expect(summary.rawPhysicalStockGrams).toBe(-20000)
+      expect(summary.hasDeficit).toBe(true)
+
+      const invCheck = verifyInventoryInvariants(summary)
+      expect(invCheck.valid).toBe(false)
+      expect(invCheck.violations.some((v) => v.includes('PHYSICAL_DEFICIT'))).toBe(true)
+    })
+  })
+
+  // ==========================================================================
+  // NHÓM 9: VÒNG ĐỜI PHÂN BỔ ĐƠN HÀNG (RESERVATION & ALLOCATION MODEL)
+  // ==========================================================================
+  describe('Vòng đời Phân bổ Đơn hàng (OrderItemBatchAllocation Lifecycle)', () => {
+    it('tính đúng lượng chưa xuất chưa nhả (calculateUnreleasedAllocationGrams)', () => {
+      expect(
+        calculateUnreleasedAllocationGrams({
+          allocatedGrams: 50000,
+          dispatchedGrams: 20000,
+          releasedGrams: 10000,
+        })
+      ).toBe(20000) // 50 - 20 - 10 = 20 kg
+    })
+
+    it('xử lý xuất kho một phần (Partial Dispatch) cập nhật đúng lượng và trạng thái', () => {
+      const allocation = {
+        allocatedGrams: 100000, // 100 kg
+        dispatchedGrams: 0,
+        releasedGrams: 0,
+      }
+
+      // Xuất 40 kg
+      const step1 = calculatePartialDispatchAllocation(allocation, 40000)
+      expect(step1.newDispatchedGrams).toBe(40000)
+      expect(step1.unreleasedGrams).toBe(60000)
+      expect(step1.newStatus).toBe('PARTIALLY_DISPATCHED')
+
+      // Xuất tiếp 60 kg còn lại
+      const step2 = calculatePartialDispatchAllocation(
+        {
+          ...allocation,
+          dispatchedGrams: step1.newDispatchedGrams,
+        },
+        60000
+      )
+      expect(step2.newDispatchedGrams).toBe(100000)
+      expect(step2.unreleasedGrams).toBe(0)
+      expect(step2.newStatus).toBe('DISPATCHED')
+    })
+
+    it('từ chối xuất kho vượt quá lượng phân bổ còn lại', () => {
+      const allocation = {
+        allocatedGrams: 50000,
+        dispatchedGrams: 30000,
+        releasedGrams: 0,
+      }
+
+      // Chỉ còn 20 kg, đòi xuất 30 kg => Ném lỗi
+      expect(() => calculatePartialDispatchAllocation(allocation, 30000)).toThrowError(RangeError)
+    })
+
+    it('khi hủy đơn: CHỈ giải phóng phần CHƯA XUẤT, tuyệt đối không nhả phần đã xuất', () => {
+      const allocation = {
+        allocatedGrams: 100000, // Ban đầu phân bổ 100 kg
+        dispatchedGrams: 40000, // Đã giao 40 kg
+        releasedGrams: 0,
+      }
+
+      // Khách hủy đơn đối với phần còn lại:
+      // Hàm chỉ giải phóng 60 kg (phần chưa xuất), 40 kg đã xuất giữ nguyên
+      const releaseResult = calculateReleaseAllocation(allocation)
+
+      expect(releaseResult.actuallyReleasedGrams).toBe(60000)
+      expect(releaseResult.newReleasedGrams).toBe(60000)
+      expect(releaseResult.unreleasedGrams).toBe(0)
+      // Vì đã từng xuất 40kg nên trạng thái kết thúc là DISPATCHED (hoàn tất giao phần đã giao)
+      expect(releaseResult.newStatus).toBe('DISPATCHED')
+    })
+
+    it('từ chối giải phóng vượt quá lượng chưa xuất', () => {
+      const allocation = {
+        allocatedGrams: 50000,
+        dispatchedGrams: 30000, // Còn 20 kg
+        releasedGrams: 0,
+      }
+
+      expect(() => calculateReleaseAllocation(allocation, 25000)).toThrowError(RangeError)
+    })
+
+    it('hỗ trợ điều chỉnh kiểm kê 2 chiều QC_ADJUSTMENT_ADD và QC_ADJUSTMENT_SUB với khối lượng dương', () => {
+      const entries: LedgerEntry[] = [
+        { type: 'IMPORT', quantityGrams: 100000 },             // 100 kg
+        { type: 'QC_ADJUSTMENT_ADD', quantityGrams: 5000 },    // Kiểm kê thừa 5 kg
+        { type: 'QC_ADJUSTMENT_SUB', quantityGrams: 3000 },    // Kiểm kê thiếu 3 kg
+      ]
+      const summary = calculateStockFromLedger(entries)
+
+      // Physical = 100 + 5 - 3 = 102 kg
+      expect(summary.physicalStockGrams).toBe(102000)
+      expect(summary.availableGrams).toBe(102000)
+      expect(summary.hasDeficit).toBe(false)
+    })
+
+    it('kịch bản tái phân bổ (Re-allocation): Lần 1 RELEASED -> Lần 2 phân bổ lại thành công', () => {
+      // Lần 1: Giữ 50kg, sau 10 phút quá hạn => RELEASED
+      const attempt1 = {
+        allocatedGrams: 50000,
+        dispatchedGrams: 0,
+        releasedGrams: 0,
+        status: 'HOLD_PENDING' as const,
+      }
+      const releasedAttempt1 = calculateReleaseAllocation(attempt1)
+      expect(releasedAttempt1.newStatus).toBe('RELEASED')
+      expect(releasedAttempt1.unreleasedGrams).toBe(0)
+
+      // Lần 2: Khách hàng đặt lại hoặc admin phân bổ lại từ cùng lô LO-01
+      // Phân bổ lần 2 được tạo độc lập, không bị xung đột với bản ghi cũ đã RELEASED
+      const attempt2 = {
+        allocatedGrams: 50000,
+        dispatchedGrams: 0,
+        releasedGrams: 0,
+        status: 'HOLD_PENDING' as const,
+      }
+      expect(calculateUnreleasedAllocationGrams(attempt2)).toBe(50000)
     })
   })
 })

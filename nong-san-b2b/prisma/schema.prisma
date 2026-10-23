@@ -99,6 +99,33 @@ enum ShipmentStatus {
   CANCELLED
 }
 
+enum BatchStatus {
+  UNVERIFIED
+  ACTIVE
+  LOCKED_QC
+  EXPIRED
+  DEPLETED
+}
+
+enum InventoryLedgerType {
+  IMPORT
+  RESERVATION_HOLD
+  RESERVATION_RELEASE
+  DISPATCH_OUT
+  SHRINKAGE_LOSS
+  QC_ADJUSTMENT
+  QC_ADJUSTMENT_ADD
+  QC_ADJUSTMENT_SUB
+}
+
+enum AllocationStatus {
+  HOLD_PENDING
+  ALLOCATED_CONFIRMED
+  PARTIALLY_DISPATCHED
+  DISPATCHED
+  RELEASED
+}
+
 model CustomerGroup {
   id              String   @id @default(cuid())
   code            String   @unique
@@ -189,6 +216,7 @@ model Product {
   seasonStatus        SeasonStatus
   requiresCold        Boolean          @default(false)
   isActive            Boolean          @default(true)
+  inventoryTrackingEnabled Boolean     @default(false)
   preorderOpen        Boolean          @default(false)
   preorderPricePerKg  Int?
   preorderBandPercent Int              @default(10)
@@ -235,17 +263,29 @@ model WeeklyCapacity {
 }
 
 model Batch {
-  id            String      @id @default(cuid())
-  code          String      @unique
+  id            String                      @id @default(cuid())
+  code          String                      @unique
   productId     String
   farmId        String
-  harvestDate   DateTime    @db.Date
+  harvestDate   DateTime                    @db.Date
   quantityGrams Int
+  harvestGrams  Int?
+  expiryDate    DateTime?                   @db.Date
+  status        BatchStatus                 @default(UNVERIFIED)
+  isFefoEligible Boolean                    @default(false)
+  qcNotes       String?                     @db.Text
+  verifiedAt    DateTime?
+  verifiedById  String?
   note          String?
-  product       Product     @relation(fields: [productId], references: [id])
-  farm          Farm        @relation(fields: [farmId], references: [id])
+  product       Product                     @relation(fields: [productId], references: [id])
+  farm          Farm                        @relation(fields: [farmId], references: [id])
   orderItems    OrderItem[]
-  createdAt     DateTime    @default(now())
+  ledgerEntries InventoryLedger[]
+  allocations   OrderItemBatchAllocation[]
+  createdAt     DateTime                    @default(now())
+
+  @@index([productId, status])
+  @@index([expiryDate])
 }
 
 model Order {
@@ -283,28 +323,31 @@ model Order {
   transactions             PaymentTransaction[]
   events                   OrderEvent[]
   complaints               Complaint[]
+  inventoryLedgers         InventoryLedger[]
   createdAt                DateTime             @default(now())
   updatedAt                DateTime             @updatedAt
 }
 
 model OrderItem {
-  id             String    @id @default(cuid())
-  orderId        String
-  productId      String
-  packagingId    String
-  productName    String
-  packagingName  String
-  isSample       Boolean
-  quantity       Int
-  orderedGrams   Int
-  unitPricePerKg Int
-  lineTotal      Int
-  actualGrams    Int?
-  finalLineTotal Int?
-  batchId        String?
-  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  batch          Batch?    @relation(fields: [batchId], references: [id])
-  packaging      Packaging @relation(fields: [packagingId], references: [id])
+  id               String                      @id @default(cuid())
+  orderId          String
+  productId        String
+  packagingId      String
+  productName      String
+  packagingName    String
+  isSample         Boolean
+  quantity         Int
+  orderedGrams     Int
+  unitPricePerKg   Int
+  lineTotal        Int
+  actualGrams      Int?
+  finalLineTotal   Int?
+  batchId          String?
+  order            Order                       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  batch            Batch?                      @relation(fields: [batchId], references: [id])
+  packaging        Packaging                   @relation(fields: [packagingId], references: [id])
+  allocations      OrderItemBatchAllocation[]
+  inventoryLedgers InventoryLedger[]
 }
 
 model PaymentTransaction {
@@ -414,4 +457,47 @@ model AppSetting {
   value       String
   description String?
   updatedAt   DateTime @updatedAt
+}
+
+model InventoryLedger {
+  id             String              @id @default(cuid())
+  batchId        String
+  orderId        String?
+  orderItemId    String?
+  type           InventoryLedgerType
+  quantityGrams  Int
+  idempotencyKey String?             @unique
+  referenceCode  String?
+  actorId        String?
+  notes          String?             @db.Text
+  createdAt      DateTime            @default(now())
+  batch          Batch               @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  order          Order?              @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderItem      OrderItem?          @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  @@index([batchId, type])
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+model OrderItemBatchAllocation {
+  id              String           @id @default(cuid())
+  orderItemId     String
+  batchId         String
+  allocatedGrams  Int
+  dispatchedGrams Int              @default(0)
+  releasedGrams   Int              @default(0)
+  status          AllocationStatus @default(HOLD_PENDING)
+  holdExpiresAt   DateTime?
+  releasedAt      DateTime?
+  idempotencyKey  String?          @unique
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  orderItem       OrderItem        @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  batch           Batch            @relation(fields: [batchId], references: [id], onDelete: Restrict)
+
+  @@index([orderItemId, batchId])
+  @@index([orderItemId])
+  @@index([batchId])
+  @@index([status])
 }

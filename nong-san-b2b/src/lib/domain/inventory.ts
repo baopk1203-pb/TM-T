@@ -20,12 +20,21 @@ export const VIETNAM_TIMEZONE = 'Asia/Ho_Chi_Minh'
 export type BatchStatus = 'UNVERIFIED' | 'ACTIVE' | 'LOCKED_QC' | 'EXPIRED' | 'DEPLETED'
 
 export type InventoryLedgerType =
-  | 'IMPORT'              // Thực nhập kho từ nông trường
+  | 'IMPORT'              // Thực nhập kho từ nông trường (+)
   | 'RESERVATION_HOLD'    // Giữ chỗ cho đơn hàng chờ thanh toán / đóng gói
   | 'RESERVATION_RELEASE' // Giải phóng giữ chỗ do hủy hoặc hết hạn
-  | 'DISPATCH_OUT'        // Thực xuất kho bàn giao tài xế
-  | 'SHRINKAGE_LOSS'      // Hao hụt, hư hỏng tự nhiên trong kho
-  | 'QC_ADJUSTMENT'       // Cân đối điều chỉnh sau kiểm kê
+  | 'DISPATCH_OUT'        // Thực xuất kho bàn giao tài xế (-)
+  | 'SHRINKAGE_LOSS'      // Hao hụt, hư hỏng tự nhiên trong kho (-)
+  | 'QC_ADJUSTMENT'       // Cân đối điều chỉnh sau kiểm kê (tương thích cũ)
+  | 'QC_ADJUSTMENT_ADD'   // Điều chỉnh tăng sau kiểm kê (+)
+  | 'QC_ADJUSTMENT_SUB'   // Điều chỉnh giảm sau kiểm kê (-)
+
+export type AllocationStatus =
+  | 'HOLD_PENDING'          // Đang giữ chỗ tạm thời (chờ thanh toán 10 phút)
+  | 'ALLOCATED_CONFIRMED'   // Đã xác nhận thanh toán hợp lệ (chờ xuất kho)
+  | 'PARTIALLY_DISPATCHED'  // Đã xuất kho một phần
+  | 'DISPATCHED'            // Đã xuất kho hoàn toàn
+  | 'RELEASED'              // Đã giải phóng toàn bộ do hủy / quá hạn
 
 export interface LedgerEntry {
   type: InventoryLedgerType
@@ -39,6 +48,17 @@ export interface BatchStockSummary {
   dispatchedGrams: number
   shrinkageGrams: number
   importGrams: number
+  rawPhysicalStockGrams: number
+  rawReservedGrams: number
+  rawAvailableGrams: number
+  hasDeficit: boolean
+  warnings: string[]
+}
+
+export interface InvariantVerificationResult {
+  valid: boolean
+  violations: string[]
+  warnings: string[]
 }
 
 export interface BatchCandidate {
@@ -255,6 +275,14 @@ export function calculateStockFromLedger(entries: LedgerEntry[]): BatchStockSumm
         // Điều chỉnh kiểm kê: giả định ghi nhận số dương tăng hoặc âm giảm
         qcAdjustmentGrams += entry.quantityGrams
         break
+      case 'QC_ADJUSTMENT_ADD':
+        // Điều chỉnh tăng sau kiểm kê (+)
+        qcAdjustmentGrams += entry.quantityGrams
+        break
+      case 'QC_ADJUSTMENT_SUB':
+        // Điều chỉnh giảm sau kiểm kê (-)
+        qcAdjustmentGrams -= entry.quantityGrams
+        break
       default:
         // Bỏ qua loại không xác định để tương thích ngược
         break
@@ -262,16 +290,35 @@ export function calculateStockFromLedger(entries: LedgerEntry[]): BatchStockSumm
   }
 
   // 1. Tồn kho vật lý thực tế trên kệ kho
-  const rawPhysical = importGrams - dispatchGrams - shrinkageGrams + qcAdjustmentGrams
-  const physicalStockGrams = Math.max(0, rawPhysical)
+  const rawPhysicalStockGrams = importGrams - dispatchGrams - shrinkageGrams + qcAdjustmentGrams
+  const physicalStockGrams = Math.max(0, rawPhysicalStockGrams)
 
   // 2. Khối lượng đang giữ chỗ chưa xuất kho
-  const rawReserved = holdGrams - releaseGrams - dispatchGrams
-  const reservedGrams = Math.max(0, rawReserved)
+  const rawReservedGrams = holdGrams - releaseGrams - dispatchGrams
+  const reservedGrams = Math.max(0, rawReservedGrams)
 
-  // 3. Tồn khả dụng để mở bán
-  const rawAvailable = physicalStockGrams - reservedGrams
-  const availableGrams = Math.max(0, rawAvailable)
+  // 3. Tồn khả dụng để mở bán (không cho phép âm)
+  const rawAvailableGrams = rawPhysicalStockGrams - rawReservedGrams
+  const availableGrams = Math.max(0, physicalStockGrams - reservedGrams)
+
+  // 4. Phát hiện bất thường (Deficit & Warnings) - Không che giấu mất cân đối
+  const warnings: string[] = []
+  let hasDeficit = false
+
+  if (rawPhysicalStockGrams < 0) {
+    hasDeficit = true
+    warnings.push(`CẢNH BÁO TỒN ÂM: Tồn vật lý bị âm (${rawPhysicalStockGrams}g). Lượng xuất kho và hao hụt vượt quá số lượng thực nhập.`)
+  }
+
+  if (rawReservedGrams < 0) {
+    hasDeficit = true
+    warnings.push(`CẢNH BÁO GIỮ CHỖ ÂM: Khối lượng giữ chỗ bị âm (${rawReservedGrams}g). Có thể do xuất kho khi chưa có giữ chỗ hoặc giải phóng hai lần.`)
+  }
+
+  if (rawAvailableGrams < 0) {
+    hasDeficit = true
+    warnings.push(`CẢNH BÁO THIẾU HỤT PHÂN BỔ: Tồn khả dụng thô bị âm (${rawAvailableGrams}g). Hàng đang giữ (${reservedGrams}g) vượt quá tồn vật lý (${physicalStockGrams}g) do hao hụt tác động lên hàng đã giữ.`)
+  }
 
   return {
     physicalStockGrams,
@@ -280,6 +327,147 @@ export function calculateStockFromLedger(entries: LedgerEntry[]): BatchStockSumm
     dispatchedGrams: dispatchGrams,
     shrinkageGrams,
     importGrams,
+    rawPhysicalStockGrams,
+    rawReservedGrams,
+    rawAvailableGrams,
+    hasDeficit,
+    warnings,
+  }
+}
+
+/**
+ * Kiểm tra các điều kiện bất biến nghiệp vụ (Business Invariants) của tồn kho.
+ * Phục vụ cảnh báo hệ thống, đối soát kế toán và chặn các giao dịch vi phạm.
+ */
+export function verifyInventoryInvariants(summary: BatchStockSummary): InvariantVerificationResult {
+  const violations: string[] = []
+  const warnings: string[] = [...summary.warnings]
+
+  // Invariant 1: Tồn vật lý không được âm
+  if (summary.rawPhysicalStockGrams < 0) {
+    violations.push('INVARIANT_VIOLATION_PHYSICAL_DEFICIT: Tồn vật lý thực tế không thể âm.')
+  }
+
+  // Invariant 2: Lượng giữ chỗ không được âm
+  if (summary.rawReservedGrams < 0) {
+    violations.push('INVARIANT_VIOLATION_RESERVED_DEFICIT: Lượng hàng giữ chỗ không thể âm.')
+  }
+
+  // Invariant 3: Tồn khả dụng không thể vượt quá tồn vật lý
+  if (summary.availableGrams > summary.physicalStockGrams) {
+    violations.push('INVARIANT_VIOLATION_AVAILABLE_EXCEEDS_PHYSICAL: Tồn khả dụng không thể lớn hơn tồn vật lý.')
+  }
+
+  // Invariant 4: Tồn khả dụng thô âm nghĩa là hàng đã giữ vượt tồn thực tế
+  if (summary.rawAvailableGrams < 0) {
+    violations.push('INVARIANT_VIOLATION_OVER_ALLOCATED: Tổng lượng hàng đã giữ vượt quá tồn kho vật lý hiện có (do hao hụt hoặc kiểm kê giảm).')
+  }
+
+  return {
+    valid: violations.length === 0,
+    violations,
+    warnings,
+  }
+}
+
+// ============================================================================
+// 3B. QUẢN LÝ VÒNG ĐỜI PHÂN BỔ & GIỮ CHỖ (RESERVATION & ALLOCATION DOMAIN)
+// ============================================================================
+
+export interface AllocationStateInput {
+  allocatedGrams: number
+  dispatchedGrams: number
+  releasedGrams: number
+  status?: AllocationStatus
+}
+
+/**
+ * Tính toán lượng hàng còn đang bị giữ chưa xuất và chưa giải phóng.
+ * UnreleasedGrams = allocatedGrams - dispatchedGrams - releasedGrams
+ */
+export function calculateUnreleasedAllocationGrams(allocation: AllocationStateInput): number {
+  validateIntegerGrams(allocation.allocatedGrams, 'Lượng phân bổ ban đầu')
+  validateIntegerGrams(allocation.dispatchedGrams, 'Lượng đã xuất')
+  validateIntegerGrams(allocation.releasedGrams, 'Lượng đã giải phóng')
+
+  const unreleased = allocation.allocatedGrams - allocation.dispatchedGrams - allocation.releasedGrams
+  return Math.max(0, unreleased)
+}
+
+/**
+ * Xử lý xuất kho một phần (Partial Dispatch) trên dòng phân bổ:
+ * Chỉ xuất tối đa bằng lượng chưa xuất chưa nhả.
+ */
+export function calculatePartialDispatchAllocation(
+  allocation: AllocationStateInput,
+  dispatchGrams: number
+): {
+  newDispatchedGrams: number
+  unreleasedGrams: number
+  newStatus: AllocationStatus
+} {
+  validateIntegerGrams(dispatchGrams, 'Lượng yêu cầu xuất')
+  const currentUnreleased = calculateUnreleasedAllocationGrams(allocation)
+
+  if (dispatchGrams <= 0) {
+    throw new RangeError('Khối lượng xuất kho phải là số nguyên dương')
+  }
+
+  if (dispatchGrams > currentUnreleased) {
+    throw new RangeError(
+      `Không thể xuất kho ${gramsToKg(dispatchGrams)} kg vì lượng phân bổ chưa xuất chỉ còn ${gramsToKg(currentUnreleased)} kg`
+    )
+  }
+
+  const newDispatchedGrams = allocation.dispatchedGrams + dispatchGrams
+  const newUnreleased = allocation.allocatedGrams - newDispatchedGrams - allocation.releasedGrams
+  const newStatus: AllocationStatus = newUnreleased === 0 ? 'DISPATCHED' : 'PARTIALLY_DISPATCHED'
+
+  return {
+    newDispatchedGrams,
+    unreleasedGrams: Math.max(0, newUnreleased),
+    newStatus,
+  }
+}
+
+/**
+ * Xử lý giải phóng hàng (Release Hold) khi đơn bị hủy, quá hạn hoặc chốt cân giảm:
+ * Chỉ giải phóng phần hàng CHƯA XUẤT. Tuyệt đối không nhả phần hàng đã xuất kho!
+ */
+export function calculateReleaseAllocation(
+  allocation: AllocationStateInput,
+  requestedReleaseGrams?: number
+): {
+  newReleasedGrams: number
+  actuallyReleasedGrams: number
+  unreleasedGrams: number
+  newStatus: AllocationStatus
+} {
+  const currentUnreleased = calculateUnreleasedAllocationGrams(allocation)
+
+  // Mặc định giải phóng toàn bộ phần còn lại nếu không truyền tham số
+  const toRelease = requestedReleaseGrams !== undefined ? requestedReleaseGrams : currentUnreleased
+  validateIntegerGrams(toRelease, 'Lượng yêu cầu giải phóng')
+
+  if (toRelease > currentUnreleased) {
+    throw new RangeError(
+      `Không thể giải phóng ${gramsToKg(toRelease)} kg vì chỉ còn ${gramsToKg(currentUnreleased)} kg chưa xuất`
+    )
+  }
+
+  const newReleasedGrams = allocation.releasedGrams + toRelease
+  const newUnreleased = allocation.allocatedGrams - allocation.dispatchedGrams - newReleasedGrams
+
+  let newStatus: AllocationStatus = allocation.status || 'HOLD_PENDING'
+  if (newUnreleased === 0) {
+    newStatus = allocation.dispatchedGrams > 0 ? 'DISPATCHED' : 'RELEASED'
+  }
+
+  return {
+    newReleasedGrams,
+    actuallyReleasedGrams: toRelease,
+    unreleasedGrams: Math.max(0, newUnreleased),
+    newStatus,
   }
 }
 

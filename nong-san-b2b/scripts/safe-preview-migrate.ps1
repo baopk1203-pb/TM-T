@@ -23,9 +23,10 @@ param(
     [System.Security.SecureString]$SecureConnectionString = $null,
 
     [string]$BackupSnapshotId = '',
+    [switch]$BackupVerifiedByPO = $false,    # PO da xac minh thu cong branch backup tren Neon Console
 
     [switch]$Diagnostic = $false,            # Bat che do chan doan chi tiet (Safe Diagnostic Mode)
-    [switch]$SkipRecoveryChecklist = $false, # Cho phep truyen co trong automated testing
+    [switch]$SkipRecoveryChecklist = $false, # Chi su dung trong Preflight test harness, cam tuyet doi trong Apply
     [switch]$SkipWorkingTreeCheck = $false,  # Cho phep bo qua kiem tra working tree trong test harness
     [switch]$NonInteractive = $false,        # Che do non-interactive cho offline test harness
     [string]$MockPrismaStatusOutput = '',    # Mock output cho offline testing
@@ -291,12 +292,24 @@ function Test-EndpointAllowlist {
 # ==============================================================================
 # HAM BAO VE G5: NEON BACKUP & RECOVERY READINESS (CHECKLIST & VERIFICATION)
 # ==============================================================================
+function Test-BackupSnapshotFormat {
+    param([string]$Id)
+    if ([string]::IsNullOrWhiteSpace($Id)) { return $false }
+    $trimmed = $Id.Trim()
+    $dummyList = @('dummy', 'test', 'none', 'null', 'undefined', 'fake', 'abc', '123', 'placeholder', 'na', 'n/a', 'y', 'n', 'yes', 'no')
+    if ($dummyList -contains $trimmed.ToLower()) { return $false }
+    if ($trimmed.Length -lt 8 -or $trimmed.Length -gt 100) { return $false }
+    if ($trimmed -notmatch '^[a-zA-Z0-9][a-zA-Z0-9_\-\.]+$') { return $false }
+    return $true
+}
+
 function Test-RecoveryReadiness {
     param(
         [string]$BackupSnapshotId = '',
         [bool]$SkipPrompt = $false,
         [bool]$NonInteractive = $false,
-        [string]$Mode = 'Preflight'
+        [string]$Mode = 'Preflight',
+        [bool]$BackupVerifiedByPO = $false
     )
 
     Write-Host ""
@@ -306,67 +319,109 @@ function Test-RecoveryReadiness {
     Write-Host "1. Neon Console (https://console.neon.tech) -> Project E Vibe." -ForegroundColor Gray
     Write-Host "2. Chon Branch 'preview-beta' -> Bam 'Create Branch' (hoac note Point-in-time LSN)." -ForegroundColor Gray
     Write-Host "3. Dat ten branch backup: backup-pre-f01-inventory-[timestamp]." -ForegroundColor Gray
-    Write-Host "4. Xac minh branch backup da hien thi tren Neon va truy cap duoc." -ForegroundColor Gray
+    Write-Host "4. Xac minh branch backup da hien thi tren Neon va o trang thai Ready." -ForegroundColor Gray
     Write-Host "5. LUU Y: Chuyen sang branch backup se thay doi Hostname connection string!" -ForegroundColor Yellow
     Write-Host "-----------------------------------------------------------------" -ForegroundColor Gray
 
-    # Neu da cung cap BackupSnapshotId
-    if (-not [string]::IsNullOrWhiteSpace($BackupSnapshotId)) {
-        Write-Host "[PASS] Hard Gate G5: Backup / Restore Point da duoc xac nhan voi dinh danh: '$BackupSnapshotId'." -ForegroundColor Green
-        return @{
-            Status = 'VERIFIED_BACKUP'
-            CanProceed = $true
-            BackupId = $BackupSnapshotId
-            Message = "Backup snapshot '$BackupSnapshotId' da duoc xac nhan."
-        }
+    # RULE 1: Trong Mode Apply, CAM TUYET DOI co bypass/waiver (-SkipRecoveryChecklist)
+    if ($Mode -eq 'Apply' -and $SkipPrompt) {
+        throw "HARD GATE G5 FAILED: Co bypass/waiver (-SkipRecoveryChecklist) bi CAM TUYET DOI trong che do Apply! Khong chap thuan bat ky waiver nao cho migration F01."
     }
 
-    # Neu co co mien tru trong test harness
-    if ($SkipPrompt) {
-        Write-Host "[WARN] Hard Gate G5: Backup prompt duoc bo qua theo tham so -SkipRecoveryChecklist." -ForegroundColor Yellow
-        return @{
-            Status = 'WAIVED_BY_PO'
-            CanProceed = $true
-            Message = "Hard Gate G5 duoc mien tru boi Product Owner / Test Harness."
-        }
-    }
-
-    # Neu o che do Preflight: Chi kiem tra huong dan
+    # CHE DO PREFLIGHT (Read-Only Dry-Run):
     if ($Mode -eq 'Preflight') {
+        if (-not [string]::IsNullOrWhiteSpace($BackupSnapshotId)) {
+            $isValidFormat = Test-BackupSnapshotFormat -Id $BackupSnapshotId
+            if (-not $isValidFormat) {
+                Write-Host "[WARN] Hard Gate G5: Backup ID '$BackupSnapshotId' khong dung dinh dang hop le tren Neon." -ForegroundColor Yellow
+                return @{
+                    Status = 'INVALID_FORMAT'
+                    CanProceed = $true
+                    BackupId = $BackupSnapshotId
+                    Message = "Backup ID khong dung dinh dang Neon nhung Preflight van cho phep tiep tuc de kiem tra cac gate khac."
+                }
+            }
+            if ($BackupVerifiedByPO) {
+                Write-Host "[PASS] Hard Gate G5: Ghi nhan Backup Snapshot da duoc PO xac minh (BACKUP_VERIFIED): '$BackupSnapshotId'." -ForegroundColor Green
+                Write-Host "       [GHI CHU GIOI HAN]: Xac minh duoc thuc hien thu cong qua PO checklist tren Neon Console do Neon API Key khong duoc luu tru tren moi truong de bao dam an toan tuyet doi." -ForegroundColor DarkGray
+                return @{
+                    Status = 'BACKUP_VERIFIED'
+                    CanProceed = $true
+                    BackupId = $BackupSnapshotId
+                    Message = "Backup snapshot '$BackupSnapshotId' da duoc Product Owner xac minh thu cong tren Neon Console."
+                }
+            }
+            Write-Host "[INFO] Hard Gate G5: Ghi nhan Backup ID '$BackupSnapshotId' (BACKUP_ID_RECORDED, chua xac minh)." -ForegroundColor Yellow
+            return @{
+                Status = 'BACKUP_ID_RECORDED'
+                CanProceed = $true
+                BackupId = $BackupSnapshotId
+                Message = "Backup ID '$BackupSnapshotId' da duoc ghi nhan (chua doi chieu Neon Console)."
+            }
+        }
+
         Write-Host "[INFO] Che do PREFLIGHT: Checklist backup da san sang de PO thuc hien truoc APPLY." -ForegroundColor Yellow
         return @{
             Status = 'PREFLIGHT_CHECKED'
             CanProceed = $true
-            Message = "Checklist backup da san sang."
+            Message = "Checklist backup da san sang cho buoc Preflight."
         }
     }
 
-    # Neu o che do Apply ma chua co backup ID
-    if ($NonInteractive) {
-        throw "HARD GATE G5 FAILED: Che do NonInteractive yeu cau truyen '-BackupSnapshotId' (hoac '-SkipRecoveryChecklist') de dam bao co backup!"
+    # CHE DO APPLY (Bat buoc phai co backup hop le va duoc xac minh):
+    $effectiveBackupId = $BackupSnapshotId
+    $isPoVerified = $BackupVerifiedByPO
+
+    # Neu chay Interactive ma chua co Backup ID qua tham so
+    if ([string]::IsNullOrWhiteSpace($effectiveBackupId)) {
+        if ($NonInteractive) {
+            throw "HARD GATE G5 FAILED: Che do Apply (Non-Interactive) bat buoc phai truyen '-BackupSnapshotId <ID>' va co xac minh! Khong duoc phep de trong."
+        }
+
+        # Interactive Mode: Yeu cau nguoi van hanh nhap Backup ID
+        $inputBackup = (Read-Host "Nhap Backup Branch Name hoac Snapshot ID da tao tren Neon Console").Trim()
+        if ([string]::IsNullOrWhiteSpace($inputBackup)) {
+            throw "HARD GATE G5 FAILED: Thao tac APPLY bi dung do nguoi van hanh khong nhap Backup Snapshot ID! Tuyet doi khong co co che bo qua (waiver) nao trong Apply."
+        }
+        $effectiveBackupId = $inputBackup
     }
 
-    $inputBackup = (Read-Host "Nhap Backup Branch Name hoac Snapshot ID da tao tren Neon Console (hoac nhan Enter neu bo qua)").Trim()
-    if (-not [string]::IsNullOrWhiteSpace($inputBackup)) {
-        Write-Host "[PASS] Hard Gate G5: Ghi nhan Backup Branch / Snapshot: '$inputBackup'." -ForegroundColor Green
-        return @{
-            Status = 'VERIFIED_BACKUP'
-            CanProceed = $true
-            BackupId = $inputBackup
-            Message = "Backup snapshot '$inputBackup' da duoc xac nhan."
+    # Kiem tra dinh dang cua Backup ID
+    $isValid = Test-BackupSnapshotFormat -Id $effectiveBackupId
+    if (-not $isValid) {
+        throw "HARD GATE G5 FAILED: Backup ID '$effectiveBackupId' khong hop le hoac la gia tri gia mao (dummy/test/ngan hon 8 ky tu). Khong the danh dau BACKUP_VERIFIED!"
+    }
+
+    # Phan biet giua BACKUP_ID_RECORDED va BACKUP_VERIFIED
+    if (-not $isPoVerified) {
+        if ($NonInteractive) {
+            # O che do Non-Interactive, neu khong truyen -BackupVerifiedByPO thi FAIL-CLOSED ngay
+            throw "HARD GATE G5 FAILED: Backup ID '$effectiveBackupId' da duoc ghi nhan (BACKUP_ID_RECORDED), nhung chua co xac minh tu PO (-BackupVerifiedByPO) ve trang thai branch 'Ready' tren Neon Console! Dung Apply de bao ve he thong."
+        } else {
+            # O che do Interactive, hoi xac minh truc tiep tu PO
+            Write-Host ""
+            Write-Host "XAC MINH TRANG THAI BRANCH TREN NEON CONSOLE:" -ForegroundColor Yellow
+            Write-Host "  -> Branch: '$effectiveBackupId'" -ForegroundColor Cyan
+            Write-Host "  -> Project: E Vibe | Source: preview-beta" -ForegroundColor Cyan
+            Write-Host "  -> Ghi chu gioi han: Do he thong khong luu tru Neon API Key trong moi truong (de bao mat credentials), buoc doi chieu nay phai do PO xac nhan thu cong qua Neon Console." -ForegroundColor DarkGray
+            $confirmVerified = (Read-Host "Ban da vao Neon Console va xac minh branch tren dang ton tai o trang thai 'Ready' chua? (y/N)").Trim()
+            if ($confirmVerified -eq 'y' -or $confirmVerified -eq 'Y') {
+                $isPoVerified = $true
+            } else {
+                throw "HARD GATE G5 FAILED: Backup ID '$effectiveBackupId' moi chi o trang thai BACKUP_ID_RECORDED, chua duoc xac minh tren Neon Console. Dung thao tac Apply!"
+            }
         }
     }
 
-    $confirmWithout = (Read-Host "CANH BAO: Ban CHUA nhap Backup ID! Ban co chac chan muon tiep tuc ma khong co backup snapshot khong? (y/N)").Trim()
-    if ($confirmWithout -eq 'y' -or $confirmWithout -eq 'Y') {
-        return @{
-            Status = 'WAIVED_WITHOUT_BACKUP_ID'
-            CanProceed = $true
-            Message = "Product Owner xac nhan tiep tuc ma khong nhap Backup ID."
-        }
-    }
+    Write-Host "[PASS] Hard Gate G5: Backup snapshot '$effectiveBackupId' da duoc Product Owner xac minh (BACKUP_VERIFIED)." -ForegroundColor Green
+    Write-Host "       [GHI CHU GIOI HAN]: Xac minh duoc thuc hien thu cong qua PO checklist tren Neon Console do Neon API Key khong duoc luu tru tren moi truong de bao dam an toan tuyet doi." -ForegroundColor DarkGray
 
-    throw "HARD GATE G5 FAILED: Thao tac APPLY bi dung do chua xac nhan ban sao luu Neon Preview!"
+    return @{
+        Status = 'BACKUP_VERIFIED'
+        CanProceed = $true
+        BackupId = $effectiveBackupId
+        Message = "Backup snapshot '$effectiveBackupId' da duoc Product Owner xac minh thu cong tren Neon Console."
+    }
 }
 
 # ==============================================================================
@@ -702,6 +757,7 @@ function Invoke-SafePreviewMigration {
         [System.Security.SecureString]$SecureConnectionString = $null,
 
         [string]$BackupSnapshotId = '',
+        [switch]$BackupVerifiedByPO = $false,
 
         [switch]$Diagnostic = $false,
         [switch]$SkipRecoveryChecklist = $false,
@@ -784,9 +840,17 @@ function Invoke-SafePreviewMigration {
     # BUOC 4: HARD GATE G5 -- BACKUP & RECOVERY READINESS
     # -------------------------------------------------------------------------
     Write-Host "--- BUOC 4: HARD GATE G5 (NEON BACKUP & RECOVERY READINESS) ---" -ForegroundColor Cyan
-    $g5Result = Test-RecoveryReadiness -BackupSnapshotId $BackupSnapshotId -SkipPrompt:$SkipRecoveryChecklist -NonInteractive:$NonInteractive -Mode $Mode
+    $g5Result = Test-RecoveryReadiness -BackupSnapshotId $BackupSnapshotId `
+        -SkipPrompt:$SkipRecoveryChecklist `
+        -NonInteractive:$NonInteractive `
+        -Mode $Mode `
+        -BackupVerifiedByPO:$BackupVerifiedByPO
     Write-Host "[INFO] Hard Gate G5: $($g5Result.Message)" -ForegroundColor Yellow
     Write-Host ""
+
+    if ($Mode -eq 'Apply' -and (-not $g5Result.CanProceed -or $g5Result.Status -ne 'BACKUP_VERIFIED')) {
+        throw "HARD GATE G5 FAILED: Che do Apply bat buoc phai dat trang thai BACKUP_VERIFIED! Hien tai la '$($g5Result.Status)'."
+    }
 
     # -------------------------------------------------------------------------
     # BUOC 5: HARD GATE G3 -- PRISMA MIGRATE STATUS (READ-ONLY)
@@ -980,5 +1044,5 @@ function Invoke-SafePreviewMigration {
 
 # Neu duoc goi truc tiep (khong phai dot-source), thuc thi controller
 if ($MyInvocation.InvocationName -ne '.') {
-    Invoke-SafePreviewMigration -Mode $Mode -ApprovedCommitSha $ApprovedCommitSha -ExpectedHost $ExpectedHost -SecureConnectionString $SecureConnectionString -BackupSnapshotId $BackupSnapshotId -Diagnostic:$Diagnostic -SkipRecoveryChecklist:$SkipRecoveryChecklist -SkipWorkingTreeCheck:$SkipWorkingTreeCheck -NonInteractive:$NonInteractive -MockPrismaStatusOutput $MockPrismaStatusOutput -MockPrismaStatusExitCode $MockPrismaStatusExitCode -MockPrismaDeployExitCode $MockPrismaDeployExitCode -MockPostCheckExitCode $MockPostCheckExitCode -MockDbResult $MockDbResult
+    Invoke-SafePreviewMigration -Mode $Mode -ApprovedCommitSha $ApprovedCommitSha -ExpectedHost $ExpectedHost -SecureConnectionString $SecureConnectionString -BackupSnapshotId $BackupSnapshotId -BackupVerifiedByPO:$BackupVerifiedByPO -Diagnostic:$Diagnostic -SkipRecoveryChecklist:$SkipRecoveryChecklist -SkipWorkingTreeCheck:$SkipWorkingTreeCheck -NonInteractive:$NonInteractive -MockPrismaStatusOutput $MockPrismaStatusOutput -MockPrismaStatusExitCode $MockPrismaStatusExitCode -MockPrismaDeployExitCode $MockPrismaDeployExitCode -MockPostCheckExitCode $MockPostCheckExitCode -MockDbResult $MockDbResult
 }

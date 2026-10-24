@@ -1,5 +1,5 @@
 # tests/unit/safe-preview-migrate.test.ps1
-# Bo kiem thu hoi quy doc lap cho Safe Preview Migration Script (S1 - S32).
+# Bo kiem thu hoi quy doc lap cho Safe Preview Migration Script (S1 - S39).
 # Chay 100% offline, khong cham network, khong cham Neon, khong mutation.
 
 $ErrorActionPreference = 'Continue'
@@ -38,7 +38,7 @@ function Record-Test {
 $realHead = (git rev-parse HEAD 2>$null).Trim()
 
 Write-Host "=================================================================" -ForegroundColor Cyan
-Write-Host "   BAT DAU CHAY 32 TEST CASES OFFLINE (EV-IMP-01B-SAFETY-FIX)    " -ForegroundColor Cyan
+Write-Host "   BAT DAU CHAY 39 TEST CASES OFFLINE (EV-IMP-01B-G5-HOTFIX)     " -ForegroundColor Cyan
 Write-Host "   Current Real Git HEAD: $realHead                              " -ForegroundColor Cyan
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -194,11 +194,11 @@ $s11Passed = ($analysisS11.Status -eq 'ALREADY_APPLIED' -and $analysisS11.CanPro
 Record-Test "S11" "Migration F01 da applied -> NO-OP" $s11Passed $analysisS11.Message
 
 # -----------------------------------------------------------------------------
-# S12: G5 Backup/Recovery Checklist & Verification (VERIFIED_BACKUP)
+# S12: G5 Backup/Recovery Checklist & Verification (BACKUP_VERIFIED)
 # -----------------------------------------------------------------------------
-$g5Result = Test-RecoveryReadiness -BackupSnapshotId "backup-snapshot-ev-imp-01b-preflight" -Mode Apply
-$s12Passed = ($g5Result.Status -eq 'VERIFIED_BACKUP' -and $g5Result.CanProceed -eq $true)
-Record-Test "S12" "G5 ghi nhan Backup Snapshot hop le (VERIFIED_BACKUP)" $s12Passed "Status: $($g5Result.Status)"
+$g5Result = Test-RecoveryReadiness -BackupSnapshotId "backup-pre-f01-inventory-preflight" -BackupVerifiedByPO:$true -NonInteractive:$true -Mode Apply
+$s12Passed = ($g5Result.Status -eq 'BACKUP_VERIFIED' -and $g5Result.CanProceed -eq $true)
+Record-Test "S12" "G5 ghi nhan Backup Snapshot hop le va duoc PO xac minh (BACKUP_VERIFIED)" $s12Passed "Status: $($g5Result.Status)"
 
 # -----------------------------------------------------------------------------
 # S13: Nguoi dung nhap N hoac de trong trong Apply mode -> STOP
@@ -210,7 +210,8 @@ try {
         -ApprovedCommitSha $realHead `
         -ExpectedHost "ep-preview-beta.c-7.us-east-2.aws.neon.tech" `
         -SecureConnectionString $secTest `
-        -SkipRecoveryChecklist `
+        -BackupSnapshotId "backup-pre-f01-inventory-20261024-test" `
+        -BackupVerifiedByPO `
         -SkipWorkingTreeCheck `
         -NonInteractive `
         -MockPrismaStatusOutput $mockValidF01Pending `
@@ -230,7 +231,8 @@ try {
         -ApprovedCommitSha $realHead `
         -ExpectedHost "ep-preview-beta.c-7.us-east-2.aws.neon.tech" `
         -SecureConnectionString $secTest `
-        -SkipRecoveryChecklist `
+        -BackupSnapshotId "backup-pre-f01-inventory-20261024-test" `
+        -BackupVerifiedByPO `
         -SkipWorkingTreeCheck `
         -NonInteractive `
         -MockPrismaStatusOutput $mockValidF01Pending `
@@ -250,7 +252,8 @@ try {
         -ApprovedCommitSha $realHead `
         -ExpectedHost "ep-preview-beta.c-7.us-east-2.aws.neon.tech" `
         -SecureConnectionString $secTest `
-        -SkipRecoveryChecklist `
+        -BackupSnapshotId "backup-pre-f01-inventory-20261024-test" `
+        -BackupVerifiedByPO `
         -SkipWorkingTreeCheck `
         -NonInteractive `
         -MockPrismaStatusOutput $mockValidF01Pending `
@@ -455,9 +458,94 @@ try {
     Record-Test "S32" "G5 NonInteractive khong co backup ID -> STOP (G5)" $matched $_.Exception.Message
 }
 
+# -----------------------------------------------------------------------------
+# S33: G5 Co bypass/waiver (-SkipRecoveryChecklist) trong Apply -> STOP (G5)
+# -----------------------------------------------------------------------------
+try {
+    Test-RecoveryReadiness -BackupSnapshotId "backup-pre-f01-inventory-test" -SkipPrompt $true -Mode Apply
+    Record-Test "S33" "G5 Co bypass/waiver (-SkipRecoveryChecklist) trong Apply -> STOP (G5)" $false "Khong nem loi khi dung SkipRecoveryChecklist trong Apply"
+} catch {
+    $matched = $_.Exception.Message -match "HARD GATE G5 FAILED: Co bypass/waiver \(-SkipRecoveryChecklist\) bi CAM TUYET DOI"
+    Record-Test "S33" "G5 Co bypass/waiver (-SkipRecoveryChecklist) trong Apply -> STOP (G5)" $matched $_.Exception.Message
+}
+
+# -----------------------------------------------------------------------------
+# S34: G5 Backup ID gia mao hoac sai dinh dang ('dummy') -> STOP (G5)
+# -----------------------------------------------------------------------------
+try {
+    Test-RecoveryReadiness -BackupSnapshotId "dummy" -NonInteractive $true -Mode Apply
+    Record-Test "S34" "G5 Backup ID gia mao hoac sai dinh dang ('dummy') -> STOP (G5)" $false "Khong nem loi khi truyen dummy ID"
+} catch {
+    $matched = $_.Exception.Message -match "khong hop le hoac la gia tri gia mao"
+    Record-Test "S34" "G5 Backup ID gia mao hoac sai dinh dang ('dummy') -> STOP (G5)" $matched $_.Exception.Message
+}
+
+# -----------------------------------------------------------------------------
+# S35: G5 NonInteractive co ID nhung chua PO xac minh -> STOP (BACKUP_ID_RECORDED)
+# -----------------------------------------------------------------------------
+try {
+    Test-RecoveryReadiness -BackupSnapshotId "backup-pre-f01-inventory-valid" -BackupVerifiedByPO $false -NonInteractive $true -Mode Apply
+    Record-Test "S35" "G5 NonInteractive co ID nhung chua PO xac minh -> STOP (G5)" $false "Khong nem loi khi chua co PO xac minh"
+} catch {
+    $matched = $_.Exception.Message -match "BACKUP_ID_RECORDED.*nhung chua co xac minh tu PO"
+    Record-Test "S35" "G5 NonInteractive co ID nhung chua PO xac minh -> STOP (G5)" $matched $_.Exception.Message
+}
+
+# -----------------------------------------------------------------------------
+# S36: G5 Preflight khong co backup ID -> PASS read-only (PREFLIGHT_CHECKED)
+# -----------------------------------------------------------------------------
+try {
+    $g5Preflight = Test-RecoveryReadiness -Mode Preflight
+    $s36Passed = ($g5Preflight.Status -eq 'PREFLIGHT_CHECKED' -and $g5Preflight.CanProceed -eq $true)
+    Record-Test "S36" "G5 Preflight khong co backup ID -> PASS read-only (PREFLIGHT_CHECKED)" $s36Passed "Status: $($g5Preflight.Status)"
+} catch {
+    Record-Test "S36" "G5 Preflight khong co backup ID -> PASS read-only (PREFLIGHT_CHECKED)" $false $_.Exception.Message
+}
+
+# -----------------------------------------------------------------------------
+# S37: G5 Preflight co backup ID nhung chua verify -> PASS (BACKUP_ID_RECORDED)
+# -----------------------------------------------------------------------------
+try {
+    $g5Recorded = Test-RecoveryReadiness -BackupSnapshotId "backup-pre-f01-inventory-valid" -Mode Preflight
+    $s37Passed = ($g5Recorded.Status -eq 'BACKUP_ID_RECORDED' -and $g5Recorded.CanProceed -eq $true)
+    Record-Test "S37" "G5 Preflight co backup ID nhung chua verify -> PASS (BACKUP_ID_RECORDED)" $s37Passed "Status: $($g5Recorded.Status)"
+} catch {
+    Record-Test "S37" "G5 Preflight co backup ID nhung chua verify -> PASS (BACKUP_ID_RECORDED)" $false $_.Exception.Message
+}
+
+# -----------------------------------------------------------------------------
+# S38: G5 Interactive Apply de trong backup ID -> STOP (Khong cho bypass)
+# -----------------------------------------------------------------------------
+try {
+    # Mock Read-Host tra ve chuoi rong
+    function Read-Host { param([string]$Prompt) return "" }
+    Test-RecoveryReadiness -Mode Apply -NonInteractive $false
+    Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
+    Record-Test "S38" "G5 Interactive Apply de trong backup ID -> STOP" $false "Khong nem loi khi de trong backup ID"
+} catch {
+    Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
+    $matched = $_.Exception.Message -match "HARD GATE G5 FAILED.*nguoi van hanh khong nhap Backup Snapshot ID"
+    Record-Test "S38" "G5 Interactive Apply de trong backup ID -> STOP" $matched $_.Exception.Message
+}
+
+# -----------------------------------------------------------------------------
+# S39: G5 Interactive Apply nhap 'y' (thu co bypass cu) -> STOP (Chan bypass)
+# -----------------------------------------------------------------------------
+try {
+    # Mock Read-Host tra ve 'y'
+    function Read-Host { param([string]$Prompt) return "y" }
+    Test-RecoveryReadiness -Mode Apply -NonInteractive $false
+    Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
+    Record-Test "S39" "G5 Interactive Apply nhap 'y' (thu bypass cu) -> STOP" $false "Khong chan duoc bypass nhap 'y'"
+} catch {
+    Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
+    $matched = $_.Exception.Message -match "khong hop le hoac la gia tri gia mao"
+    Record-Test "S39" "G5 Interactive Apply nhap 'y' (thu bypass cu) -> STOP" $matched $_.Exception.Message
+}
+
 Write-Host ""
 Write-Host "=================================================================" -ForegroundColor Cyan
-Write-Host "   TONG KET BANG KET QUA KIEM THU OFFLINE (S1 - S32)             " -ForegroundColor Cyan
+Write-Host "   TONG KET BANG KET QUA KIEM THU OFFLINE (S1 - S39)             " -ForegroundColor Cyan
 Write-Host "=================================================================" -ForegroundColor Cyan
 $passedCount = ($testResults | Where-Object { $_.Result -eq "PASS" }).Count
 $totalCount = $testResults.Count

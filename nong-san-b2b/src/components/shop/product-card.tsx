@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { SeasonStatus } from '@prisma/client'
-import { MapPin, Snowflake, Sparkles, Scale, ArrowRight } from 'lucide-react'
+import { MapPin, Snowflake, Sparkles, Scale, ArrowRight, Boxes } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatVND, gramsToKg } from '@/lib/money'
+import type { PublicStockView } from '@/lib/domain/inventory-view'
 
 export interface ProductCardProps {
   slug: string
@@ -24,6 +25,7 @@ export interface ProductCardProps {
     pricePerKg: number
   }[]
   userDiscountPercent?: number
+  publicStock?: PublicStockView | null
 }
 
 export function ProductCard({
@@ -38,6 +40,7 @@ export function ProductCard({
   farm,
   priceTiers,
   userDiscountPercent = 0,
+  publicStock,
 }: ProductCardProps) {
   // Bậc giá thấp nhất (bắt đầu từ MOQ)
   const baseStartingPrice = priceTiers[0]?.pricePerKg || 0
@@ -104,11 +107,26 @@ export function ProductCard({
           </div>
 
           {/* Farm Origin Capsule on Image */}
-          <div className="absolute bottom-2.5 left-2.5 z-10">
+          <div className="absolute bottom-2.5 left-2.5 right-2.5 z-10 flex items-center justify-between gap-1.5">
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md text-[11px] font-medium text-slate-700 shadow-xs border border-white/60">
               <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
-              <span className="truncate max-w-[190px]">{farm.province}</span>
+              <span className="truncate max-w-[130px]">{farm.province}</span>
             </span>
+
+            {publicStock?.tracked && publicStock.cardBadgeLabel && (
+              <span
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold shadow-xs border backdrop-blur-md ${
+                  publicStock.status === 'IN_STOCK'
+                    ? 'bg-emerald-950/90 text-emerald-100 border-emerald-500/40'
+                    : publicStock.status === 'BELOW_MOQ'
+                    ? 'bg-amber-900/90 text-amber-100 border-amber-400/40'
+                    : 'bg-rose-900/90 text-rose-100 border-rose-400/40'
+                }`}
+              >
+                <Boxes className="w-3 h-3 shrink-0" />
+                <span>{publicStock.cardBadgeLabel}</span>
+              </span>
+            )}
           </div>
         </div>
 

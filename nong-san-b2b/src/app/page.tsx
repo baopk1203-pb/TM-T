@@ -379,6 +379,7 @@ export default async function HomePage() {
                   farm={p.farm}
                   priceTiers={p.priceTiers}
                   userDiscountPercent={userDiscountPercent}
+                  publicStock={p.publicStock}
                 />
               ))}
             </div>
@@ -419,6 +420,7 @@ export default async function HomePage() {
                       farm={p.farm}
                       priceTiers={p.priceTiers}
                       userDiscountPercent={userDiscountPercent}
+                      publicStock={p.publicStock}
                     />
                   </div>
                 ))}

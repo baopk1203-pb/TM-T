@@ -15,6 +15,8 @@ import {
   AlertTriangle,
   ChevronRight,
   Sparkles,
+  Boxes,
+  CheckCircle2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -33,6 +35,18 @@ import { formatActiveCertificatesSummary, filterActiveCertificates } from '@/lib
 import { calculateCustomerUnitPrice } from '@/lib/domain/pricing'
 import { ProductOrderBox } from './product-order-box'
 import { PreorderBox } from './preorder-box'
+import type { PublicStockView } from '@/lib/domain/inventory-view'
+
+function formatObservedTimeVn(iso: string | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d)
+}
 
 interface ProductDetailProps {
   product: {
@@ -52,6 +66,7 @@ interface ProductDetailProps {
     expectedHarvestTo: Date | null
     packagings: Packaging[]
     priceTiers: PriceTier[]
+    publicStock?: PublicStockView | null
     farm: {
       id: string
       name: string
@@ -230,6 +245,40 @@ export function ProductDetailView({
               </div>
             </div>
           </div>
+
+          {/* TỒN KHO KHẢ DỤNG THỜI GIAN THỰC (CHỈ HIỂN THỊ CHO SẢN PHẨM ĐÃ BẬT TRACKING FEFO - F01D) */}
+          {product.publicStock?.tracked && (
+            <div
+              className={`p-4 rounded-2xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                product.publicStock.status === 'IN_STOCK'
+                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                  : product.publicStock.status === 'BELOW_MOQ'
+                  ? 'bg-amber-50/80 border-amber-200 text-amber-950'
+                  : 'bg-rose-50/80 border-rose-200 text-rose-950'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                {product.publicStock.status === 'IN_STOCK' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : product.publicStock.status === 'BELOW_MOQ' ? (
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                ) : (
+                  <Boxes className="w-4 h-4 text-rose-600 shrink-0" />
+                )}
+                <div>
+                  <span className="font-bold text-sm block">
+                    {product.publicStock.detailLabel}
+                  </span>
+                  <span className="text-[11px] opacity-80">
+                    Tồn kho thực tế được phân bổ tự động theo lô thu hoạch có hạn dùng gần nhất (FEFO).
+                  </span>
+                </div>
+              </div>
+              <div className="text-[11px] font-medium opacity-75 sm:text-right shrink-0">
+                Tồn kho cập nhật lúc {formatObservedTimeVn(product.publicStock.observedAt)}
+              </div>
+            </div>
+          )}
 
           {/* BẢNG GIÁ BẬC CHI TIẾT (STITCH TIERED PRICING MATRIX) */}
           <div className="space-y-3">

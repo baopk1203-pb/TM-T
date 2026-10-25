@@ -382,10 +382,24 @@ export function CartView() {
                       >
                         {meta?.name || 'Sản phẩm sỉ'}
                       </Link>
-                      <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
+                      <div className="text-xs text-slate-500 flex flex-wrap items-center gap-2 mt-0.5">
                         <span>Nhà vườn: <strong>{meta?.farmName}</strong> ({meta?.farmProvince})</span>
                         <span>•</span>
                         <span>MOQ: <strong>{moqKg} kg</strong></span>
+                        {meta?.publicStock?.tracked && meta.publicStock.detailLabel && (
+                          <>
+                            <span>•</span>
+                            <span
+                              className={`font-semibold ${
+                                meta.publicStock.status === 'IN_STOCK'
+                                  ? 'text-emerald-700'
+                                  : 'text-rose-700'
+                              }`}
+                            >
+                              {meta.publicStock.detailLabel}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -407,6 +421,14 @@ export function CartView() {
                     </div>
                   )}
                 </div>
+
+                {/* Cảnh báo vượt tồn kho khả dụng (F01D — Mục 9.3) */}
+                {meta?.stockWarning && (
+                  <div className="px-4 sm:px-6 py-3 bg-rose-50 border-b border-rose-200 text-xs text-rose-800 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span className="font-semibold">{meta.stockWarning}</span>
+                  </div>
+                )}
 
                 {/* Khối thanh tiến trình bậc giá cho sản phẩm */}
                 {prodRegularLines.length > 0 && summary && (

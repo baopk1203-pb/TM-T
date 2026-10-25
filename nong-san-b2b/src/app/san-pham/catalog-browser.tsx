@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ProductCard } from '@/components/shop/product-card'
+import type { PublicStockView } from '@/lib/domain/inventory-view'
 
 interface ProductItem {
   id: string
@@ -35,6 +36,7 @@ interface ProductItem {
     minGrams: number
     pricePerKg: number
   }[]
+  publicStock?: PublicStockView | null
 }
 
 interface FarmOption {
@@ -295,6 +297,7 @@ export function CatalogBrowser({
               farm={p.farm}
               priceTiers={p.priceTiers}
               userDiscountPercent={userDiscountPercent}
+              publicStock={p.publicStock}
             />
           ))}
         </div>

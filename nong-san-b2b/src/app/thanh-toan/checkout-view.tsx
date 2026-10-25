@@ -729,6 +729,50 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
             </div>
 
             <CardContent className="p-6 space-y-5">
+              {/* Tóm tắt sản phẩm & tồn kho khả dụng tại thời điểm xem (F01D — Mục 9.4) */}
+              {quoteData && (
+                <div className="space-y-2 pb-3 border-b border-slate-100 text-xs">
+                  <div className="font-semibold text-slate-700">Sản phẩm đặt mua:</div>
+                  {Object.values(quoteData.productMetadata).map((meta) => {
+                    const summary = quoteData.quote.productSummaries.find(
+                      (s) => s.productId === meta.id
+                    )
+                    const sampleLine = quoteData.quote.sampleLines.find(
+                      (s) => s.productId === meta.id
+                    )
+                    const orderedGrams =
+                      (summary?.totalGrams || 0) + (sampleLine?.weightGrams || 0)
+                    const orderedKg = orderedGrams / 1000
+                    return (
+                      <div
+                        key={meta.id}
+                        className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-slate-900 line-clamp-1">
+                            {meta.name}
+                          </span>
+                          <span className="font-mono font-bold text-slate-800 shrink-0">
+                            {orderedKg} kg
+                          </span>
+                        </div>
+                        {meta.publicStock?.tracked && meta.publicStock.detailLabel && (
+                          <div
+                            className={`text-[11px] font-medium ${
+                              meta.stockWarning
+                                ? 'text-rose-700 font-semibold'
+                                : 'text-emerald-700'
+                            }`}
+                          >
+                            Tồn kho: {meta.publicStock.detailLabel}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
               <div className="space-y-2.5 text-xs">
                 <div className="flex justify-between text-slate-600">
                   <span>Tạm tính tiền hàng:</span>
@@ -776,11 +820,22 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
                 </span>
               </div>
 
-              {/* Lỗi MOQ nếu có */}
+              {/* Lỗi MOQ hoặc vượt tồn kho khả dụng nếu có */}
               {!isCartValid && (
-                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>Giỏ hàng có sản phẩm chưa đạt MOQ, vui lòng kiểm tra lại.</span>
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-800 space-y-1.5">
+                  <div className="font-bold flex items-center gap-1.5 text-rose-900">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>Chưa thể tiến hành đặt hàng:</span>
+                  </div>
+                  {quoteData?.quote?.errors && quoteData.quote.errors.length > 0 ? (
+                    <ul className="list-disc pl-5 space-y-1 text-[11px]">
+                      {quoteData.quote.errors.map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span>Giỏ hàng có sản phẩm chưa đạt MOQ hoặc vượt tồn kho khả dụng, vui lòng kiểm tra lại.</span>
+                  )}
                 </div>
               )}
 
@@ -834,6 +889,7 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
                   Bảo đảm B2B E Vibe
                 </div>
                 <p>• Mã VietQR và thời gian giữ chỗ {RESERVATION_TIMEOUT_MINUTES} phút hiển thị ngay sau khi đặt.</p>
+                <p>• Số lượng hiển thị là tồn kho khả dụng tại thời điểm xem; tồn kho chỉ được khóa chính thức khi bấm Xác nhận đặt hàng.</p>
                 <p>• Hỗ trợ hoàn cọc 100% nếu sự cố xuất phát từ nhà vườn.</p>
               </div>
             </CardContent>

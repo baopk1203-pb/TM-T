@@ -9,6 +9,10 @@ import {
   productSchema,
   ProductInput,
 } from '@/lib/validators/product'
+import {
+  getPublicStockByProductIds,
+  getPublicStockForProduct,
+} from '@/lib/services/inventory-read'
 
 /**
  * Lấy danh sách sản phẩm cho trang Quản trị Admin
@@ -65,7 +69,7 @@ export async function getStorefrontProducts(filters?: {
     ]
   }
 
-  return await db.product.findMany({
+  const products = await db.product.findMany({
     where,
     orderBy: [
       { seasonStatus: 'asc' }, // HARVESTING -> UPCOMING -> OFF_SEASON
@@ -88,13 +92,20 @@ export async function getStorefrontProducts(filters?: {
       },
     },
   })
+
+  const stockMap = await getPublicStockByProductIds(products.map((p) => p.id))
+
+  return products.map((product) => ({
+    ...product,
+    publicStock: stockMap[product.id] ?? null,
+  }))
 }
 
 /**
  * Lấy chi tiết sản phẩm qua slug
  */
 export async function getProductBySlug(slug: string) {
-  return await db.product.findUnique({
+  const product = await db.product.findUnique({
     where: { slug },
     include: {
       farm: {
@@ -113,6 +124,15 @@ export async function getProductBySlug(slug: string) {
       },
     },
   })
+
+  if (!product) return null
+
+  const publicStock = await getPublicStockForProduct(product.id)
+
+  return {
+    ...product,
+    publicStock,
+  }
 }
 
 /**

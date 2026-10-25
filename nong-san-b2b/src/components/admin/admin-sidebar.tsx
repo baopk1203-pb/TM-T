@@ -9,6 +9,8 @@ import {
   Apple,
   Warehouse,
   QrCode,
+  Boxes,
+  History,
   CalendarRange,
   Users,
   Percent,
@@ -48,7 +50,9 @@ export const ADMIN_NAV_GROUPS = [
     items: [
       { label: 'Sản phẩm & Giá bậc', href: '/admin/san-pham', icon: Apple },
       { label: 'Nhà vườn & Chứng nhận', href: '/admin/nha-vuon', icon: Warehouse },
+      { label: 'Quản lý tồn kho FEFO', href: '/admin/ton-kho', icon: Boxes, badge: 'F01D' },
       { label: 'Lô hàng & Mã QR', href: '/admin/lo-hang', icon: QrCode },
+      { label: 'Sổ cái kho (Ledger)', href: '/admin/ton-kho/lich-su', icon: History },
       { label: 'Sản lượng theo tuần', href: '/admin/san-luong', icon: CalendarRange },
     ],
   },
@@ -82,8 +86,8 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const isItemActive = (href: string) => {
-    if (href === '/admin') {
-      return pathname === '/admin'
+    if (href === '/admin' || href === '/admin/ton-kho') {
+      return pathname === href
     }
     return pathname === href || pathname.startsWith(href + '/')
   }

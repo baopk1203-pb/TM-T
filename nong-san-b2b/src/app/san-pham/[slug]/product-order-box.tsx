@@ -18,6 +18,10 @@ import { Badge } from '@/components/ui/badge'
 import { useCartStore } from '@/lib/cart-store'
 import { formatVND, gramsToKg } from '@/lib/money'
 import { priceCart, ProductPricingData } from '@/lib/domain/pricing'
+import {
+  evaluateCartItemStockWarning,
+  type PublicStockView,
+} from '@/lib/domain/inventory-view'
 import { toast } from 'sonner'
 
 interface ProductOrderBoxProps {
@@ -25,6 +29,7 @@ interface ProductOrderBoxProps {
     id: string
     name: string
     moqGrams: number
+    publicStock?: PublicStockView | null
     priceTiers: {
       id?: string
       minGrams: number
@@ -127,6 +132,18 @@ export function ProductOrderBox({
   const moqKg = product.moqGrams / 1000
   const meetsMoq = summary?.meetsMoq ?? false
   const missingKg = (summary?.missingGramsForMoq || 0) / 1000
+
+  const stockWarningCheck = useMemo(
+    () =>
+      evaluateCartItemStockWarning({
+        productName: product.name,
+        requestedGrams: currentTotalGrams,
+        publicStock: product.publicStock,
+      }),
+    [product.name, currentTotalGrams, product.publicStock]
+  )
+  const isTrackedAndUnorderable =
+    Boolean(product.publicStock?.tracked) && !product.publicStock?.isOrderable
 
   // Xử lý tăng / giảm số lượng
   const handleQuantityChange = (pkgId: string, delta: number) => {
@@ -364,15 +381,46 @@ export function ProductOrderBox({
         </div>
       </div>
 
+      {/* Cảnh báo vượt tồn kho khả dụng hoặc hết hàng (F01D) */}
+      {product.publicStock?.tracked &&
+        (isTrackedAndUnorderable || stockWarningCheck.exceedsStock) && (
+          <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <strong className="font-bold block">
+                {isTrackedAndUnorderable
+                  ? product.publicStock.detailLabel
+                  : 'Số lượng chọn vượt quá tồn kho khả dụng'}
+              </strong>
+              {stockWarningCheck.warningMessage && !isTrackedAndUnorderable && (
+                <span className="text-[11px] text-rose-700 mt-0.5 block">
+                  {stockWarningCheck.warningMessage}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
       {/* Nút thêm quy cách sỉ vào giỏ */}
       <div>
         <Button
           onClick={handleAddToCart}
-          disabled={isPending || currentTotalKg === 0}
-          className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 text-sm rounded-full shadow-btn-glow hover:-translate-y-0.5 transition-all"
+          disabled={
+            isPending ||
+            currentTotalKg === 0 ||
+            isTrackedAndUnorderable ||
+            stockWarningCheck.exceedsStock
+          }
+          className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 text-sm rounded-full shadow-btn-glow hover:-translate-y-0.5 transition-all disabled:opacity-50"
         >
           <ShoppingCart className="w-4 h-4" />
-          Thêm {currentTotalKg > 0 ? `${currentTotalKg} kg` : ''} vào giỏ hàng
+          {isTrackedAndUnorderable
+            ? product.publicStock?.status === 'OUT_OF_STOCK'
+              ? 'Tạm hết hàng khả dụng'
+              : 'Chưa đủ tồn kho tối thiểu (MOQ)'
+            : stockWarningCheck.exceedsStock
+            ? 'Vượt quá tồn kho khả dụng'
+            : `Thêm ${currentTotalKg > 0 ? `${currentTotalKg} kg` : ''} vào giỏ hàng`}
         </Button>
       </div>
 

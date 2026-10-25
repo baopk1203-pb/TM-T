@@ -853,23 +853,30 @@ export function computeOrderPaymentDueAt(createdAt: Date = new Date()): Date {
 
 /**
  * Kiểm tra xem đơn hàng chờ xác nhận có bị quá hạn giữ chỗ 10 phút hay chưa (theo giờ Server).
- * Đơn chỉ bị coi là quá hạn khi:
- * - Đang ở trạng thái PENDING_CONFIRMATION
- * - Chưa có giao dịch thanh toán thành công (paidAmount <= 0)
- * - Có paymentDueAt và thời điểm hiện tại (now) đã vượt qua paymentDueAt (paymentDueAt < now)
+ * Quy tắc EV-IMP-01C:
+ * - Chỉ áp dụng cho đơn đang ở trạng thái PENDING_CONFIRMATION.
+ * - Nếu đã thanh toán đạt ngưỡng xác nhận (paidAmount >= requiredAmount, khi requiredAmount > 0) thì không bị coi là quá hạn.
+ * - Nếu chưa thanh toán (paidAmount = 0) hoặc mới thanh toán một phần dưới ngưỡng xác nhận (0 < paidAmount < requiredAmount):
+ *   khi thời điểm hiện tại vượt qua paymentDueAt (paymentDueAt < now), quyền giữ chỗ 10 phút của đơn đã hết hạn.
  */
 export function isOrderPaymentExpired(
   order: {
     status: string
     paymentDueAt?: Date | string | null
     paidAmount?: number
+    requiredAmount?: number
   },
   now: Date = new Date()
 ): boolean {
   if (!order || order.status !== 'PENDING_CONFIRMATION') {
     return false
   }
-  if ((order.paidAmount ?? 0) > 0) {
+  const paid = order.paidAmount ?? 0
+  if (order.requiredAmount !== undefined && order.requiredAmount > 0) {
+    if (paid >= order.requiredAmount) {
+      return false
+    }
+  } else if (paid > 0) {
     return false
   }
   if (!order.paymentDueAt) {

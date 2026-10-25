@@ -46,12 +46,6 @@ export async function processExpiredOrders(now: Date = new Date()): Promise<Expi
           {
             status: OrderStatus.PENDING_CONFIRMATION,
             paymentDueAt: { lt: now },
-            transactions: {
-              none: {
-                type: TxType.PAYMENT,
-                status: TxStatus.DONE,
-              },
-            },
           },
           {
             status: OrderStatus.DRAFT,
@@ -200,6 +194,25 @@ export async function processExpiredOrders(now: Date = new Date()): Promise<Expi
           .filter((t) => t.type === TxType.PAYMENT && t.status === TxStatus.DONE)
           .reduce((sum, t) => sum + t.amount, 0)
         if (totalPaid > 0) {
+          // PAY-08: Đơn lịch sử đã có thanh toán một phần dưới ngưỡng khi quá hạn 10 phút:
+          // Giải phóng giữ chỗ tồn kho (HOLD_PENDING -> RELEASED) để không chiếm giữ kho vô thời hạn,
+          // nhưng không tự hủy đơn bằng SYSTEM và không tự tạo hoàn tiền (chờ Admin đối soát/hủy thủ công).
+          const releaseRes = await releaseOrderInventoryAllocations(tx, {
+            orderId: current.id,
+            orderCode: (current as unknown as { code?: string | null }).code ?? null,
+            reason:
+              'Giải phóng giữ chỗ FEFO do đơn quá hạn 10 phút nhưng mới thanh toán một phần dưới ngưỡng xác nhận',
+            now,
+          })
+          if (releaseRes.releasedCount > 0) {
+            await recordOrderEvent(tx, {
+              orderId: current.id,
+              type: 'RESERVATION_HOLD_EXPIRED',
+              fromStatus: OrderStatus.PENDING_CONFIRMATION,
+              toStatus: OrderStatus.PENDING_CONFIRMATION,
+              note: `Đơn quá hạn giữ chỗ 10 phút khi mới thanh toán một phần (${totalPaid.toLocaleString('vi-VN')} đ): đã giải phóng ${releaseRes.totalReleasedGrams / 1000} kg tồn kho giữ chỗ, giữ nguyên tiền thực nhận chờ Admin đối soát thủ công`,
+            })
+          }
           return false
         }
 

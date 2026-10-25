@@ -88,7 +88,7 @@ describe('Server Action: confirmPayment() - REGRESSION-01 Test Suite', () => {
     return { txMock, mockOrderUpdate, mockTxCreate }
   }
 
-  it('Case A — FULL, mới trả 30% (4.584.000đ): Giữ trạng thái PENDING_CONFIRMATION, không chuyển PROCESSING', async () => {
+  it('Case A (PAY-03 / Phương án A) — FULL, mới trả 30% (4.584.000đ): Từ chối xác nhận, không tạo PaymentTransaction(DONE), không chuyển PROCESSING', async () => {
     const orderData = {
       id: 'order-case-a',
       code: 'DH-CASE-A',
@@ -99,7 +99,7 @@ describe('Server Action: confirmPayment() - REGRESSION-01 Test Suite', () => {
       transactions: [],
     }
 
-    const { mockOrderUpdate } = setupTxMock(orderData)
+    const { mockOrderUpdate, mockTxCreate } = setupTxMock(orderData)
 
     const result = await confirmPayment({
       orderId: 'order-case-a',
@@ -108,14 +108,14 @@ describe('Server Action: confirmPayment() - REGRESSION-01 Test Suite', () => {
       reference: 'FT-CASE-A',
     })
 
-    expect(result.success).toBe(true)
-    expect(result.message).toBe('Đã ghi nhận thanh toán thành công')
-    // Không được gọi update trạng thái sang PROCESSING
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('chưa đạt ngưỡng tối thiểu')
+    expect(result.error).toContain('15.277.500')
+    expect(result.error).toContain('10.693.500')
+    // Không tạo giao dịch DONE và không chuyển trạng thái
+    expect(mockTxCreate).not.toHaveBeenCalled()
     expect(mockOrderUpdate).not.toHaveBeenCalled()
-    // Không ghi STATUS_CHANGED event, chỉ ghi PAYMENT_CONFIRMED
-    const recordedEvents = vi.mocked(recordOrderEvent).mock.calls
-    expect(recordedEvents).toHaveLength(1)
-    expect(recordedEvents[0][1].type).toBe('PAYMENT_CONFIRMED')
+    expect(recordOrderEvent).not.toHaveBeenCalled()
   })
 
   it('Case B — FULL, trả tiếp phần còn thiếu 10.693.500đ sau khi đã trả 4.584.000đ: Chuyển PROCESSING và ghi OrderEvent đúng 1 lần', async () => {
@@ -233,14 +233,15 @@ describe('Server Action: confirmPayment() - REGRESSION-01 Test Suite', () => {
       transactions: [],
     }
 
-    // Thanh toán 30%: không chuyển trạng thái
-    const { mockOrderUpdate: mockUpdate1 } = setupTxMock(legacyOrderData)
+    // Thanh toán 30%: bị từ chối theo Phương án A (chưa đạt 100% total)
+    const { mockOrderUpdate: mockUpdate1, mockTxCreate: mockTx1 } = setupTxMock(legacyOrderData)
     const res1 = await confirmPayment({
       orderId: 'order-case-e',
       amount: 4584000,
       method: TxMethod.BANK_TRANSFER,
     })
-    expect(res1.success).toBe(true)
+    expect(res1.success).toBe(false)
+    expect(mockTx1).not.toHaveBeenCalled()
     expect(mockUpdate1).not.toHaveBeenCalled()
 
     // Thanh toán đủ 100%: chuyển trạng thái

@@ -27,9 +27,17 @@ import {
 } from '@/lib/services/inventory-reservation'
 import { placeOrder } from '@/actions/order'
 import { confirmPayment } from '@/actions/admin-order'
+import { cancelOrder } from '@/actions/order-lifecycle'
 import { processExpiredOrders } from '@/lib/services/order-expiration'
+import {
+  executePrepareF01CDemoBatches,
+  F01C_DEMO_BATCH_SPECS,
+  HISTORICAL_UNVERIFIED_BATCH_CODES,
+  verifyDemoScriptSafetyGates,
+  DemoBatchStorageAdapter,
+} from '../../scripts/prepare-f01c-demo-batches'
 import { db } from '@/lib/db'
-import { requireAdmin, requireUser } from '@/lib/auth'
+import { getServerAuthSession, requireAdmin, requireUser } from '@/lib/auth'
 
 vi.mock('@/lib/db', () => ({
   db: {
@@ -183,6 +191,7 @@ function createInMemoryInventoryState() {
       type: TxType
       status: TxStatus
       amount: number
+      reference?: string | null
     }>
   }> = []
 
@@ -323,10 +332,6 @@ function createInMemoryInventoryState() {
               if (prodIds && !o.items.some((i) => prodIds.includes(i.productId))) {
                 return false
               }
-              const hasDonePayment = o.transactions.some(
-                (t) => t.type === TxType.PAYMENT && t.status === TxStatus.DONE
-              )
-              if (hasDonePayment) return false
               return true
             })
           }
@@ -335,9 +340,19 @@ function createInMemoryInventoryState() {
           return orders.find((o) => (where.id ? o.id === where.id : o.code === where.code)) ?? null
         }),
         update: vi.fn().mockImplementation(
-          async ({ where, data }: { where: { id: string }; data: Partial<{ status: OrderStatus }> }) => {
+          async ({
+            where,
+            data,
+          }: {
+            where: { id: string }
+            data: Partial<{ status: OrderStatus; cancelledBy: string; cancelReason: string }>
+          }) => {
             const ord = orders.find((o) => o.id === where.id)
-            if (ord && data.status) ord.status = data.status
+            if (ord) {
+              if (data.status) ord.status = data.status
+              if (data.cancelledBy) ord.cancelledBy = data.cancelledBy
+              if (data.cancelReason) ord.cancelReason = data.cancelReason
+            }
             return ord
           }
         ),
@@ -360,14 +375,18 @@ function createInMemoryInventoryState() {
           }
         ),
       },
+      shipment: {
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
       paymentTransaction: {
         create: vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
           const ord = orders.find((o) => o.id === data.orderId)
           const txRecord = {
-            id: `tx-${Date.now()}`,
+            id: `tx-${Date.now()}-${Math.random()}`,
             type: data.type as TxType,
             status: data.status as TxStatus,
             amount: data.amount as number,
+            reference: (data.reference as string | null) ?? null,
           }
           if (ord) {
             ord.transactions.push(txRecord)
@@ -1065,7 +1084,7 @@ describe('EV-IMP-01C: Checkout FEFO Reservation & 10-Minute Payment Timeout', ()
     expect(confirmRes.confirmedCount).toBe(0) // Đã RELEASED nên không thể confirm
   })
 
-  it('9. Kiểm tra 6 tình huống thanh toán một phần, cọc 30%, 100% và giao dịch chưa hoàn tất (QA-F01C-01)', async () => {
+  it('9. Bộ Regression Tests bắt buộc PAY-01 đến PAY-12 (EV-IMP-01C Payment Threshold & Hardening)', async () => {
     const state = createInMemoryInventoryState()
     const tx = state.buildTxClient()
 
@@ -1076,24 +1095,24 @@ describe('EV-IMP-01C: Checkout FEFO Reservation & 10-Minute Payment Timeout', ()
     const createdAt = new Date('2026-10-25T10:00:00.000Z')
     const dueAt = computeOrderPaymentDueAt(createdAt) // 10:10:00Z
     const afterDue = new Date('2026-10-25T10:15:00.000Z')
-
-    // --- TÌNH HUỐNG A: Thanh toán nhỏ hơn 30% tiền cọc trước hạn 10 phút ---
-    // Đơn DEPOSIT_30: total = 6.000.000đ, depositAmount (30%) = 1.800.000đ.
-    // Khách mới chuyển 500.000đ (< 1.800.000đ) trước hạn 10 phút.
     const futureDue = new Date(Date.now() + 5 * 60 * 1000)
+
+    // =========================================================================
+    // PAY-01 & PAY-12: Đơn cọc 30%, thanh toán dưới ngưỡng -> từ chối, không ghi DONE, dữ liệu nhất quán
+    // =========================================================================
     state.orders.push({
-      id: 'order-under-30',
-      code: 'DH-UNDER-30',
+      id: 'order-pay-01',
+      code: 'DH-PAY-01',
       status: OrderStatus.PENDING_CONFIRMATION,
       type: OrderType.STANDARD,
       paymentOption: PaymentOption.DEPOSIT_30,
       total: 6000000,
-      depositAmount: 1800000,
+      depositAmount: 1800000, // 30% = 1.800.000đ
       paymentDueAt: futureDue,
       items: [
         {
-          id: 'item-under-30',
-          orderId: 'order-under-30',
+          id: 'item-pay-01',
+          orderId: 'order-pay-01',
           productId: 'prod-ri6',
           productName: 'Sầu Riêng Ri6 Cai Lậy',
           orderedGrams: 10000,
@@ -1103,8 +1122,8 @@ describe('EV-IMP-01C: Checkout FEFO Reservation & 10-Minute Payment Timeout', ()
     })
 
     await reserveOrderInventoryFefo(tx, {
-      orderId: 'order-under-30',
-      orderCode: 'DH-UNDER-30',
+      orderId: 'order-pay-01',
+      orderCode: 'DH-PAY-01',
       userId: 'user-1',
       items: state.orders[0].items,
       products: [{ id: 'prod-ri6', name: 'Sầu Riêng Ri6 Cai Lậy', inventoryTrackingEnabled: true }],
@@ -1112,133 +1131,56 @@ describe('EV-IMP-01C: Checkout FEFO Reservation & 10-Minute Payment Timeout', ()
       now: createdAt,
     })
 
-    // Admin ghi nhận 500.000đ (< 30% = 1.800.000đ) trước hạn
-    const partialRes = await confirmPayment({
-      orderId: 'order-under-30',
-      amount: 500000,
+    const pay01Res = await confirmPayment({
+      orderId: 'order-pay-01',
+      amount: 500000, // < 1.800.000đ
       method: TxMethod.BANK_TRANSFER,
-      reference: 'FT-UNDER-30',
+      reference: 'FT-PAY-01',
     })
-    expect(partialRes.success).toBe(true)
-    // Đơn chưa đủ 30% nên vẫn giữ PENDING_CONFIRMATION và phân bổ vẫn ở HOLD_PENDING
+    expect(pay01Res.success).toBe(false)
+    expect(pay01Res.error).toContain('1.800.000')
+    expect(pay01Res.error).toContain('1.300.000')
+    // Không tạo PaymentTransaction(DONE), giữ nguyên trạng thái đơn & phân bổ HOLD_PENDING (PAY-12)
+    expect(state.orders[0].transactions).toHaveLength(0)
     expect(state.orders[0].status).toBe(OrderStatus.PENDING_CONFIRMATION)
-    const allocUnder30 = state.allocations.find((a) => a.orderId === 'order-under-30')
-    expect(allocUnder30?.status).toBe(AllocationStatus.HOLD_PENDING)
-
-    // Giả lập thời gian trôi qua quá hạn 10 phút (paymentDueAt = dueAt < afterDue)
-    state.orders[0].paymentDueAt = dueAt
-    // Do đã có paidAmount = 500.000đ > 0, cơ chế hiện tại bảo vệ đơn đã nhận tiền khỏi auto-cancel
-    expect(
-      isOrderPaymentExpired(
-        {
-          status: state.orders[0].status,
-          paymentDueAt: state.orders[0].paymentDueAt,
-          paidAmount: 500000,
-        },
-        afterDue
-      )
-    ).toBe(false)
-
-    // --- TÌNH HUỐNG B: Đơn có giao dịch thanh toán nhưng chưa đạt trạng thái DONE (PENDING / FAILED) ---
-    state.orders.push({
-      id: 'order-tx-pending',
-      code: 'DH-TX-PENDING',
-      status: OrderStatus.PENDING_CONFIRMATION,
-      type: OrderType.STANDARD,
-      paymentOption: PaymentOption.DEPOSIT_30,
-      total: 6000000,
-      depositAmount: 1800000,
-      paymentDueAt: dueAt,
-      items: [
-        {
-          id: 'item-tx-pending',
-          orderId: 'order-tx-pending',
-          productId: 'prod-ri6',
-          productName: 'Sầu Riêng Ri6 Cai Lậy',
-          orderedGrams: 10000,
-        },
-      ],
-      transactions: [
-        {
-          id: 'tx-pending-1',
-          type: TxType.PAYMENT,
-          status: TxStatus.PENDING,
-          amount: 1800000,
-        },
-      ],
-    })
-
-    await reserveOrderInventoryFefo(tx, {
-      orderId: 'order-tx-pending',
-      orderCode: 'DH-TX-PENDING',
-      userId: 'user-1',
-      items: state.orders[1].items,
-      products: [{ id: 'prod-ri6', name: 'Sầu Riêng Ri6 Cai Lậy', inventoryTrackingEnabled: true }],
-      holdExpiresAt: dueAt,
-      now: createdAt,
-    })
-
-    // Quét hết hạn tại afterDue:
-    // - order-under-30 có giao dịch DONE (500.000đ) -> KHÔNG bị tự động hủy
-    // - order-tx-pending chỉ có giao dịch PENDING (paid DONE = 0) -> BỊ HỦY và giải phóng 10kg
-    vi.mocked(db.order.findMany).mockResolvedValue(
-      [state.orders[1]] as unknown as Awaited<ReturnType<typeof db.order.findMany>>
+    expect(state.allocations.find((a) => a.orderId === 'order-pay-01')?.status).toBe(
+      AllocationStatus.HOLD_PENDING
     )
-    const expPendingRes = await processExpiredOrders(afterDue)
-    expect(expPendingRes.expiredCount).toBe(1)
-    expect(state.orders[0].status).toBe(OrderStatus.PENDING_CONFIRMATION)
-    expect(state.orders[1].status).toBe(OrderStatus.CANCELLED)
-    const allocTxPending = state.allocations.find((a) => a.orderId === 'order-tx-pending')
-    expect(allocTxPending?.status).toBe(AllocationStatus.RELEASED)
 
-    // --- TÌNH HUỐNG C: Thanh toán một phần SAU hạn 10 phút (khi paidBefore = 0) bị từ chối và giải phóng kho ---
-    const pastDue = new Date(Date.now() - 2 * 60 * 1000)
-    state.orders.push({
-      id: 'order-late-partial',
-      code: 'DH-LATE-PARTIAL',
-      status: OrderStatus.PENDING_CONFIRMATION,
-      type: OrderType.STANDARD,
-      paymentOption: PaymentOption.DEPOSIT_30,
-      total: 6000000,
-      depositAmount: 1800000,
-      paymentDueAt: pastDue,
-      items: [
-        {
-          id: 'item-late-partial',
-          orderId: 'order-late-partial',
-          productId: 'prod-ri6',
-          productName: 'Sầu Riêng Ri6 Cai Lậy',
-          orderedGrams: 10000,
-        },
-      ],
-      transactions: [],
-    })
-
-    await reserveOrderInventoryFefo(tx, {
-      orderId: 'order-late-partial',
-      orderCode: 'DH-LATE-PARTIAL',
-      userId: 'user-1',
-      items: state.orders[2].items,
-      products: [{ id: 'prod-ri6', name: 'Sầu Riêng Ri6 Cai Lậy', inventoryTrackingEnabled: true }],
-      holdExpiresAt: pastDue,
-      now: createdAt,
-    })
-
-    const latePartialRes = await confirmPayment({
-      orderId: 'order-late-partial',
-      amount: 500000,
+    // =========================================================================
+    // PAY-02 & PAY-07: Đơn cọc 30%, thanh toán đúng ngưỡng -> xác nhận thành công & không bị expiration hủy nhầm
+    // =========================================================================
+    const pay02Res = await confirmPayment({
+      orderId: 'order-pay-01',
+      amount: 1800000,
       method: TxMethod.BANK_TRANSFER,
-      reference: 'FT-LATE-PARTIAL',
+      reference: 'FT-PAY-02',
     })
-    expect(latePartialRes.success).toBe(false)
-    expect(state.orders[2].status).toBe(OrderStatus.CANCELLED)
-    const allocLatePartial = state.allocations.find((a) => a.orderId === 'order-late-partial')
-    expect(allocLatePartial?.status).toBe(AllocationStatus.RELEASED)
+    expect(pay02Res.success).toBe(true)
+    expect(state.orders[0].status).toBe(OrderStatus.PROCESSING)
+    expect(state.orders[0].transactions).toHaveLength(1)
+    expect(state.allocations.find((a) => a.orderId === 'order-pay-01')?.status).toBe(
+      AllocationStatus.ALLOCATED_CONFIRMED
+    )
 
-    // --- TÌNH HUỐNG D: Đã thanh toán 100% trước hạn (FULL) -> chuyển PROCESSING & ALLOCATED_CONFIRMED ---
+    // PAY-07: Dù thời gian vượt qua paymentDueAt, đơn đã PROCESSING không bao giờ bị expiration hủy nhầm
+    state.orders[0].paymentDueAt = dueAt
+    vi.mocked(db.order.findMany).mockResolvedValue(
+      [state.orders[0]] as unknown as Awaited<ReturnType<typeof db.order.findMany>>
+    )
+    const expPay07 = await processExpiredOrders(afterDue)
+    expect(expPay07.expiredCount).toBe(0)
+    expect(state.orders[0].status).toBe(OrderStatus.PROCESSING)
+    expect(state.allocations.find((a) => a.orderId === 'order-pay-01')?.status).toBe(
+      AllocationStatus.ALLOCATED_CONFIRMED
+    )
+
+    // =========================================================================
+    // PAY-03 & PAY-04: Đơn FULL — trả 30% bị từ chối (PAY-03), trả 100% thành công (PAY-04)
+    // =========================================================================
     state.orders.push({
-      id: 'order-full-100',
-      code: 'DH-FULL-100',
+      id: 'order-pay-full',
+      code: 'DH-PAY-FULL',
       status: OrderStatus.PENDING_CONFIRMATION,
       type: OrderType.STANDARD,
       paymentOption: PaymentOption.FULL,
@@ -1247,8 +1189,8 @@ describe('EV-IMP-01C: Checkout FEFO Reservation & 10-Minute Payment Timeout', ()
       paymentDueAt: futureDue,
       items: [
         {
-          id: 'item-full-100',
-          orderId: 'order-full-100',
+          id: 'item-pay-full',
+          orderId: 'order-pay-full',
           productId: 'prod-ri6',
           productName: 'Sầu Riêng Ri6 Cai Lậy',
           orderedGrams: 10000,
@@ -1258,24 +1200,487 @@ describe('EV-IMP-01C: Checkout FEFO Reservation & 10-Minute Payment Timeout', ()
     })
 
     await reserveOrderInventoryFefo(tx, {
-      orderId: 'order-full-100',
-      orderCode: 'DH-FULL-100',
+      orderId: 'order-pay-full',
+      orderCode: 'DH-PAY-FULL',
       userId: 'user-1',
-      items: state.orders[3].items,
+      items: state.orders[1].items,
       products: [{ id: 'prod-ri6', name: 'Sầu Riêng Ri6 Cai Lậy', inventoryTrackingEnabled: true }],
       holdExpiresAt: futureDue,
       now: createdAt,
     })
 
-    const full100Res = await confirmPayment({
-      orderId: 'order-full-100',
+    // PAY-03: Trả 30% (1.800.000đ) cho đơn FULL -> Từ chối
+    const pay03Res = await confirmPayment({
+      orderId: 'order-pay-full',
+      amount: 1800000,
+      method: TxMethod.BANK_TRANSFER,
+      reference: 'FT-PAY-03',
+    })
+    expect(pay03Res.success).toBe(false)
+    expect(pay03Res.error).toContain('6.000.000')
+    expect(pay03Res.error).toContain('4.200.000')
+    expect(state.orders[1].transactions).toHaveLength(0)
+    expect(state.orders[1].status).toBe(OrderStatus.PENDING_CONFIRMATION)
+
+    // PAY-04: Trả 100% (6.000.000đ) cho đơn FULL -> Thành công
+    const pay04Res = await confirmPayment({
+      orderId: 'order-pay-full',
       amount: 6000000,
       method: TxMethod.BANK_TRANSFER,
-      reference: 'FT-FULL-100',
+      reference: 'FT-PAY-04',
     })
-    expect(full100Res.success).toBe(true)
-    expect(state.orders[3].status).toBe(OrderStatus.PROCESSING)
-    const allocFull100 = state.allocations.find((a) => a.orderId === 'order-full-100')
-    expect(allocFull100?.status).toBe(AllocationStatus.ALLOCATED_CONFIRMED)
+    expect(pay04Res.success).toBe(true)
+    expect(state.orders[1].status).toBe(OrderStatus.PROCESSING)
+    expect(state.allocations.find((a) => a.orderId === 'order-pay-full')?.status).toBe(
+      AllocationStatus.ALLOCATED_CONFIRMED
+    )
+
+    // =========================================================================
+    // PAY-05, PAY-06, PAY-10, PAY-11:
+    // - Giao dịch PENDING/FAILED không được tính là đã trả (PAY-11)
+    // - Quá hạn 10 phút tự hủy & giải phóng tồn (PAY-05)
+    // - Admin xác nhận sau hạn 10 phút -> từ chối, không hồi sinh reservation (PAY-06)
+    // - Chạy lặp expiration/hủy -> không double-release (PAY-10)
+    // =========================================================================
+    state.orders.push({
+      id: 'order-pay-overdue',
+      code: 'DH-PAY-OVERDUE',
+      status: OrderStatus.PENDING_CONFIRMATION,
+      type: OrderType.STANDARD,
+      paymentOption: PaymentOption.DEPOSIT_30,
+      total: 6000000,
+      depositAmount: 1800000,
+      paymentDueAt: dueAt,
+      items: [
+        {
+          id: 'item-pay-overdue',
+          orderId: 'order-pay-overdue',
+          productId: 'prod-ri6',
+          productName: 'Sầu Riêng Ri6 Cai Lậy',
+          orderedGrams: 10000,
+        },
+      ],
+      transactions: [
+        {
+          id: 'tx-pending-ignore',
+          type: TxType.PAYMENT,
+          status: TxStatus.PENDING,
+          amount: 1800000,
+        },
+        {
+          id: 'tx-refund-ignore',
+          type: TxType.REFUND,
+          status: TxStatus.DONE,
+          amount: 1800000,
+        },
+      ],
+    })
+
+    await reserveOrderInventoryFefo(tx, {
+      orderId: 'order-pay-overdue',
+      orderCode: 'DH-PAY-OVERDUE',
+      userId: 'user-1',
+      items: state.orders[2].items,
+      products: [{ id: 'prod-ri6', name: 'Sầu Riêng Ri6 Cai Lậy', inventoryTrackingEnabled: true }],
+      holdExpiresAt: dueAt,
+      now: createdAt,
+    })
+
+    // PAY-06: Admin cố xác nhận đủ tiền sau hạn 10 phút -> Từ chối, tự động hủy và giải phóng kho, không hồi sinh reservation
+    const pay06Res = await confirmPayment({
+      orderId: 'order-pay-overdue',
+      amount: 1800000,
+      method: TxMethod.BANK_TRANSFER,
+      reference: 'FT-PAY-06',
+    })
+    expect(pay06Res.success).toBe(false)
+    expect(state.orders[2].status).toBe(OrderStatus.CANCELLED)
+    expect(state.allocations.find((a) => a.orderId === 'order-pay-overdue')?.status).toBe(
+      AllocationStatus.RELEASED
+    )
+
+    // PAY-10: Chạy lặp processExpiredOrders và releaseOrderInventoryAllocations -> không double-release
+    vi.mocked(db.order.findMany).mockResolvedValue(
+      [state.orders[2]] as unknown as Awaited<ReturnType<typeof db.order.findMany>>
+    )
+    await processExpiredOrders(afterDue)
+    const repeatRelease = await releaseOrderInventoryAllocations(tx, {
+      orderId: 'order-pay-overdue',
+      orderCode: 'DH-PAY-OVERDUE',
+      reason: 'Repeat test',
+      now: afterDue,
+    })
+    expect(repeatRelease.releasedCount).toBe(0)
+    const releaseLedgersOverdue = state.ledgerEntries.filter(
+      (l) => l.orderId === 'order-pay-overdue' && l.type === InventoryLedgerType.RESERVATION_RELEASE
+    )
+    expect(releaseLedgersOverdue).toHaveLength(1)
+
+    // =========================================================================
+    // PAY-08: Đơn lịch sử có thanh toán một phần dưới ngưỡng (0 < paidAmount < requiredThreshold)
+    // 1. Khi quá hạn 10 phút: Giải phóng giữ chỗ tồn kho (HOLD_PENDING -> RELEASED), không giữ kho vô hạn.
+    // 2. Bảo toàn giao dịch tiền đã nhận (PaymentTransaction DONE), không tự tạo hoàn tiền, không tự hủy bằng SYSTEM.
+    // 3. Chặn confirmPayment sau hạn 10 phút hồi sinh quyền giữ kho.
+    // 4. Khi Admin thực hiện quy trình đối soát hủy đơn (cancelOrder): chuyển CANCELLED và tạo lệnh REFUND(PENDING) đúng số tiền đã nhận.
+    // =========================================================================
+    state.orders.push({
+      id: 'order-pay-08-legacy',
+      code: 'DH-PAY-08',
+      status: OrderStatus.PENDING_CONFIRMATION,
+      type: OrderType.STANDARD,
+      paymentOption: PaymentOption.DEPOSIT_30,
+      total: 6000000,
+      depositAmount: 1800000,
+      paymentDueAt: dueAt,
+      items: [
+        {
+          id: 'item-pay-08',
+          orderId: 'order-pay-08-legacy',
+          productId: 'prod-ri6',
+          productName: 'Sầu Riêng Ri6 Cai Lậy',
+          orderedGrams: 10000,
+        },
+      ],
+      transactions: [
+        {
+          id: 'tx-legacy-partial',
+          type: TxType.PAYMENT,
+          status: TxStatus.DONE,
+          amount: 500000, // Đã nhận 500.000đ (< 1.800.000đ) trước Hotfix
+          reference: 'FT-LEGACY-500K',
+        },
+      ],
+    })
+
+    await reserveOrderInventoryFefo(tx, {
+      orderId: 'order-pay-08-legacy',
+      orderCode: 'DH-PAY-08',
+      userId: 'user-1',
+      items: state.orders[3].items,
+      products: [{ id: 'prod-ri6', name: 'Sầu Riêng Ri6 Cai Lậy', inventoryTrackingEnabled: true }],
+      holdExpiresAt: dueAt,
+      now: createdAt,
+    })
+
+    // Trước khi quét hết hạn: lô đang bị giữ thêm 10kg (20kg từ 2 đơn PROCESSING + 10kg của đơn legacy = 30kg reserved, còn 10kg available)
+    expect(state.getBatchStock('batch-fefo-early').availableGrams).toBe(10000)
+
+    // Quét hết hạn: giải phóng ngay 10kg của đơn lịch sử, nhưng giữ nguyên Order ở PENDING_CONFIRMATION và giữ nguyên 500.000đ
+    vi.mocked(db.order.findMany).mockResolvedValue(
+      [state.orders[3]] as unknown as Awaited<ReturnType<typeof db.order.findMany>>
+    )
+    const expPay08 = await processExpiredOrders(afterDue)
+    expect(expPay08.success).toBe(true)
+    expect(state.allocations.find((a) => a.orderId === 'order-pay-08-legacy')?.status).toBe(
+      AllocationStatus.RELEASED
+    )
+    expect(state.getBatchStock('batch-fefo-early').availableGrams).toBe(20000) // Đã trả lại 10kg!
+    expect(state.orders[3].status).toBe(OrderStatus.PENDING_CONFIRMATION)
+    expect(state.orders[3].transactions).toHaveLength(1) // Không tự tạo REFUND và không mất giao dịch 500k
+
+    // Nếu Admin cố bấm confirmPayment bù 1.300.000đ sau khi đã quá hạn 10 phút -> bị từ chối, không hồi sinh reservation
+    const lateTopupRes = await confirmPayment({
+      orderId: 'order-pay-08-legacy',
+      amount: 1300000,
+      method: TxMethod.BANK_TRANSFER,
+      reference: 'FT-LATE-TOPUP',
+    })
+    expect(lateTopupRes.success).toBe(false)
+    expect(lateTopupRes.error).toContain('Quyền giữ kho đã hết hạn')
+    expect(state.allocations.find((a) => a.orderId === 'order-pay-08-legacy')?.status).toBe(
+      AllocationStatus.RELEASED
+    )
+
+    // Admin thực hiện đối soát thủ công qua cancelOrder -> chuyển CANCELLED (SELLER) và tạo lệnh REFUND(PENDING) 500.000đ
+    vi.mocked(getServerAuthSession).mockResolvedValue({
+      user: {
+        id: 'admin-fefo',
+        email: 'admin@evibe.vn',
+        role: Role.ADMIN,
+        name: 'Admin E Vibe',
+      },
+    } as unknown as Awaited<ReturnType<typeof getServerAuthSession>>)
+    vi.mocked(db.order.findUnique).mockResolvedValue({
+      ...state.orders[3],
+      userId: 'user-1',
+      finalTotal: null,
+      deliveredAt: null,
+    } as unknown as Awaited<ReturnType<typeof db.order.findUnique>>)
+
+    const cancelLegacyRes = await cancelOrder({
+      orderId: 'order-pay-08-legacy',
+      reason: 'Đối soát đơn quá hạn thanh toán thiếu: hủy đơn và hoàn trả 500.000đ',
+    })
+    expect(cancelLegacyRes.success).toBe(true)
+    expect(state.orders[3].status).toBe(OrderStatus.CANCELLED)
+    const refundTx = state.orders[3].transactions.find((t) => t.type === TxType.REFUND)
+    expect(refundTx).toBeDefined()
+    expect(refundTx?.status).toBe(TxStatus.PENDING)
+    expect(refundTx?.amount).toBe(500000)
+
+    // =========================================================================
+    // PAY-09: Hai yêu cầu xác nhận thanh toán đồng thời -> không ghi nhận trùng tiền hoặc chuyển trạng thái sai
+    // =========================================================================
+    state.orders.push({
+      id: 'order-pay-09-concurrent',
+      code: 'DH-PAY-09',
+      status: OrderStatus.PENDING_CONFIRMATION,
+      type: OrderType.STANDARD,
+      paymentOption: PaymentOption.DEPOSIT_30,
+      total: 6000000,
+      depositAmount: 1800000,
+      paymentDueAt: futureDue,
+      items: [
+        {
+          id: 'item-pay-09',
+          orderId: 'order-pay-09-concurrent',
+          productId: 'prod-ri6',
+          productName: 'Sầu Riêng Ri6 Cai Lậy',
+          orderedGrams: 10000,
+        },
+      ],
+      transactions: [],
+    })
+
+    await reserveOrderInventoryFefo(tx, {
+      orderId: 'order-pay-09-concurrent',
+      orderCode: 'DH-PAY-09',
+      userId: 'user-1',
+      items: state.orders[4].items,
+      products: [{ id: 'prod-ri6', name: 'Sầu Riêng Ri6 Cai Lậy', inventoryTrackingEnabled: true }],
+      holdExpiresAt: futureDue,
+      now: createdAt,
+    })
+
+    const [conc1, conc2] = await Promise.all([
+      confirmPayment({
+        orderId: 'order-pay-09-concurrent',
+        amount: 1800000,
+        method: TxMethod.BANK_TRANSFER,
+        reference: 'FT-CONC-09',
+      }),
+      confirmPayment({
+        orderId: 'order-pay-09-concurrent',
+        amount: 1800000,
+        method: TxMethod.BANK_TRANSFER,
+        reference: 'FT-CONC-09',
+      }),
+    ])
+
+    const successCount = [conc1, conc2].filter((r) => r.success).length
+    const failCount = [conc1, conc2].filter((r) => !r.success).length
+    expect(successCount).toBe(1)
+    expect(failCount).toBe(1)
+    expect(state.orders[4].transactions).toHaveLength(1)
+    expect(state.orders[4].status).toBe(OrderStatus.PROCESSING)
+  })
+
+  it('10. Kiểm thử Script chuẩn bị 6 lô FEFO Demo (Dry Run, Idempotent Apply, Safety Gates & Bảo toàn UNVERIFIED)', async () => {
+    // 1. Safety Gates: Chặn nhánh khác beta hoặc host Production
+    expect(() =>
+      verifyDemoScriptSafetyGates({
+        connectionUrl: 'postgresql://user:pass@ep-prod-main.ap-southeast-1.aws.neon.tech/neondb',
+        expectedHost: 'ep-prod-main.ap-southeast-1.aws.neon.tech',
+        gitBranch: 'beta',
+        mode: 'DRY_RUN',
+      })
+    ).toThrow(/Production/i)
+
+    expect(() =>
+      verifyDemoScriptSafetyGates({
+        connectionUrl: 'postgresql://user:pass@ep-preview-beta.ap-southeast-1.aws.neon.tech/neondb',
+        expectedHost: 'ep-preview-beta.ap-southeast-1.aws.neon.tech',
+        gitBranch: 'main',
+        mode: 'DRY_RUN',
+      })
+    ).toThrow(/Chỉ cho phép chạy trên nhánh Git "beta"/i)
+
+    expect(() =>
+      verifyDemoScriptSafetyGates({
+        connectionUrl: 'postgresql://user:pass@ep-preview-beta.ap-southeast-1.aws.neon.tech/neondb',
+        expectedHost: 'ep-preview-beta.ap-southeast-1.aws.neon.tech',
+        gitBranch: 'beta',
+        mode: 'APPLY',
+        confirmPreviewBeta: false,
+      })
+    ).toThrow(/--confirm-preview-beta/i)
+
+    const validGate = verifyDemoScriptSafetyGates({
+      connectionUrl: 'postgresql://user:pass@ep-preview-beta.ap-southeast-1.aws.neon.tech/neondb',
+      expectedHost: 'ep-preview-beta.ap-southeast-1.aws.neon.tech',
+      gitBranch: 'beta',
+      mode: 'APPLY',
+      confirmPreviewBeta: true,
+    })
+    expect(validGate.isSafe).toBe(true)
+
+    // 2. Giả lập In-Memory Adapter cho 8 sản phẩm (3 sản phẩm mục tiêu + 5 sản phẩm ngoài phạm vi) & 3 lô lịch sử UNVERIFIED
+    const mockProducts = [
+      { id: 'p-ri6', slug: 'sau-rieng-ri6', name: 'Sầu Riêng Ri6', farmId: 'f-1', inventoryTrackingEnabled: false },
+      { id: 'p-bdx', slug: 'buoi-da-xanh-ben-tre', name: 'Bưởi Da Xanh', farmId: 'f-1', inventoryTrackingEnabled: false },
+      { id: 'p-bo', slug: 'bo-034-tay-nguyen', name: 'Bơ 034', farmId: 'f-2', inventoryTrackingEnabled: false },
+      { id: 'p-4', slug: 'xoai-cat-hoa-loc', name: 'Xoài Cát Hòa Lộc', farmId: 'f-2', inventoryTrackingEnabled: false },
+      { id: 'p-5', slug: 'cam-sanh-ha-giang', name: 'Cam Sành', farmId: 'f-2', inventoryTrackingEnabled: false },
+      { id: 'p-6', slug: 'thanh-long-ruot-do', name: 'Thanh Long', farmId: 'f-3', inventoryTrackingEnabled: false },
+      { id: 'p-7', slug: 'nhan-xuong-com-vang', name: 'Nhãn Xuồng', farmId: 'f-3', inventoryTrackingEnabled: false },
+      { id: 'p-8', slug: 'dua-xiem-xanh', name: 'Dừa Xiêm', farmId: 'f-3', inventoryTrackingEnabled: false },
+    ]
+
+    const mockBatches: Array<{
+      id: string
+      code: string
+      productId: string
+      farmId: string
+      harvestDate: Date
+      expiryDate: Date | null
+      status: BatchStatus
+      isFefoEligible: boolean
+      quantityGrams: number
+      physicalStockGrams: number
+      reservedGrams: number
+      ledgerEntries: Array<{
+        id: string
+        type: InventoryLedgerType
+        quantityGrams: number
+        idempotencyKey: string | null
+      }>
+    }> = HISTORICAL_UNVERIFIED_BATCH_CODES.map((code, idx) => ({
+      id: `hist-${idx + 1}`,
+      code,
+      productId: mockProducts[idx].id,
+      farmId: mockProducts[idx].farmId,
+      harvestDate: new Date('2026-10-13T00:00:00.000Z'),
+      expiryDate: null,
+      status: BatchStatus.UNVERIFIED,
+      isFefoEligible: false,
+      quantityGrams: 3000000,
+      physicalStockGrams: 0,
+      reservedGrams: 0,
+      ledgerEntries: [],
+    }))
+
+    const adapter: DemoBatchStorageAdapter = {
+      async findProducts() {
+        return mockProducts.map((p) => ({ ...p }))
+      },
+      async findBatchesByCodes(codes) {
+        return mockBatches.filter((b) => codes.includes(b.code))
+      },
+      async upsertDemoBatchAndImportInTx(params) {
+        let batch = mockBatches.find((b) => b.code === params.spec.batchCode)
+        let createdBatch = false
+        if (!batch) {
+          batch = {
+            id: `demo-${mockBatches.length + 1}`,
+            code: params.spec.batchCode,
+            productId: params.productId,
+            farmId: params.farmId,
+            harvestDate: params.harvestDate,
+            expiryDate: params.expiryDate,
+            status: BatchStatus.ACTIVE,
+            isFefoEligible: true,
+            quantityGrams: params.spec.importGrams,
+            physicalStockGrams: params.spec.importGrams,
+            reservedGrams: 0,
+            ledgerEntries: [],
+          }
+          mockBatches.push(batch)
+          createdBatch = true
+        }
+
+        let createdLedgerImport = false
+        const hasImport = batch.ledgerEntries.some(
+          (l) => l.idempotencyKey === params.idempotencyKey || l.type === InventoryLedgerType.IMPORT
+        )
+        if (!hasImport) {
+          batch.ledgerEntries.push({
+            id: `led-${batch.ledgerEntries.length + 1}`,
+            type: InventoryLedgerType.IMPORT,
+            quantityGrams: params.spec.importGrams,
+            idempotencyKey: params.idempotencyKey,
+          })
+          createdLedgerImport = true
+        }
+
+        const stock = calculateStockFromLedger(
+          batch.ledgerEntries.map((l) => ({
+            type: l.type,
+            quantityGrams: l.quantityGrams,
+          }))
+        )
+        batch.physicalStockGrams = stock.physicalStockGrams
+        batch.reservedGrams = stock.reservedGrams
+        batch.quantityGrams = stock.availableGrams
+
+        return {
+          batchId: batch.id,
+          batchCode: batch.code,
+          createdBatch,
+          createdLedgerImport,
+          physicalStockGrams: stock.physicalStockGrams,
+          reservedGrams: stock.reservedGrams,
+          availableGrams: stock.availableGrams,
+        }
+      },
+      async enableTrackingForProducts(productIds) {
+        let count = 0
+        for (const p of mockProducts) {
+          if (productIds.includes(p.id)) {
+            p.inventoryTrackingEnabled = true
+            count++
+          }
+        }
+        return count
+      },
+    }
+
+    const demoNow = new Date('2026-10-25T10:00:00.000Z')
+
+    // 3. Chạy DRY_RUN: không tạo lô mới, không bật tracking
+    const dryRunRes = await executePrepareF01CDemoBatches(adapter, {
+      mode: 'DRY_RUN',
+      referenceDate: demoNow,
+    })
+    expect(dryRunRes.mode).toBe('DRY_RUN')
+    expect(dryRunRes.batchesSummary).toHaveLength(6)
+    expect(dryRunRes.batchesSummary.every((b) => b.action === 'WOULD_CREATE')).toBe(true)
+    expect(mockBatches).toHaveLength(3) // Chỉ có 3 lô lịch sử
+    expect(mockProducts.every((p) => p.inventoryTrackingEnabled === false)).toBe(true)
+
+    // 4. Chạy APPLY lần 1: tạo đủ 6 lô ACTIVE + IMPORT và bật tracking cho đúng 3 sản phẩm
+    const apply1 = await executePrepareF01CDemoBatches(adapter, {
+      mode: 'APPLY',
+      referenceDate: demoNow,
+    })
+    expect(apply1.batchesSummary).toHaveLength(6)
+    expect(apply1.batchesSummary.every((b) => b.action === 'CREATED_AND_IMPORTED')).toBe(true)
+    expect(apply1.enabledTrackingProductSlugs).toEqual([
+      'sau-rieng-ri6',
+      'buoi-da-xanh-ben-tre',
+      'bo-034-tay-nguyen',
+    ])
+
+    // 5. Chạy APPLY lần 2 (Idempotency): KHÔNG tạo trùng IMPORT, KHÔNG nhân đôi tồn kho
+    const apply2 = await executePrepareF01CDemoBatches(adapter, {
+      mode: 'APPLY',
+      referenceDate: demoNow,
+    })
+    expect(apply2.batchesSummary.every((b) => b.action === 'IDEMPOTENT_SKIPPED')).toBe(true)
+
+    for (const spec of F01C_DEMO_BATCH_SPECS) {
+      const b = mockBatches.find((x) => x.code === spec.batchCode)!
+      expect(b.ledgerEntries).toHaveLength(1)
+      expect(b.physicalStockGrams).toBe(spec.importGrams)
+      expect(b.quantityGrams).toBe(spec.importGrams)
+    }
+
+    // 6. Xác minh 3 lô lịch sử vẫn UNVERIFIED và 5 sản phẩm còn lại vẫn inventoryTrackingEnabled = false
+    for (const histCode of HISTORICAL_UNVERIFIED_BATCH_CODES) {
+      const hb = mockBatches.find((x) => x.code === histCode)!
+      expect(hb.status).toBe(BatchStatus.UNVERIFIED)
+      expect(hb.isFefoEligible).toBe(false)
+    }
+    expect(mockProducts.filter((p) => p.inventoryTrackingEnabled)).toHaveLength(3)
+    expect(mockProducts.filter((p) => !p.inventoryTrackingEnabled)).toHaveLength(5)
   })
 })

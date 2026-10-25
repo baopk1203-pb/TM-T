@@ -34,13 +34,19 @@ export interface TransitionImpact {
 }
 
 /**
- * Ngưỡng tiền tối thiểu cần thanh toán để đơn hàng đủ điều kiện duyệt sang PROCESSING (Mục 3.7)
+ * Ngưỡng tiền tối thiểu cần thanh toán để đơn hàng đủ điều kiện duyệt khỏi PENDING_CONFIRMATION (Mục 3.7 & EV-IMP-01C)
+ * - PREORDER: phải thanh toán tối thiểu tiền cọc 30% (order.depositAmount)
  * - FULL: phải thanh toán 100% tổng tiền (order.total)
  * - DEPOSIT_30: phải thanh toán tối thiểu tiền cọc 30% (order.depositAmount)
  */
 export function getRequiredConfirmationPayment(
-  order: Pick<OrderStateSnapshot, 'paymentOption' | 'total' | 'depositAmount'>
+  order: Pick<OrderStateSnapshot, 'paymentOption' | 'total' | 'depositAmount'> & {
+    type?: string | null
+  }
 ): number {
+  if (order.type === 'PREORDER') {
+    return order.depositAmount
+  }
   return order.paymentOption === PaymentOption.FULL ? order.total : order.depositAmount
 }
 

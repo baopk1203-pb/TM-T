@@ -74,29 +74,171 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
       }
 
       const now = new Date()
-      const paidBefore = (order.transactions ?? [])
-        .filter((t) => t.type === TxType.PAYMENT && t.status === TxStatus.DONE)
-        .reduce((sum, t) => sum + t.amount, 0)
+      const donePayments = (order.transactions ?? []).filter(
+        (t) => t.type === TxType.PAYMENT && t.status === TxStatus.DONE
+      )
+      const paidBefore = donePayments.reduce((sum, t) => sum + t.amount, 0)
 
-      // Kiểm tra hạn giữ chỗ 10 phút theo thời gian Server (EV-IMP-01C):
-      // Nếu đơn đã quá hạn mà chưa có thanh toán, tự động hủy đơn & giải phóng tồn kho đúng 1 lần, từ chối xác nhận thanh toán.
+      // Chống ghi nhận trùng giao dịch theo mã tham chiếu (PAY-09)
+      const normalizedRef = input.reference?.trim() || null
+      if (
+        normalizedRef &&
+        donePayments.some((t) => t.reference && t.reference.trim() === normalizedRef)
+      ) {
+        return {
+          success: false as const,
+          expiredAndReleased: false as const,
+          error: `Mã giao dịch tham chiếu "${normalizedRef}" đã được xác nhận trước đó cho đơn hàng này.`,
+        }
+      }
+
+      const targetTotal = order.finalTotal ?? order.total
+      const requiredThreshold = getRequiredConfirmationPayment(order)
+
+      // Kiểm tra hạn giữ chỗ 10 phút theo thời gian Server (EV-IMP-01C — PAY-06, PAY-08):
+      // Nếu đơn đang ở PENDING_CONFIRMATION mà đã quá hạn 10 phút, từ chối xác nhận thanh toán và giải phóng kho (không hồi sinh reservation).
       if (
         isOrderPaymentExpired(
           {
             status: order.status,
             paymentDueAt: (order as unknown as { paymentDueAt?: Date | null }).paymentDueAt,
             paidAmount: paidBefore,
+            requiredAmount: requiredThreshold,
           },
           now
         )
       ) {
-        await expireOverdueOrderInTx(tx, order.id, now, admin.id)
+        const expResult = await expireOverdueOrderInTx(tx, order.id, now, admin.id)
         return {
           success: false as const,
           expiredAndReleased: true as const,
-          error:
-            'Đơn hàng đã quá thời hạn giữ chỗ thanh toán (10 phút). Hệ thống đã tự động hủy đơn và giải phóng tồn kho.',
+          error: expResult.orderCancelled
+            ? 'Đơn hàng đã quá thời hạn giữ chỗ thanh toán (10 phút). Hệ thống đã tự động hủy đơn và giải phóng tồn kho.'
+            : 'Đơn hàng đã quá thời hạn giữ chỗ thanh toán (10 phút). Quyền giữ kho đã hết hạn và được giải phóng; vui lòng thực hiện hủy đơn để đối soát hoàn trả khoản tiền đã nhận.',
         }
+      }
+
+      const projectedTotalPaid = paidBefore + input.amount
+
+      // Phương án A (PO Decision — PAY-01, PAY-02, PAY-03, PAY-04, PAY-12):
+      // Trong PENDING_CONFIRMATION, chỉ cho phép xác nhận khi tổng số tiền thanh toán hợp lệ đạt ngưỡng yêu cầu.
+      if (order.status === OrderStatus.PENDING_CONFIRMATION) {
+        if (projectedTotalPaid < requiredThreshold) {
+          const shortfall = requiredThreshold - projectedTotalPaid
+          return {
+            success: false as const,
+            expiredAndReleased: false as const,
+            error: `Số tiền xác nhận chưa đạt ngưỡng tối thiểu để duyệt đơn (${projectedTotalPaid.toLocaleString('vi-VN')} đ < cần tối thiểu ${requiredThreshold.toLocaleString('vi-VN')} đ, còn thiếu ${shortfall.toLocaleString('vi-VN')} đ). Không ghi nhận giao dịch DONE khi chưa đủ điều kiện xác nhận đơn.`,
+          }
+        }
+      } else {
+        // Đơn đã rời PENDING_CONFIRMATION (đã xác nhận cọc trước đó): chống ghi nhận trùng tiền cọc hoặc vượt tổng đơn (PAY-09)
+        if (paidBefore >= targetTotal) {
+          return {
+            success: false as const,
+            expiredAndReleased: false as const,
+            error: 'Đơn hàng đã được thanh toán đủ 100%, không thể ghi nhận thêm thanh toán.',
+          }
+        }
+        if (order.status === OrderStatus.PREORDER_WAITING) {
+          return {
+            success: false as const,
+            expiredAndReleased: false as const,
+            error: 'Đơn đặt trước đã xác nhận đủ tiền cọc và đang chờ thu hoạch, không thể ghi nhận trùng tiền cọc.',
+          }
+        }
+        if (projectedTotalPaid < targetTotal) {
+          const remaining = targetTotal - projectedTotalPaid
+          return {
+            success: false as const,
+            expiredAndReleased: false as const,
+            error: `Đơn hàng đã qua bước xác nhận cọc; khoản thanh toán tiếp theo phải tất toán đủ số tiền còn lại (còn thiếu ${remaining.toLocaleString('vi-VN')} đ).`,
+          }
+        }
+      }
+
+      if (projectedTotalPaid > targetTotal) {
+        return {
+          success: false as const,
+          expiredAndReleased: false as const,
+          error: `Tổng số tiền thanh toán (${projectedTotalPaid.toLocaleString('vi-VN')} đ) vượt quá tổng giá trị đơn hàng (${targetTotal.toLocaleString('vi-VN')} đ).`,
+        }
+      }
+
+      // Kiểm tra và cập nhật trạng thái nguyên tử trước khi ghi giao dịch để chống race condition đồng thời (PAY-09, PAY-12)
+      let statusChanged = false
+      let targetStatus: OrderStatus | null = null
+      let statusNote = ''
+
+      if (order.status === OrderStatus.PENDING_CONFIRMATION) {
+        if (order.type === OrderType.PREORDER) {
+          const transitionCheck = canTransition(
+            order,
+            OrderStatus.PREORDER_WAITING,
+            'SELLER',
+            { paidAmount: projectedTotalPaid }
+          )
+
+          if (!transitionCheck.ok) {
+            return {
+              success: false as const,
+              expiredAndReleased: false as const,
+              error: transitionCheck.reason || 'Chưa đủ điều kiện xác nhận cọc đơn đặt trước',
+            }
+          }
+          targetStatus = OrderStatus.PREORDER_WAITING
+          statusNote = `Đã nhận đủ tiền cọc đặt trước (${projectedTotalPaid.toLocaleString('vi-VN')} đ ≥ ${order.depositAmount.toLocaleString('vi-VN')} đ) -> Chuyển sang Chờ thu hoạch (PREORDER_WAITING)`
+        } else {
+          const transitionCheck = canTransition(
+            order,
+            OrderStatus.PROCESSING,
+            'SELLER',
+            { paidAmount: projectedTotalPaid }
+          )
+
+          if (!transitionCheck.ok) {
+            return {
+              success: false as const,
+              expiredAndReleased: false as const,
+              error: transitionCheck.reason || 'Chưa đủ điều kiện chuyển đơn sang Đang xử lý',
+            }
+          }
+          targetStatus = OrderStatus.PROCESSING
+          statusNote = `Đã nhận đủ tiền thanh toán (${projectedTotalPaid.toLocaleString('vi-VN')} đ ≥ ${requiredThreshold.toLocaleString('vi-VN')} đ, hình thức: ${order.paymentOption}) -> Chuyển sang Đang xử lý`
+        }
+
+        const orderDelegate = tx.order as unknown as {
+          updateMany?: (args: {
+            where: { id: string; status: OrderStatus }
+            data: { status: OrderStatus }
+          }) => Promise<{ count: number }>
+          update: (args: {
+            where: { id: string }
+            data: { status: OrderStatus }
+          }) => Promise<unknown>
+        }
+
+        if (typeof orderDelegate.updateMany === 'function') {
+          const updateRes = await orderDelegate.updateMany({
+            where: {
+              id: order.id,
+              status: OrderStatus.PENDING_CONFIRMATION,
+            },
+            data: { status: targetStatus },
+          })
+          if (updateRes.count === 0) {
+            throw new Error(
+              'Đơn hàng đã được xác nhận hoặc thay đổi trạng thái bởi một yêu cầu đồng thời khác'
+            )
+          }
+        } else {
+          await orderDelegate.update({
+            where: { id: order.id },
+            data: { status: targetStatus },
+          })
+        }
+
+        statusChanged = true
       }
 
       // Tạo giao dịch thanh toán thành công
@@ -107,7 +249,7 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
           status: TxStatus.DONE,
           method: input.method,
           amount: input.amount,
-          reference: input.reference?.trim() || null,
+          reference: normalizedRef,
           note: input.note?.trim() || null,
           completedAt: now,
         },
@@ -127,71 +269,16 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
         },
       })
 
-      // Tính tổng tiền đã nhận sau giao dịch này
-      const allTx = [...order.transactions, transaction]
-      const totalPaid = allTx
-        .filter((t) => t.type === TxType.PAYMENT && t.status === TxStatus.DONE)
-        .reduce((sum, t) => sum + t.amount, 0)
+      if (statusChanged && targetStatus) {
+        await recordOrderEvent(tx, {
+          orderId: order.id,
+          type: 'STATUS_CHANGED',
+          fromStatus: OrderStatus.PENDING_CONFIRMATION,
+          toStatus: targetStatus,
+          actorId: admin.id,
+          note: statusNote,
+        })
 
-      // Nếu đơn đang PENDING_CONFIRMATION, kiểm tra điều kiện chuyển PREORDER_WAITING hoặc PROCESSING theo domain order-state
-      let statusChanged = false
-
-      if (order.status === OrderStatus.PENDING_CONFIRMATION) {
-        if (order.type === OrderType.PREORDER) {
-          const transitionCheck = canTransition(
-            order,
-            OrderStatus.PREORDER_WAITING,
-            'SELLER',
-            { paidAmount: totalPaid }
-          )
-
-          if (transitionCheck.ok) {
-            await tx.order.update({
-              where: { id: order.id },
-              data: { status: OrderStatus.PREORDER_WAITING },
-            })
-
-            await recordOrderEvent(tx, {
-              orderId: order.id,
-              type: 'STATUS_CHANGED',
-              fromStatus: OrderStatus.PENDING_CONFIRMATION,
-              toStatus: OrderStatus.PREORDER_WAITING,
-              actorId: admin.id,
-              note: `Đã nhận đủ tiền cọc đặt trước (${totalPaid.toLocaleString('vi-VN')} đ ≥ ${order.depositAmount.toLocaleString('vi-VN')} đ) -> Chuyển sang Chờ thu hoạch (PREORDER_WAITING)`,
-            })
-
-            statusChanged = true
-          }
-        } else {
-          const transitionCheck = canTransition(
-            order,
-            OrderStatus.PROCESSING,
-            'SELLER',
-            { paidAmount: totalPaid }
-          )
-
-          if (transitionCheck.ok) {
-            const requiredThreshold = getRequiredConfirmationPayment(order)
-            await tx.order.update({
-              where: { id: order.id },
-              data: { status: OrderStatus.PROCESSING },
-            })
-
-            await recordOrderEvent(tx, {
-              orderId: order.id,
-              type: 'STATUS_CHANGED',
-              fromStatus: OrderStatus.PENDING_CONFIRMATION,
-              toStatus: OrderStatus.PROCESSING,
-              actorId: admin.id,
-              note: `Đã nhận đủ tiền thanh toán (${totalPaid.toLocaleString('vi-VN')} đ ≥ ${requiredThreshold.toLocaleString('vi-VN')} đ, hình thức: ${order.paymentOption}) -> Chuyển sang Đang xử lý`,
-            })
-
-            statusChanged = true
-          }
-        }
-      }
-
-      if (statusChanged) {
         await confirmOrderInventoryAllocations(tx, order.id)
       }
 

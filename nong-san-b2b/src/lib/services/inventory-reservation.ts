@@ -9,6 +9,7 @@ import {
   TxType,
 } from '@prisma/client'
 import { recordOrderEvent } from '@/lib/events'
+import { getRequiredConfirmationPayment } from '@/lib/domain/order-state'
 import {
   allocateBatchesFefo,
   BatchCandidate,
@@ -232,7 +233,11 @@ export async function confirmOrderInventoryAllocations(
 }
 
 /**
- * Hủy nguyên tử một đơn hàng PENDING_CONFIRMATION đã quá hạn 10 phút và giải phóng tồn kho đúng một lần.
+ * Xử lý nguyên tử một đơn hàng PENDING_CONFIRMATION đã quá hạn giữ chỗ 10 phút:
+ * - Nếu chưa có tiền thực nhận (paid = 0): tự động chuyển CANCELLED (SYSTEM) và giải phóng tồn kho giữ chỗ đúng 1 lần.
+ * - Nếu là đơn lịch sử đã có tiền thực nhận một phần dưới ngưỡng xác nhận (0 < paid < requiredThreshold):
+ *   giải phóng ngay tồn kho giữ chỗ (HOLD_PENDING -> RELEASED) để không chiếm giữ hàng vô thời hạn,
+ *   nhưng giữ nguyên giao dịch thanh toán và trạng thái đơn để Admin đối soát / hủy hoàn tiền thủ công.
  */
 export async function expireOverdueOrderInTx(
   tx: ReservationTxClient,
@@ -241,6 +246,7 @@ export async function expireOverdueOrderInTx(
   actorId?: string | null
 ): Promise<{
   expired: boolean
+  orderCancelled?: boolean
   releasedCount: number
   totalReleasedGrams: number
 }> {
@@ -263,12 +269,24 @@ export async function expireOverdueOrderInTx(
   })
 
   if (!current || current.status !== OrderStatus.PENDING_CONFIRMATION) {
-    return { expired: false, releasedCount: 0, totalReleasedGrams: 0 }
+    return { expired: false, orderCancelled: false, releasedCount: 0, totalReleasedGrams: 0 }
   }
 
   const totalPaid = (current.transactions ?? [])
     .filter((t) => t.type === TxType.PAYMENT && t.status === TxStatus.DONE)
     .reduce((sum, t) => sum + t.amount, 0)
+
+  const requiredAmount =
+    current.paymentOption &&
+    typeof current.total === 'number' &&
+    typeof current.depositAmount === 'number'
+      ? getRequiredConfirmationPayment({
+          paymentOption: current.paymentOption,
+          total: current.total,
+          depositAmount: current.depositAmount,
+          type: current.type,
+        })
+      : undefined
 
   if (
     !isOrderPaymentExpired(
@@ -276,11 +294,43 @@ export async function expireOverdueOrderInTx(
         status: current.status,
         paymentDueAt: current.paymentDueAt,
         paidAmount: totalPaid,
+        requiredAmount,
       },
       now
     )
   ) {
-    return { expired: false, releasedCount: 0, totalReleasedGrams: 0 }
+    return { expired: false, orderCancelled: false, releasedCount: 0, totalReleasedGrams: 0 }
+  }
+
+  // Trường hợp đặc biệt (PAY-08): Đơn lịch sử đã có thanh toán một phần dưới ngưỡng (0 < totalPaid < requiredAmount)
+  // 1. Giải phóng tồn kho đang giữ chỗ (HOLD_PENDING -> RELEASED) đúng 1 lần, không giữ hàng vô hạn.
+  // 2. Không xóa/ẩn giao dịch tiền đã nhận, không tự động tạo hoàn tiền, không tự hủy đơn bằng SYSTEM.
+  if (totalPaid > 0) {
+    const releaseRes = await releaseOrderInventoryAllocations(tx, {
+      orderId: current.id,
+      orderCode: current.code,
+      actorId: actorId ?? null,
+      reason: `Giải phóng giữ chỗ FEFO do đơn ${current.code || current.id} quá hạn 10 phút nhưng mới thanh toán một phần dưới ngưỡng`,
+      now,
+    })
+
+    if (releaseRes.releasedCount > 0) {
+      await recordOrderEvent(tx, {
+        orderId: current.id,
+        type: 'RESERVATION_HOLD_EXPIRED',
+        fromStatus: OrderStatus.PENDING_CONFIRMATION,
+        toStatus: OrderStatus.PENDING_CONFIRMATION,
+        actorId: actorId ?? undefined,
+        note: `Đơn quá hạn giữ chỗ 10 phút khi mới thanh toán một phần dưới ngưỡng (${totalPaid.toLocaleString('vi-VN')} đ): đã giải phóng ${gramsToKg(releaseRes.totalReleasedGrams)} kg tồn kho giữ chỗ, giữ nguyên tiền thực nhận chờ Admin đối soát thủ công`,
+      })
+    }
+
+    return {
+      expired: true,
+      orderCancelled: false,
+      releasedCount: releaseRes.releasedCount,
+      totalReleasedGrams: releaseRes.totalReleasedGrams,
+    }
   }
 
   const orderDelegate = tx.order as unknown as {
@@ -315,7 +365,7 @@ export async function expireOverdueOrderInTx(
   }
 
   if (!updated) {
-    return { expired: false, releasedCount: 0, totalReleasedGrams: 0 }
+    return { expired: false, orderCancelled: false, releasedCount: 0, totalReleasedGrams: 0 }
   }
 
   const releaseRes = await releaseOrderInventoryAllocations(tx, {
@@ -340,6 +390,7 @@ export async function expireOverdueOrderInTx(
 
   return {
     expired: true,
+    orderCancelled: true,
     releasedCount: releaseRes.releasedCount,
     totalReleasedGrams: releaseRes.totalReleasedGrams,
   }
@@ -371,12 +422,6 @@ async function releaseOverdueHoldsForProductsInTx(
       items: {
         some: {
           productId: { in: productIds },
-        },
-      },
-      transactions: {
-        none: {
-          type: TxType.PAYMENT,
-          status: TxStatus.DONE,
         },
       },
     },

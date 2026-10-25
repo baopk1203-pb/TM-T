@@ -24,6 +24,7 @@ param(
 
     [string]$BackupSnapshotId = '',
     [switch]$BackupVerifiedByPO = $false,    # PO da xac minh thu cong branch backup tren Neon Console
+    [switch]$AcceptDemoDataRiskByPO = $false,# PO xac nhan chap nhan rui ro du lieu demo tren preview-beta (khong can tao backup branch)
 
     [switch]$Diagnostic = $false,            # Bat che do chan doan chi tiet (Safe Diagnostic Mode)
     [switch]$SkipRecoveryChecklist = $false, # Chi su dung trong Preflight test harness, cam tuyet doi trong Apply
@@ -309,7 +310,11 @@ function Test-RecoveryReadiness {
         [bool]$SkipPrompt = $false,
         [bool]$NonInteractive = $false,
         [string]$Mode = 'Preflight',
-        [bool]$BackupVerifiedByPO = $false
+        [bool]$BackupVerifiedByPO = $false,
+        [bool]$AcceptDemoDataRiskByPO = $false,
+        [string]$TargetHost = '',
+        [string]$GitBranch = 'beta',
+        [string]$ProductionEndpointId = 'ep-square-scene-b5ddgxil'
     )
 
     Write-Host ""
@@ -323,9 +328,41 @@ function Test-RecoveryReadiness {
     Write-Host "5. LUU Y: Chuyen sang branch backup se thay doi Hostname connection string!" -ForegroundColor Yellow
     Write-Host "-----------------------------------------------------------------" -ForegroundColor Gray
 
-    # RULE 1: Trong Mode Apply, CAM TUYET DOI co bypass/waiver (-SkipRecoveryChecklist)
+    # RULE 0: TUYET DOI KHONG AP DUNG NGOAI LE CHO PRODUCTION
+    if (-not [string]::IsNullOrWhiteSpace($TargetHost) -and $TargetHost -match $ProductionEndpointId) {
+        throw "HARD GATE G5 FAILED: Tuyet doi khong duoc ap dung ngoai le demo (-AcceptDemoDataRiskByPO) hoac thao tac G5 cho Production ($ProductionEndpointId)!"
+    }
+
+    # RULE 1: Trong Mode Apply, CAM TUYET DOI co bypass/waiver an (-SkipRecoveryChecklist)
     if ($Mode -eq 'Apply' -and $SkipPrompt) {
         throw "HARD GATE G5 FAILED: Co bypass/waiver (-SkipRecoveryChecklist) bi CAM TUYET DOI trong che do Apply! Khong chap thuan bat ky waiver nao cho migration F01."
+    }
+
+    # RULE 2: Ngoai le Demo minh thi cua PO (-AcceptDemoDataRiskByPO)
+    if ($AcceptDemoDataRiskByPO) {
+        if ($GitBranch -ne 'beta') {
+            throw "HARD GATE G5 FAILED: Ngoai le -AcceptDemoDataRiskByPO chi duoc phep ap dung tren Git branch 'beta' (hien tai: '$GitBranch')!"
+        }
+        $normalizedTarget = if ([string]::IsNullOrWhiteSpace($TargetHost)) { '' } else { $TargetHost.Trim().ToLower() }
+        $isValidNeonDirectHost = (
+            -not [string]::IsNullOrWhiteSpace($normalizedTarget) -and
+            $normalizedTarget -notmatch '-pooler' -and
+            $normalizedTarget -notmatch $ProductionEndpointId -and
+            ($normalizedTarget -match '^[a-z0-9-]+\.(c-[a-z0-9-]+\.)?[a-z0-9-]+\.aws\.neon\.tech$' -or $normalizedTarget -match '^[a-z0-9-]+\.[a-z0-9.-]+\.neon\.tech$')
+        )
+        if (-not $isValidNeonDirectHost) {
+            throw "HARD GATE G5 FAILED: Ngoai le -AcceptDemoDataRiskByPO chi duoc ap dung khi da xac minh dung Direct Host cua Neon 'preview-beta' (TargetHost khong hop le hoac rong)!"
+        }
+
+        Write-Host "[WARN] Hard Gate G5: Product Owner xac nhan chap nhan rui ro du lieu demo tren 'preview-beta' (-AcceptDemoDataRiskByPO)." -ForegroundColor Yellow
+        Write-Host "       -> Du lieu preview-beta la du lieu demo co the tai tao qua 'npm run db:seed'." -ForegroundColor DarkGray
+        Write-Host "       -> Trang thai ghi nhan trung thuc: DEMO_RISK_ACCEPTED_BY_PO (KHONG gia mao BACKUP_VERIFIED)." -ForegroundColor Yellow
+        return @{
+            Status = 'DEMO_RISK_ACCEPTED_BY_PO'
+            CanProceed = $true
+            BackupId = 'NONE_DEMO_SEED_REPRODUCIBLE'
+            Message = "PO xac nhan chap nhan rui ro du lieu demo tren preview-beta qua co -AcceptDemoDataRiskByPO (DEMO_RISK_ACCEPTED_BY_PO)."
+        }
     }
 
     # CHE DO PREFLIGHT (Read-Only Dry-Run):
@@ -758,6 +795,7 @@ function Invoke-SafePreviewMigration {
 
         [string]$BackupSnapshotId = '',
         [switch]$BackupVerifiedByPO = $false,
+        [switch]$AcceptDemoDataRiskByPO = $false,
 
         [switch]$Diagnostic = $false,
         [switch]$SkipRecoveryChecklist = $false,
@@ -844,12 +882,15 @@ function Invoke-SafePreviewMigration {
         -SkipPrompt:$SkipRecoveryChecklist `
         -NonInteractive:$NonInteractive `
         -Mode $Mode `
-        -BackupVerifiedByPO:$BackupVerifiedByPO
+        -BackupVerifiedByPO:$BackupVerifiedByPO `
+        -AcceptDemoDataRiskByPO:$AcceptDemoDataRiskByPO `
+        -TargetHost $targetInfo.Host `
+        -GitBranch 'beta'
     Write-Host "[INFO] Hard Gate G5: $($g5Result.Message)" -ForegroundColor Yellow
     Write-Host ""
 
-    if ($Mode -eq 'Apply' -and (-not $g5Result.CanProceed -or $g5Result.Status -ne 'BACKUP_VERIFIED')) {
-        throw "HARD GATE G5 FAILED: Che do Apply bat buoc phai dat trang thai BACKUP_VERIFIED! Hien tai la '$($g5Result.Status)'."
+    if ($Mode -eq 'Apply' -and (-not $g5Result.CanProceed -or ($g5Result.Status -ne 'BACKUP_VERIFIED' -and $g5Result.Status -ne 'DEMO_RISK_ACCEPTED_BY_PO'))) {
+        throw "HARD GATE G5 FAILED: Che do Apply bat buoc phai dat trang thai BACKUP_VERIFIED hoac DEMO_RISK_ACCEPTED_BY_PO! Hien tai la '$($g5Result.Status)'."
     }
 
     # -------------------------------------------------------------------------
@@ -1031,7 +1072,7 @@ function Invoke-SafePreviewMigration {
         Write-Host "=================================================================" -ForegroundColor Green
         Write-Host "   MIGRATION F01 TREN NEON PREVIEW-BETA HOAN TAT THANH CONG!     " -ForegroundColor Green
         Write-Host "=================================================================" -ForegroundColor Green
-        Write-Host "  -> Ket qua Hard Gates: G0, G1, G2, G3, G4, G5, G6: PASS" -ForegroundColor Green
+        Write-Host "  -> Ket qua Hard Gates: G0, G1, G2, G3, G4, G6: PASS | G5: $($g5Result.Status)" -ForegroundColor Green
 
     } finally {
         # DON DEP BAO MAT BIEN MOI TRUONG
@@ -1044,5 +1085,5 @@ function Invoke-SafePreviewMigration {
 
 # Neu duoc goi truc tiep (khong phai dot-source), thuc thi controller
 if ($MyInvocation.InvocationName -ne '.') {
-    Invoke-SafePreviewMigration -Mode $Mode -ApprovedCommitSha $ApprovedCommitSha -ExpectedHost $ExpectedHost -SecureConnectionString $SecureConnectionString -BackupSnapshotId $BackupSnapshotId -BackupVerifiedByPO:$BackupVerifiedByPO -Diagnostic:$Diagnostic -SkipRecoveryChecklist:$SkipRecoveryChecklist -SkipWorkingTreeCheck:$SkipWorkingTreeCheck -NonInteractive:$NonInteractive -MockPrismaStatusOutput $MockPrismaStatusOutput -MockPrismaStatusExitCode $MockPrismaStatusExitCode -MockPrismaDeployExitCode $MockPrismaDeployExitCode -MockPostCheckExitCode $MockPostCheckExitCode -MockDbResult $MockDbResult
+    Invoke-SafePreviewMigration -Mode $Mode -ApprovedCommitSha $ApprovedCommitSha -ExpectedHost $ExpectedHost -SecureConnectionString $SecureConnectionString -BackupSnapshotId $BackupSnapshotId -BackupVerifiedByPO:$BackupVerifiedByPO -AcceptDemoDataRiskByPO:$AcceptDemoDataRiskByPO -Diagnostic:$Diagnostic -SkipRecoveryChecklist:$SkipRecoveryChecklist -SkipWorkingTreeCheck:$SkipWorkingTreeCheck -NonInteractive:$NonInteractive -MockPrismaStatusOutput $MockPrismaStatusOutput -MockPrismaStatusExitCode $MockPrismaStatusExitCode -MockPrismaDeployExitCode $MockPrismaDeployExitCode -MockPostCheckExitCode $MockPostCheckExitCode -MockDbResult $MockDbResult
 }

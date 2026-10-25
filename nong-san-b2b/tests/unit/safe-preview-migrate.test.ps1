@@ -1,5 +1,5 @@
 # tests/unit/safe-preview-migrate.test.ps1
-# Bo kiem thu hoi quy doc lap cho Safe Preview Migration Script (S1 - S39).
+# Bo kiem thu hoi quy doc lap cho Safe Preview Migration Script (S1 - S43).
 # Chay 100% offline, khong cham network, khong cham Neon, khong mutation.
 
 $ErrorActionPreference = 'Continue'
@@ -38,7 +38,7 @@ function Record-Test {
 $realHead = (git rev-parse HEAD 2>$null).Trim()
 
 Write-Host "=================================================================" -ForegroundColor Cyan
-Write-Host "   BAT DAU CHAY 39 TEST CASES OFFLINE (EV-IMP-01B-G5-HOTFIX)     " -ForegroundColor Cyan
+Write-Host "   BAT DAU CHAY 43 TEST CASES OFFLINE (EV-IMP-01B-G5-DEMO)       " -ForegroundColor Cyan
 Write-Host "   Current Real Git HEAD: $realHead                              " -ForegroundColor Cyan
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -543,9 +543,80 @@ try {
     Record-Test "S39" "G5 Interactive Apply nhap 'y' (thu bypass cu) -> STOP" $matched $_.Exception.Message
 }
 
+# -----------------------------------------------------------------------------
+# S40: G5 AcceptDemoDataRiskByPO tren beta + Neon preview-beta Direct Host -> DEMO_RISK_ACCEPTED_BY_PO
+# -----------------------------------------------------------------------------
+try {
+    $g5Demo = Test-RecoveryReadiness -Mode Apply `
+        -AcceptDemoDataRiskByPO $true `
+        -TargetHost "ep-fancy-waterfall-b5f117np.c-7.us-east-2.aws.neon.tech" `
+        -GitBranch "beta"
+    $s40Passed = ($g5Demo.Status -eq 'DEMO_RISK_ACCEPTED_BY_PO' -and $g5Demo.Status -ne 'BACKUP_VERIFIED' -and $g5Demo.CanProceed -eq $true)
+    Record-Test "S40" "G5 AcceptDemoDataRiskByPO hop le -> DEMO_RISK_ACCEPTED_BY_PO (khong gia mao BACKUP_VERIFIED)" $s40Passed "Status: $($g5Demo.Status)"
+} catch {
+    Record-Test "S40" "G5 AcceptDemoDataRiskByPO hop le -> DEMO_RISK_ACCEPTED_BY_PO (khong gia mao BACKUP_VERIFIED)" $false $_.Exception.Message
+}
+
+# -----------------------------------------------------------------------------
+# S41: G5 AcceptDemoDataRiskByPO tren Production host -> STOP (Chan tuyet doi Production)
+# -----------------------------------------------------------------------------
+try {
+    Test-RecoveryReadiness -Mode Apply `
+        -AcceptDemoDataRiskByPO $true `
+        -TargetHost "ep-square-scene-b5ddgxil.c-7.us-east-2.aws.neon.tech" `
+        -GitBranch "beta"
+    Record-Test "S41" "G5 AcceptDemoDataRiskByPO tren Production host -> STOP" $false "Khong chan duoc Production khi dung AcceptDemoDataRiskByPO"
+} catch {
+    $matched = $_.Exception.Message -match "Tuyet doi khong duoc ap dung ngoai le demo.*Production"
+    Record-Test "S41" "G5 AcceptDemoDataRiskByPO tren Production host -> STOP" $matched $_.Exception.Message
+}
+
+# -----------------------------------------------------------------------------
+# S42: G5 AcceptDemoDataRiskByPO sai Git branch ('main') hoac pooled host -> STOP
+# -----------------------------------------------------------------------------
+$s42BranchBlocked = $false
+$s42PoolerBlocked = $false
+try {
+    Test-RecoveryReadiness -Mode Apply `
+        -AcceptDemoDataRiskByPO $true `
+        -TargetHost "ep-fancy-waterfall-b5f117np.c-7.us-east-2.aws.neon.tech" `
+        -GitBranch "main"
+} catch {
+    $s42BranchBlocked = ($_.Exception.Message -match "chi duoc phep ap dung tren Git branch 'beta'")
+}
+try {
+    Test-RecoveryReadiness -Mode Apply `
+        -AcceptDemoDataRiskByPO $true `
+        -TargetHost "ep-fancy-waterfall-b5f117np-pooler.c-7.us-east-2.aws.neon.tech" `
+        -GitBranch "beta"
+} catch {
+    $s42PoolerBlocked = ($_.Exception.Message -match "Direct Host cua Neon 'preview-beta'")
+}
+Record-Test "S42" "G5 AcceptDemoDataRiskByPO sai Git branch hoac pooled host -> STOP" ($s42BranchBlocked -and $s42PoolerBlocked) "BranchBlocked=$s42BranchBlocked, PoolerBlocked=$s42PoolerBlocked"
+
+# -----------------------------------------------------------------------------
+# S43: End-to-End Apply voi -AcceptDemoDataRiskByPO (khong can BackupSnapshotId) khi G0-G4, G6 PASS
+# -----------------------------------------------------------------------------
+try {
+    Invoke-SafePreviewMigration -Mode Apply `
+        -ApprovedCommitSha $realHead `
+        -ExpectedHost "ep-preview-beta.c-7.us-east-2.aws.neon.tech" `
+        -SecureConnectionString $secTest `
+        -AcceptDemoDataRiskByPO `
+        -SkipWorkingTreeCheck `
+        -NonInteractive `
+        -MockPrismaStatusOutput $mockValidF01Pending `
+        -MockPrismaStatusExitCode 1 `
+        -MockPrismaDeployExitCode 0 `
+        -MockPostCheckExitCode 0
+    Record-Test "S43" "End-to-End Apply voi -AcceptDemoDataRiskByPO khi G0-G4, G6 PASS -> PASS" $true "Deploy mock thanh cong voi DEMO_RISK_ACCEPTED_BY_PO"
+} catch {
+    Record-Test "S43" "End-to-End Apply voi -AcceptDemoDataRiskByPO khi G0-G4, G6 PASS -> PASS" $false $_.Exception.Message
+}
+
 Write-Host ""
 Write-Host "=================================================================" -ForegroundColor Cyan
-Write-Host "   TONG KET BANG KET QUA KIEM THU OFFLINE (S1 - S39)             " -ForegroundColor Cyan
+Write-Host "   TONG KET BANG KET QUA KIEM THU OFFLINE (S1 - S43)             " -ForegroundColor Cyan
 Write-Host "=================================================================" -ForegroundColor Cyan
 $passedCount = ($testResults | Where-Object { $_.Result -eq "PASS" }).Count
 $totalCount = $testResults.Count

@@ -1054,9 +1054,228 @@ describe('EV-IMP-01C: Checkout FEFO Reservation & 10-Minute Payment Timeout', ()
     const expRes = await processExpiredOrders(now)
     expect(expRes.success).toBe(true)
     expect(expRes.expiredCount).toBe(1)
+    expect(state.orders[0].status).toBe(OrderStatus.CANCELLED)
+    expect(state.orders[0].cancelReason).toBe(
+      'Quá hạn giữ chỗ thanh toán 10 phút mà hệ thống chưa nhận được tiền'
+    )
+    expect(state.orders[0].cancelReason).not.toContain('24h')
     expect(state.getBatchStock('batch-fefo-early').availableGrams).toBe(40000)
 
     const confirmRes = await confirmOrderInventoryAllocations(tx, 'order-cron-exp')
     expect(confirmRes.confirmedCount).toBe(0) // Đã RELEASED nên không thể confirm
+  })
+
+  it('9. Kiểm tra 6 tình huống thanh toán một phần, cọc 30%, 100% và giao dịch chưa hoàn tất (QA-F01C-01)', async () => {
+    const state = createInMemoryInventoryState()
+    const tx = state.buildTxClient()
+
+    vi.mocked(db.$transaction).mockImplementation(async (callback) => {
+      return await (callback as unknown as (t: ReservationTxClient) => unknown)(tx)
+    })
+
+    const createdAt = new Date('2026-10-25T10:00:00.000Z')
+    const dueAt = computeOrderPaymentDueAt(createdAt) // 10:10:00Z
+    const afterDue = new Date('2026-10-25T10:15:00.000Z')
+
+    // --- TÌNH HUỐNG A: Thanh toán nhỏ hơn 30% tiền cọc trước hạn 10 phút ---
+    // Đơn DEPOSIT_30: total = 6.000.000đ, depositAmount (30%) = 1.800.000đ.
+    // Khách mới chuyển 500.000đ (< 1.800.000đ) trước hạn 10 phút.
+    const futureDue = new Date(Date.now() + 5 * 60 * 1000)
+    state.orders.push({
+      id: 'order-under-30',
+      code: 'DH-UNDER-30',
+      status: OrderStatus.PENDING_CONFIRMATION,
+      type: OrderType.STANDARD,
+      paymentOption: PaymentOption.DEPOSIT_30,
+      total: 6000000,
+      depositAmount: 1800000,
+      paymentDueAt: futureDue,
+      items: [
+        {
+          id: 'item-under-30',
+          orderId: 'order-under-30',
+          productId: 'prod-ri6',
+          productName: 'Sầu Riêng Ri6 Cai Lậy',
+          orderedGrams: 10000,
+        },
+      ],
+      transactions: [],
+    })
+
+    await reserveOrderInventoryFefo(tx, {
+      orderId: 'order-under-30',
+      orderCode: 'DH-UNDER-30',
+      userId: 'user-1',
+      items: state.orders[0].items,
+      products: [{ id: 'prod-ri6', name: 'Sầu Riêng Ri6 Cai Lậy', inventoryTrackingEnabled: true }],
+      holdExpiresAt: futureDue,
+      now: createdAt,
+    })
+
+    // Admin ghi nhận 500.000đ (< 30% = 1.800.000đ) trước hạn
+    const partialRes = await confirmPayment({
+      orderId: 'order-under-30',
+      amount: 500000,
+      method: TxMethod.BANK_TRANSFER,
+      reference: 'FT-UNDER-30',
+    })
+    expect(partialRes.success).toBe(true)
+    // Đơn chưa đủ 30% nên vẫn giữ PENDING_CONFIRMATION và phân bổ vẫn ở HOLD_PENDING
+    expect(state.orders[0].status).toBe(OrderStatus.PENDING_CONFIRMATION)
+    const allocUnder30 = state.allocations.find((a) => a.orderId === 'order-under-30')
+    expect(allocUnder30?.status).toBe(AllocationStatus.HOLD_PENDING)
+
+    // Giả lập thời gian trôi qua quá hạn 10 phút (paymentDueAt = dueAt < afterDue)
+    state.orders[0].paymentDueAt = dueAt
+    // Do đã có paidAmount = 500.000đ > 0, cơ chế hiện tại bảo vệ đơn đã nhận tiền khỏi auto-cancel
+    expect(
+      isOrderPaymentExpired(
+        {
+          status: state.orders[0].status,
+          paymentDueAt: state.orders[0].paymentDueAt,
+          paidAmount: 500000,
+        },
+        afterDue
+      )
+    ).toBe(false)
+
+    // --- TÌNH HUỐNG B: Đơn có giao dịch thanh toán nhưng chưa đạt trạng thái DONE (PENDING / FAILED) ---
+    state.orders.push({
+      id: 'order-tx-pending',
+      code: 'DH-TX-PENDING',
+      status: OrderStatus.PENDING_CONFIRMATION,
+      type: OrderType.STANDARD,
+      paymentOption: PaymentOption.DEPOSIT_30,
+      total: 6000000,
+      depositAmount: 1800000,
+      paymentDueAt: dueAt,
+      items: [
+        {
+          id: 'item-tx-pending',
+          orderId: 'order-tx-pending',
+          productId: 'prod-ri6',
+          productName: 'Sầu Riêng Ri6 Cai Lậy',
+          orderedGrams: 10000,
+        },
+      ],
+      transactions: [
+        {
+          id: 'tx-pending-1',
+          type: TxType.PAYMENT,
+          status: TxStatus.PENDING,
+          amount: 1800000,
+        },
+      ],
+    })
+
+    await reserveOrderInventoryFefo(tx, {
+      orderId: 'order-tx-pending',
+      orderCode: 'DH-TX-PENDING',
+      userId: 'user-1',
+      items: state.orders[1].items,
+      products: [{ id: 'prod-ri6', name: 'Sầu Riêng Ri6 Cai Lậy', inventoryTrackingEnabled: true }],
+      holdExpiresAt: dueAt,
+      now: createdAt,
+    })
+
+    // Quét hết hạn tại afterDue:
+    // - order-under-30 có giao dịch DONE (500.000đ) -> KHÔNG bị tự động hủy
+    // - order-tx-pending chỉ có giao dịch PENDING (paid DONE = 0) -> BỊ HỦY và giải phóng 10kg
+    vi.mocked(db.order.findMany).mockResolvedValue(
+      [state.orders[1]] as unknown as Awaited<ReturnType<typeof db.order.findMany>>
+    )
+    const expPendingRes = await processExpiredOrders(afterDue)
+    expect(expPendingRes.expiredCount).toBe(1)
+    expect(state.orders[0].status).toBe(OrderStatus.PENDING_CONFIRMATION)
+    expect(state.orders[1].status).toBe(OrderStatus.CANCELLED)
+    const allocTxPending = state.allocations.find((a) => a.orderId === 'order-tx-pending')
+    expect(allocTxPending?.status).toBe(AllocationStatus.RELEASED)
+
+    // --- TÌNH HUỐNG C: Thanh toán một phần SAU hạn 10 phút (khi paidBefore = 0) bị từ chối và giải phóng kho ---
+    const pastDue = new Date(Date.now() - 2 * 60 * 1000)
+    state.orders.push({
+      id: 'order-late-partial',
+      code: 'DH-LATE-PARTIAL',
+      status: OrderStatus.PENDING_CONFIRMATION,
+      type: OrderType.STANDARD,
+      paymentOption: PaymentOption.DEPOSIT_30,
+      total: 6000000,
+      depositAmount: 1800000,
+      paymentDueAt: pastDue,
+      items: [
+        {
+          id: 'item-late-partial',
+          orderId: 'order-late-partial',
+          productId: 'prod-ri6',
+          productName: 'Sầu Riêng Ri6 Cai Lậy',
+          orderedGrams: 10000,
+        },
+      ],
+      transactions: [],
+    })
+
+    await reserveOrderInventoryFefo(tx, {
+      orderId: 'order-late-partial',
+      orderCode: 'DH-LATE-PARTIAL',
+      userId: 'user-1',
+      items: state.orders[2].items,
+      products: [{ id: 'prod-ri6', name: 'Sầu Riêng Ri6 Cai Lậy', inventoryTrackingEnabled: true }],
+      holdExpiresAt: pastDue,
+      now: createdAt,
+    })
+
+    const latePartialRes = await confirmPayment({
+      orderId: 'order-late-partial',
+      amount: 500000,
+      method: TxMethod.BANK_TRANSFER,
+      reference: 'FT-LATE-PARTIAL',
+    })
+    expect(latePartialRes.success).toBe(false)
+    expect(state.orders[2].status).toBe(OrderStatus.CANCELLED)
+    const allocLatePartial = state.allocations.find((a) => a.orderId === 'order-late-partial')
+    expect(allocLatePartial?.status).toBe(AllocationStatus.RELEASED)
+
+    // --- TÌNH HUỐNG D: Đã thanh toán 100% trước hạn (FULL) -> chuyển PROCESSING & ALLOCATED_CONFIRMED ---
+    state.orders.push({
+      id: 'order-full-100',
+      code: 'DH-FULL-100',
+      status: OrderStatus.PENDING_CONFIRMATION,
+      type: OrderType.STANDARD,
+      paymentOption: PaymentOption.FULL,
+      total: 6000000,
+      depositAmount: 1800000,
+      paymentDueAt: futureDue,
+      items: [
+        {
+          id: 'item-full-100',
+          orderId: 'order-full-100',
+          productId: 'prod-ri6',
+          productName: 'Sầu Riêng Ri6 Cai Lậy',
+          orderedGrams: 10000,
+        },
+      ],
+      transactions: [],
+    })
+
+    await reserveOrderInventoryFefo(tx, {
+      orderId: 'order-full-100',
+      orderCode: 'DH-FULL-100',
+      userId: 'user-1',
+      items: state.orders[3].items,
+      products: [{ id: 'prod-ri6', name: 'Sầu Riêng Ri6 Cai Lậy', inventoryTrackingEnabled: true }],
+      holdExpiresAt: futureDue,
+      now: createdAt,
+    })
+
+    const full100Res = await confirmPayment({
+      orderId: 'order-full-100',
+      amount: 6000000,
+      method: TxMethod.BANK_TRANSFER,
+      reference: 'FT-FULL-100',
+    })
+    expect(full100Res.success).toBe(true)
+    expect(state.orders[3].status).toBe(OrderStatus.PROCESSING)
+    const allocFull100 = state.allocations.find((a) => a.orderId === 'order-full-100')
+    expect(allocFull100?.status).toBe(AllocationStatus.ALLOCATED_CONFIRMED)
   })
 })

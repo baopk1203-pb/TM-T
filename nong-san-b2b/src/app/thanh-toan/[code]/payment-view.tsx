@@ -70,7 +70,7 @@ export function PaymentView({ order, vietQrUrl, bankInfo, payable }: PaymentView
       ? order.depositAmount
       : order.total
 
-  // Đếm ngược 24h
+  // Đếm ngược 10 phút giữ chỗ thanh toán
   useEffect(() => {
     if (!order.paymentDueAt) return
 
@@ -273,7 +273,7 @@ export function PaymentView({ order, vietQrUrl, bankInfo, payable }: PaymentView
                   </div>
                 )}
 
-                {/* Đồng hồ đếm ngược 24h */}
+                {/* Đồng hồ đếm ngược 10 phút giữ chỗ thanh toán */}
                 <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-3.5 flex items-center justify-center gap-2 text-xs text-amber-900 font-semibold shadow-xs">
                   <Clock className="w-4 h-4 text-amber-600 shrink-0" />
                   <span>Hạn chót thanh toán: </span>

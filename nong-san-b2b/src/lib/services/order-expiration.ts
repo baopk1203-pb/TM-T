@@ -32,7 +32,7 @@ function resolveMaxLeadTimeDays(items?: CandidateItemWithLeadTime[] | null): num
 
 /**
  * Service nội bộ:
- * 1. Quét và hủy các đơn PENDING_CONFIRMATION quá hạn 24h mà chưa thanh toán (paid = 0)
+ * 1. Quét và hủy các đơn PENDING_CONFIRMATION quá hạn giữ chỗ thanh toán 10 phút mà chưa thanh toán (paid = 0)
  * 2. Quét và hủy các đơn nháp định kỳ DRAFT quá hạn xác nhận (today > deliveryDate - leadTimeDays)
  * - Tách biệt hoàn toàn khỏi Server Action công khai (SRC-SEC-07)
  * - Đảm bảo tính Idempotent: kiểm tra trạng thái nguyên tử trong transaction
@@ -168,7 +168,7 @@ export async function processExpiredOrders(now: Date = new Date()): Promise<Expi
         continue
       }
 
-      // Nhánh xử lý đơn PENDING_CONFIRMATION quá hạn thanh toán 24h
+      // Nhánh xử lý đơn PENDING_CONFIRMATION quá hạn giữ chỗ thanh toán 10 phút
       const didExpirePayment = await db.$transaction(async (tx) => {
         try {
           await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${candidate.id} FOR UPDATE`
@@ -211,7 +211,7 @@ export async function processExpiredOrders(now: Date = new Date()): Promise<Expi
           data: {
             status: OrderStatus.CANCELLED,
             cancelledBy: CancelActor.SYSTEM,
-            cancelReason: 'Quá hạn thanh toán 24h mà hệ thống chưa nhận được tiền',
+            cancelReason: 'Quá hạn giữ chỗ thanh toán 10 phút mà hệ thống chưa nhận được tiền',
           },
         })
 
@@ -232,7 +232,7 @@ export async function processExpiredOrders(now: Date = new Date()): Promise<Expi
           type: 'PAYMENT_EXPIRED',
           fromStatus: OrderStatus.PENDING_CONFIRMATION,
           toStatus: OrderStatus.CANCELLED,
-          note: 'Hệ thống tự động hủy đơn do quá hạn thanh toán 24h',
+          note: 'Hệ thống tự động hủy đơn do quá hạn thanh toán 10 phút',
         })
 
         return true

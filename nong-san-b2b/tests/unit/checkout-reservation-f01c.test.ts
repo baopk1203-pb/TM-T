@@ -6,6 +6,8 @@ import {
   OrderStatus,
   OrderType,
   PaymentOption,
+  Prisma,
+  PrismaClient,
   Role,
   TimeSlot,
   TxMethod,
@@ -31,6 +33,10 @@ import { cancelOrder } from '@/actions/order-lifecycle'
 import { processExpiredOrders } from '@/lib/services/order-expiration'
 import {
   executePrepareF01CDemoBatches,
+  runPrepareF01CDemoBatchesInTx,
+  validateExistingDemoBatchConflict,
+  parseCliArgs,
+  main as runDemoCli,
   F01C_DEMO_BATCH_SPECS,
   HISTORICAL_UNVERIFIED_BATCH_CODES,
   verifyDemoScriptSafetyGates,
@@ -1713,5 +1719,699 @@ describe('EV-IMP-01C: Checkout FEFO Reservation & 10-Minute Payment Timeout', ()
     }
     expect(mockProducts.filter((p) => p.inventoryTrackingEnabled)).toHaveLength(3)
     expect(mockProducts.filter((p) => !p.inventoryTrackingEnabled)).toHaveLength(5)
+  })
+
+  describe('QA-F01C-03 Regression Tests (T01 - T14): Single Atomic Transaction, Conflict Rejection & Safe CLI Runner', () => {
+    const demoRefDate = new Date('2026-10-25T10:00:00.000Z')
+
+    // T01: Dry Run không thực hiện mutation
+    it('T01: Dry Run không thực hiện bất kỳ database mutation nào', async () => {
+      let mutationCalls = 0
+      const dummyAdapter: DemoBatchStorageAdapter = {
+        async findProducts() {
+          return [
+            { id: 'p1', slug: 'sau-rieng-ri6', name: 'Ri6', farmId: 'f1', inventoryTrackingEnabled: false },
+            { id: 'p2', slug: 'buoi-da-xanh-ben-tre', name: 'BDX', farmId: 'f1', inventoryTrackingEnabled: false },
+            { id: 'p3', slug: 'bo-034-tay-nguyen', name: 'Bo034', farmId: 'f2', inventoryTrackingEnabled: false },
+          ]
+        },
+        async findBatchesByCodes() {
+          return []
+        },
+        async upsertDemoBatchAndImportInTx() {
+          mutationCalls++
+          throw new Error('Mutation called in DRY_RUN')
+        },
+        async enableTrackingForProducts() {
+          mutationCalls++
+          throw new Error('Mutation called in DRY_RUN')
+        },
+      }
+
+      const res = await executePrepareF01CDemoBatches(dummyAdapter, {
+        mode: 'DRY_RUN',
+        referenceDate: demoRefDate,
+      })
+      expect(res.mode).toBe('DRY_RUN')
+      expect(mutationCalls).toBe(0)
+      expect(res.batchesSummary.every((b) => b.action === 'WOULD_CREATE')).toBe(true)
+    })
+
+    // T02: APPLY thiếu cờ xác nhận bị từ chối
+    it('T02: APPLY thiếu cờ xác nhận (--confirm-preview-beta) bị từ chối fail-closed', () => {
+      expect(() =>
+        verifyDemoScriptSafetyGates({
+          connectionUrl: 'postgresql://user:pass@ep-fancy-waterfall-b5f117np.c-7.us-east-2.aws.neon.tech/neondb',
+          expectedHost: 'ep-fancy-waterfall-b5f117np.c-7.us-east-2.aws.neon.tech',
+          gitBranch: 'beta',
+          mode: 'APPLY',
+          confirmPreviewBeta: false,
+        })
+      ).toThrow(/--confirm-preview-beta/i)
+    })
+
+    // T03: APPLY sai host hoặc trỏ vào Production bị từ chối
+    it('T03: APPLY sai host hoặc trỏ vào Production bị từ chối', () => {
+      // Trỏ vào Production host
+      expect(() =>
+        verifyDemoScriptSafetyGates({
+          connectionUrl: 'postgresql://user:pass@ep-square-scene-b5ddgxil.c-7.us-east-2.aws.neon.tech/neondb',
+          expectedHost: 'ep-square-scene-b5ddgxil.c-7.us-east-2.aws.neon.tech',
+          gitBranch: 'beta',
+          mode: 'APPLY',
+          confirmPreviewBeta: true,
+        })
+      ).toThrow(/Production/i)
+
+      // Sai ExpectedHost
+      expect(() =>
+        verifyDemoScriptSafetyGates({
+          connectionUrl: 'postgresql://user:pass@ep-unrelated-db.c-7.us-east-2.aws.neon.tech/neondb',
+          expectedHost: 'ep-fancy-waterfall-b5f117np.c-7.us-east-2.aws.neon.tech',
+          gitBranch: 'beta',
+          mode: 'APPLY',
+          confirmPreviewBeta: true,
+        })
+      ).toThrow(/không khớp/i)
+    })
+
+    // T04: Sáu lô hợp lệ được chuẩn bị đúng tổng 550 kg trong môi trường test
+    it('T04: Sáu lô hợp lệ được chuẩn bị đúng tổng 550 kg trong môi trường test', async () => {
+      interface TestBatchItem {
+        id: string
+        code: string
+        productId: string
+        farmId: string
+        harvestDate: Date
+        expiryDate: Date | null
+        status: BatchStatus
+        isFefoEligible: boolean
+        quantityGrams: number
+        ledgerEntries: Array<{
+          id: string
+          type: InventoryLedgerType
+          quantityGrams: number
+          idempotencyKey: string | null
+        }>
+      }
+      const dbBatches: TestBatchItem[] = []
+      const dbProducts = [
+        { id: 'p1', slug: 'sau-rieng-ri6', name: 'Ri6', farmId: 'f1', inventoryTrackingEnabled: false },
+        { id: 'p2', slug: 'buoi-da-xanh-ben-tre', name: 'BDX', farmId: 'f1', inventoryTrackingEnabled: false },
+        { id: 'p3', slug: 'bo-034-tay-nguyen', name: 'Bo034', farmId: 'f2', inventoryTrackingEnabled: false },
+      ]
+
+      const testAdapter: DemoBatchStorageAdapter = {
+        async findProducts() {
+          return dbProducts.map((p) => ({ ...p }))
+        },
+        async findBatchesByCodes(codes) {
+          return dbBatches.filter((b) => codes.includes(b.code))
+        },
+        async upsertDemoBatchAndImportInTx({ spec, productId, farmId, harvestDate, expiryDate, idempotencyKey }) {
+          const b: TestBatchItem = {
+            id: `b-${spec.batchCode}`,
+            code: spec.batchCode,
+            productId,
+            farmId,
+            harvestDate,
+            expiryDate,
+            status: BatchStatus.ACTIVE,
+            isFefoEligible: true,
+            quantityGrams: spec.importGrams,
+            ledgerEntries: [
+              {
+                id: `l-${spec.batchCode}`,
+                type: InventoryLedgerType.IMPORT,
+                quantityGrams: spec.importGrams,
+                idempotencyKey,
+              },
+            ],
+          }
+          dbBatches.push(b)
+          return {
+            batchId: b.id,
+            batchCode: b.code,
+            createdBatch: true,
+            createdLedgerImport: true,
+            physicalStockGrams: spec.importGrams,
+            reservedGrams: 0,
+            availableGrams: spec.importGrams,
+          }
+        },
+        async enableTrackingForProducts(productIds) {
+          let count = 0
+          for (const p of dbProducts) {
+            if (productIds.includes(p.id)) {
+              p.inventoryTrackingEnabled = true
+              count++
+            }
+          }
+          return count
+        },
+      }
+
+      const res = await executePrepareF01CDemoBatches(testAdapter, {
+        mode: 'APPLY',
+        referenceDate: demoRefDate,
+      })
+
+      expect(res.batchesSummary).toHaveLength(6)
+      const totalGrams = res.batchesSummary.reduce((sum, b) => sum + b.targetImportGrams, 0)
+      expect(totalGrams).toBe(550_000) // 550 kg
+      expect(dbProducts.every((p) => p.inventoryTrackingEnabled)).toBe(true)
+    })
+
+    // T05: Lỗi tại lô thứ sáu rollback toàn bộ sáu lô và Ledger trong Single Atomic Transaction
+    it('T05: Lỗi tại lô thứ sáu rollback toàn bộ sáu lô và Ledger trong Single Atomic Transaction', async () => {
+      interface MockItem {
+        id: string
+        code: string
+        productId?: string
+        farmId?: string
+        harvestDate?: Date
+        expiryDate?: Date
+        status?: BatchStatus
+        isFefoEligible?: boolean
+        quantityGrams?: number
+        ledgerEntries: Array<{ id: string; type: InventoryLedgerType; quantityGrams: number; idempotencyKey?: string }>
+      }
+      const committedBatches: MockItem[] = []
+      const committedLedger: Array<{ id: string; batchId: string; type: InventoryLedgerType; quantityGrams: number }> = []
+      const committedProducts = [
+        { id: 'p-ri6', slug: 'sau-rieng-ri6', name: 'Sầu Riêng Ri6', farmId: 'f-1', inventoryTrackingEnabled: false },
+        { id: 'p-bdx', slug: 'buoi-da-xanh-ben-tre', name: 'Bưởi Da Xanh', farmId: 'f-1', inventoryTrackingEnabled: false },
+        { id: 'p-bo', slug: 'bo-034-tay-nguyen', name: 'Bơ 034', farmId: 'f-2', inventoryTrackingEnabled: false },
+      ]
+
+      const mockPrisma = {
+        $transaction: vi.fn(async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
+          const stagedBatches: MockItem[] = []
+          const stagedLedger: Array<{ id: string; batchId: string; type: InventoryLedgerType; quantityGrams: number }> = []
+          const stagedProducts = committedProducts.map((p) => ({ ...p }))
+
+          const mockTx = {
+            product: {
+              findMany: vi.fn(async () => stagedProducts.map((p) => ({ ...p }))),
+              updateMany: vi.fn(async ({ where, data }: { where: { id: { in: string[] } }; data: { inventoryTrackingEnabled: boolean } }) => {
+                let count = 0
+                for (const p of stagedProducts) {
+                  if (where.id.in.includes(p.id)) {
+                    Object.assign(p, data)
+                    count++
+                  }
+                }
+                return { count }
+              }),
+            },
+            batch: {
+              findMany: vi.fn(async () => stagedBatches.map((b) => ({ ...b }))),
+              findUnique: vi.fn(async ({ where }: { where: { code: string } }) => {
+                const found = stagedBatches.find((b) => b.code === where.code)
+                return found ? { ...found } : null
+              }),
+              create: vi.fn(async ({ data }: { data: { code: string; [k: string]: unknown } }) => {
+                // Giả lập lỗi IO / Disk / Lock tại lô thứ 6 (LO-FEFO-BO034-02)
+                if (data.code === 'LO-FEFO-BO034-02') {
+                  throw new Error('PostgreSQL deadlock / disk error at 6th batch: LO-FEFO-BO034-02')
+                }
+                const b: MockItem = {
+                  ...(data as unknown as MockItem),
+                  id: `batch-${stagedBatches.length + 1}`,
+                  ledgerEntries: [],
+                }
+                stagedBatches.push(b)
+                return b
+              }),
+              update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+                const found = stagedBatches.find((b) => b.id === where.id)
+                if (found) Object.assign(found, data)
+                return found
+              }),
+            },
+            inventoryLedger: {
+              create: vi.fn(async ({ data }: { data: { batchId: string; type: InventoryLedgerType; quantityGrams: number } }) => {
+                const l = { ...data, id: `led-${stagedLedger.length + 1}` }
+                stagedLedger.push(l)
+                const parent = stagedBatches.find((b) => b.id === data.batchId)
+                if (parent) parent.ledgerEntries.push(l)
+                return l
+              }),
+            },
+          } as unknown as Prisma.TransactionClient
+
+          try {
+            const result = await callback(mockTx)
+            committedBatches.push(...stagedBatches)
+            committedLedger.push(...stagedLedger)
+            return result
+          } catch (err) {
+            // Rollback: toàn bộ staged changes bị hủy!
+            throw err
+          }
+        }),
+      } as unknown as PrismaClient
+
+      await expect(
+        runPrepareF01CDemoBatchesInTx(mockPrisma, {
+          mode: 'APPLY',
+          referenceDate: demoRefDate,
+        })
+      ).rejects.toThrow('PostgreSQL deadlock / disk error at 6th batch')
+
+      // Khẳng định Rollback: 0 lô nào lọt vào committed state
+      expect(committedBatches).toHaveLength(0)
+      expect(committedLedger).toHaveLength(0)
+      expect(committedProducts.every((p) => !p.inventoryTrackingEnabled)).toBe(true)
+    })
+
+    // T06: Lỗi khi bật Tracking rollback toàn bộ transaction
+    it('T06: Lỗi khi bật Tracking rollback toàn bộ transaction', async () => {
+      interface MockItem {
+        id: string
+        code: string
+        ledgerEntries: Array<{ id: string; type: InventoryLedgerType; quantityGrams: number }>
+      }
+      const committedBatches: MockItem[] = []
+      const committedLedger: Array<{ id: string; batchId: string; type: InventoryLedgerType; quantityGrams: number }> = []
+      const committedProducts = [
+        { id: 'p-ri6', slug: 'sau-rieng-ri6', name: 'Sầu Riêng Ri6', farmId: 'f-1', inventoryTrackingEnabled: false },
+        { id: 'p-bdx', slug: 'buoi-da-xanh-ben-tre', name: 'Bưởi Da Xanh', farmId: 'f-1', inventoryTrackingEnabled: false },
+        { id: 'p-bo', slug: 'bo-034-tay-nguyen', name: 'Bơ 034', farmId: 'f-2', inventoryTrackingEnabled: false },
+      ]
+
+      const mockPrisma = {
+        $transaction: vi.fn(async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
+          const stagedBatches: MockItem[] = []
+          const stagedLedger: Array<{ id: string; batchId: string; type: InventoryLedgerType; quantityGrams: number }> = []
+          const stagedProducts = committedProducts.map((p) => ({ ...p }))
+
+          const mockTx = {
+            product: {
+              findMany: vi.fn(async () => stagedProducts.map((p) => ({ ...p }))),
+              updateMany: vi.fn(async () => {
+                throw new Error('Lock timeout while updating inventoryTrackingEnabled flag')
+              }),
+            },
+            batch: {
+              findMany: vi.fn(async () => stagedBatches.map((b) => ({ ...b }))),
+              findUnique: vi.fn(async ({ where }: { where: { code: string } }) => {
+                const found = stagedBatches.find((b) => b.code === where.code)
+                return found ? { ...found } : null
+              }),
+              create: vi.fn(async ({ data }: { data: { code: string; [k: string]: unknown } }) => {
+                const b: MockItem = {
+                  ...(data as unknown as MockItem),
+                  id: `batch-${stagedBatches.length + 1}`,
+                  ledgerEntries: [],
+                }
+                stagedBatches.push(b)
+                return b
+              }),
+              update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+                const found = stagedBatches.find((b) => b.id === where.id)
+                if (found) Object.assign(found, data)
+                return found
+              }),
+            },
+            inventoryLedger: {
+              create: vi.fn(async ({ data }: { data: { batchId: string; type: InventoryLedgerType; quantityGrams: number } }) => {
+                const l = { ...data, id: `led-${stagedLedger.length + 1}` }
+                stagedLedger.push(l)
+                const parent = stagedBatches.find((b) => b.id === data.batchId)
+                if (parent) parent.ledgerEntries.push(l)
+                return l
+              }),
+            },
+          } as unknown as Prisma.TransactionClient
+
+          try {
+            const result = await callback(mockTx)
+            committedBatches.push(...stagedBatches)
+            committedLedger.push(...stagedLedger)
+            return result
+          } catch (err) {
+            throw err
+          }
+        }),
+      } as unknown as PrismaClient
+
+      await expect(
+        runPrepareF01CDemoBatchesInTx(mockPrisma, {
+          mode: 'APPLY',
+          referenceDate: demoRefDate,
+        })
+      ).rejects.toThrow('Lock timeout while updating inventoryTrackingEnabled flag')
+
+      // Khẳng định Rollback: Cả 6 lô đã tạo trong tx đều không được commit ra ngoài
+      expect(committedBatches).toHaveLength(0)
+      expect(committedLedger).toHaveLength(0)
+      expect(committedProducts.every((p) => !p.inventoryTrackingEnabled)).toBe(true)
+    })
+
+    // T07: Chạy lại với dữ liệu hợp lệ không nhân đôi IMPORT
+    it('T07: Chạy lại với dữ liệu hợp lệ không nhân đôi IMPORT (Idempotency)', async () => {
+      interface MockBatchT7 {
+        id: string
+        code: string
+        productId: string
+        farmId: string
+        harvestDate: Date
+        expiryDate: Date
+        status: BatchStatus
+        isFefoEligible: boolean
+        quantityGrams: number
+        physicalStockGrams: number
+        reservedGrams: number
+        availableGrams: number
+        ledgerEntries: Array<{
+          id: string
+          type: InventoryLedgerType
+          quantityGrams: number
+          idempotencyKey: string
+        }>
+      }
+      const mockBatches: MockBatchT7[] = []
+      const mockProducts = [
+        { id: 'p1', slug: 'sau-rieng-ri6', name: 'Ri6', farmId: 'f1', inventoryTrackingEnabled: false },
+        { id: 'p2', slug: 'buoi-da-xanh-ben-tre', name: 'BDX', farmId: 'f1', inventoryTrackingEnabled: false },
+        { id: 'p3', slug: 'bo-034-tay-nguyen', name: 'Bo034', farmId: 'f2', inventoryTrackingEnabled: false },
+      ]
+
+      const adapter: DemoBatchStorageAdapter = {
+        async findProducts() {
+          return mockProducts.map((p) => ({ ...p }))
+        },
+        async findBatchesByCodes(codes) {
+          return mockBatches.filter((b) => codes.includes(b.code))
+        },
+        async upsertDemoBatchAndImportInTx({ spec, productId, farmId, harvestDate, expiryDate, idempotencyKey }) {
+          let b = mockBatches.find((x) => x.code === spec.batchCode)
+          if (!b) {
+            b = {
+              id: `b-${spec.batchCode}`,
+              code: spec.batchCode,
+              productId,
+              farmId,
+              harvestDate,
+              expiryDate,
+              status: BatchStatus.ACTIVE,
+              isFefoEligible: true,
+              quantityGrams: spec.importGrams,
+              physicalStockGrams: spec.importGrams,
+              reservedGrams: 0,
+              availableGrams: spec.importGrams,
+              ledgerEntries: [
+                {
+                  id: `l-${spec.batchCode}`,
+                  type: InventoryLedgerType.IMPORT,
+                  quantityGrams: spec.importGrams,
+                  idempotencyKey,
+                },
+              ],
+            }
+            mockBatches.push(b)
+            return {
+              batchId: b.id,
+              batchCode: b.code,
+              createdBatch: true,
+              createdLedgerImport: true,
+              physicalStockGrams: spec.importGrams,
+              reservedGrams: 0,
+              availableGrams: spec.importGrams,
+            }
+          }
+          // Idempotent skip
+          return {
+            batchId: b.id,
+            batchCode: b.code,
+            createdBatch: false,
+            createdLedgerImport: false,
+            physicalStockGrams: b.physicalStockGrams,
+            reservedGrams: b.reservedGrams,
+            availableGrams: b.availableGrams,
+          }
+        },
+        async enableTrackingForProducts(productIds) {
+          for (const p of mockProducts) {
+            if (productIds.includes(p.id)) p.inventoryTrackingEnabled = true
+          }
+          return productIds.length
+        },
+      }
+
+      // Lần 1: Tạo mới
+      const run1 = await executePrepareF01CDemoBatches(adapter, { mode: 'APPLY', referenceDate: demoRefDate })
+      expect(run1.batchesSummary.every((b) => b.action === 'CREATED_AND_IMPORTED')).toBe(true)
+
+      // Lần 2: Idempotent Skip
+      const run2 = await executePrepareF01CDemoBatches(adapter, { mode: 'APPLY', referenceDate: demoRefDate })
+      expect(run2.batchesSummary.every((b) => b.action === 'IDEMPOTENT_SKIPPED')).toBe(true)
+
+      // Đảm bảo không nhân đôi: Mỗi lô chỉ có đúng 1 ledger entry
+      for (const b of mockBatches) {
+        expect(b.ledgerEntries).toHaveLength(1)
+      }
+    })
+
+    // T08: Lô đã tồn tại nhưng sai productId bị từ chối
+    it('T08: Lô đã tồn tại nhưng sai productId bị từ chối fail-closed', () => {
+      expect(() =>
+        validateExistingDemoBatchConflict({
+          spec: F01C_DEMO_BATCH_SPECS[0],
+          productId: 'correct-prod-id',
+          farmId: 'farm-01',
+          expectedHarvestDate: new Date('2026-10-22T00:00:00.000Z'),
+          expectedExpiryDate: new Date('2026-11-01T00:00:00.000Z'),
+          existingBatch: {
+            id: 'b-1',
+            code: 'LO-FEFO-RI6-01',
+            productId: 'wrong-product-id', // Sai
+            farmId: 'farm-01',
+            harvestDate: new Date('2026-10-22T00:00:00.000Z'),
+            expiryDate: new Date('2026-11-01T00:00:00.000Z'),
+            status: BatchStatus.ACTIVE,
+            isFefoEligible: true,
+            quantityGrams: 60000,
+            ledgerEntries: [
+              { id: 'l-1', type: InventoryLedgerType.IMPORT, quantityGrams: 60000, idempotencyKey: null },
+            ],
+          },
+        })
+      ).toThrow(/sai productId/i)
+    })
+
+    // T09: Lô đã tồn tại nhưng sai farmId, hạn dùng hoặc trạng thái bị từ chối
+    it('T09: Lô đã tồn tại nhưng sai farmId, hạn dùng hoặc trạng thái bị từ chối', () => {
+      // Sai farmId
+      expect(() =>
+        validateExistingDemoBatchConflict({
+          spec: F01C_DEMO_BATCH_SPECS[0],
+          productId: 'prod-01',
+          farmId: 'farm-01',
+          expectedHarvestDate: new Date('2026-10-22T00:00:00.000Z'),
+          expectedExpiryDate: new Date('2026-11-01T00:00:00.000Z'),
+          existingBatch: {
+            id: 'b-1',
+            code: 'LO-FEFO-RI6-01',
+            productId: 'prod-01',
+            farmId: 'wrong-farm-id', // Sai
+            harvestDate: new Date('2026-10-22T00:00:00.000Z'),
+            expiryDate: new Date('2026-11-01T00:00:00.000Z'),
+            status: BatchStatus.ACTIVE,
+            isFefoEligible: true,
+            quantityGrams: 60000,
+            ledgerEntries: [{ id: 'l-1', type: InventoryLedgerType.IMPORT, quantityGrams: 60000, idempotencyKey: null }],
+          },
+        })
+      ).toThrow(/sai farmId/i)
+
+      // Sai expiryDate
+      expect(() =>
+        validateExistingDemoBatchConflict({
+          spec: F01C_DEMO_BATCH_SPECS[0],
+          productId: 'prod-01',
+          farmId: 'farm-01',
+          expectedHarvestDate: new Date('2026-10-22T00:00:00.000Z'),
+          expectedExpiryDate: new Date('2026-11-01T00:00:00.000Z'),
+          existingBatch: {
+            id: 'b-1',
+            code: 'LO-FEFO-RI6-01',
+            productId: 'prod-01',
+            farmId: 'farm-01',
+            harvestDate: new Date('2026-10-22T00:00:00.000Z'),
+            expiryDate: new Date('2026-12-01T00:00:00.000Z'), // Sai
+            status: BatchStatus.ACTIVE,
+            isFefoEligible: true,
+            quantityGrams: 60000,
+            ledgerEntries: [{ id: 'l-1', type: InventoryLedgerType.IMPORT, quantityGrams: 60000, idempotencyKey: null }],
+          },
+        })
+      ).toThrow(/sai hạn sử dụng/i)
+
+      // Sai trạng thái status
+      expect(() =>
+        validateExistingDemoBatchConflict({
+          spec: F01C_DEMO_BATCH_SPECS[0],
+          productId: 'prod-01',
+          farmId: 'farm-01',
+          expectedHarvestDate: new Date('2026-10-22T00:00:00.000Z'),
+          expectedExpiryDate: new Date('2026-11-01T00:00:00.000Z'),
+          existingBatch: {
+            id: 'b-1',
+            code: 'LO-FEFO-RI6-01',
+            productId: 'prod-01',
+            farmId: 'farm-01',
+            harvestDate: new Date('2026-10-22T00:00:00.000Z'),
+            expiryDate: new Date('2026-11-01T00:00:00.000Z'),
+            status: BatchStatus.UNVERIFIED, // Sai
+            isFefoEligible: true,
+            quantityGrams: 60000,
+            ledgerEntries: [{ id: 'l-1', type: InventoryLedgerType.IMPORT, quantityGrams: 60000, idempotencyKey: null }],
+          },
+        })
+      ).toThrow(/trạng thái không hợp lệ/i)
+    })
+
+    // T10: IMPORT đã tồn tại nhưng sai khối lượng bị từ chối
+    it('T10: IMPORT đã tồn tại nhưng sai khối lượng bị từ chối', () => {
+      expect(() =>
+        validateExistingDemoBatchConflict({
+          spec: F01C_DEMO_BATCH_SPECS[0], // Kỳ vọng: 60.000 g
+          productId: 'prod-01',
+          farmId: 'farm-01',
+          expectedHarvestDate: new Date('2026-10-22T00:00:00.000Z'),
+          expectedExpiryDate: new Date('2026-11-01T00:00:00.000Z'),
+          existingBatch: {
+            id: 'b-1',
+            code: 'LO-FEFO-RI6-01',
+            productId: 'prod-01',
+            farmId: 'farm-01',
+            harvestDate: new Date('2026-10-22T00:00:00.000Z'),
+            expiryDate: new Date('2026-11-01T00:00:00.000Z'),
+            status: BatchStatus.ACTIVE,
+            isFefoEligible: true,
+            quantityGrams: 15000,
+            ledgerEntries: [
+              { id: 'l-1', type: InventoryLedgerType.IMPORT, quantityGrams: 15000, idempotencyKey: null }, // Sai khối lượng
+            ],
+          },
+        })
+      ).toThrow(/khối lượng nhập không khớp/i)
+    })
+
+    // T11: Không thay đổi ba lô lịch sử UNVERIFIED
+    it('T11: Không thay đổi ba lô lịch sử UNVERIFIED', async () => {
+      const mockBatches = HISTORICAL_UNVERIFIED_BATCH_CODES.map((code) => ({
+        id: `hist-${code}`,
+        code,
+        productId: 'prod-hist',
+        farmId: 'farm-hist',
+        harvestDate: new Date('2026-10-10'),
+        expiryDate: null,
+        status: BatchStatus.UNVERIFIED,
+        isFefoEligible: false,
+        quantityGrams: 100000,
+        ledgerEntries: [],
+      }))
+
+      const products = [
+        { id: 'p1', slug: 'sau-rieng-ri6', name: 'Ri6', farmId: 'f1', inventoryTrackingEnabled: false },
+        { id: 'p2', slug: 'buoi-da-xanh-ben-tre', name: 'BDX', farmId: 'f1', inventoryTrackingEnabled: false },
+        { id: 'p3', slug: 'bo-034-tay-nguyen', name: 'Bo034', farmId: 'f2', inventoryTrackingEnabled: false },
+      ]
+
+      const adapter: DemoBatchStorageAdapter = {
+        async findProducts() {
+          return products
+        },
+        async findBatchesByCodes(codes) {
+          return mockBatches.filter((b) => codes.includes(b.code))
+        },
+        async upsertDemoBatchAndImportInTx() {
+          return {
+            batchId: 'x',
+            batchCode: 'x',
+            createdBatch: true,
+            createdLedgerImport: true,
+            physicalStockGrams: 100,
+            reservedGrams: 0,
+            availableGrams: 100,
+          }
+        },
+        async enableTrackingForProducts() {
+          return 3
+        },
+      }
+
+      const res = await executePrepareF01CDemoBatches(adapter, { mode: 'DRY_RUN', referenceDate: demoRefDate })
+      expect(res.historicalUnverifiedPreserved).toBe(true)
+      for (const b of mockBatches) {
+        expect(b.status).toBe(BatchStatus.UNVERIFIED)
+        expect(b.isFefoEligible).toBe(false)
+      }
+    })
+
+    // T12: Không thay đổi năm sản phẩm ngoài phạm vi
+    it('T12: Không thay đổi năm sản phẩm ngoài phạm vi (giữ inventoryTrackingEnabled = false)', async () => {
+      const all8Products = [
+        { id: 'p1', slug: 'sau-rieng-ri6', name: 'Ri6', farmId: 'f1', inventoryTrackingEnabled: false },
+        { id: 'p2', slug: 'buoi-da-xanh-ben-tre', name: 'BDX', farmId: 'f1', inventoryTrackingEnabled: false },
+        { id: 'p3', slug: 'bo-034-tay-nguyen', name: 'Bo034', farmId: 'f2', inventoryTrackingEnabled: false },
+        { id: 'p4', slug: 'thanh-long-ruot-do', name: 'TLRD', farmId: 'f3', inventoryTrackingEnabled: false },
+        { id: 'p5', slug: 'xoai-cat-hoa-loc', name: 'XCHL', farmId: 'f3', inventoryTrackingEnabled: false },
+        { id: 'p6', slug: 'cam-sanh-ham-yen', name: 'CSHY', farmId: 'f4', inventoryTrackingEnabled: false },
+        { id: 'p7', slug: 'vai-thieu-luc-ngan', name: 'VTLN', farmId: 'f4', inventoryTrackingEnabled: false },
+        { id: 'p8', slug: 'nho-ninh-thuan', name: 'NNT', farmId: 'f5', inventoryTrackingEnabled: false },
+      ]
+
+      const adapter: DemoBatchStorageAdapter = {
+        async findProducts() {
+          return all8Products.map((p) => ({ ...p }))
+        },
+        async findBatchesByCodes() {
+          return []
+        },
+        async upsertDemoBatchAndImportInTx({ spec }) {
+          return {
+            batchId: `b-${spec.batchCode}`,
+            batchCode: spec.batchCode,
+            createdBatch: true,
+            createdLedgerImport: true,
+            physicalStockGrams: spec.importGrams,
+            reservedGrams: 0,
+            availableGrams: spec.importGrams,
+          }
+        },
+        async enableTrackingForProducts(ids) {
+          for (const p of all8Products) {
+            if (ids.includes(p.id)) p.inventoryTrackingEnabled = true
+          }
+          return ids.length
+        },
+      }
+
+      const res = await executePrepareF01CDemoBatches(adapter, { mode: 'APPLY', referenceDate: demoRefDate })
+      expect(res.untouchedProductsCount).toBe(5)
+      const untracked = all8Products.filter((p) => !p.inventoryTrackingEnabled)
+      expect(untracked).toHaveLength(5)
+    })
+
+    // T13: CLI khi gọi trực tiếp thực sự chạy Dry Run, không kết thúc im lặng
+    it('T13: CLI khi gọi trực tiếp thực sự chạy Dry Run, không kết thúc im lặng', async () => {
+      const args = parseCliArgs(['--dry-run', '--expected-host=foo'])
+      expect(args.mode).toBe('DRY_RUN')
+      expect(args.expectedHost).toBe('foo')
+
+      const exitCode = await runDemoCli(['--help'])
+      expect(exitCode).toBe(0)
+    })
+
+    // T14: Khi import module, CLI không tự khởi chạy
+    it('T14: Khi import module, CLI không tự khởi chạy', () => {
+      expect(typeof runDemoCli).toBe('function')
+      expect(typeof runPrepareF01CDemoBatchesInTx).toBe('function')
+      expect(typeof validateExistingDemoBatchConflict).toBe('function')
+    })
   })
 })

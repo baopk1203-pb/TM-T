@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatVND } from '@/lib/money'
+import { formatVietnamDateTime } from '@/lib/utils'
 import { getComplaintPhotoUrl } from '@/lib/storage-helpers'
 import { resolveComplaint } from '@/actions/order-lifecycle'
 import { toast } from 'sonner'
@@ -250,7 +251,7 @@ export function ComplaintListClient({ initialComplaints }: ComplaintListClientPr
                     )}
 
                     <span className="text-[11px] text-slate-400">
-                      Gửi lúc {new Date(c.createdAt).toLocaleString('vi-VN')}
+                      Gửi lúc {formatVietnamDateTime(c.createdAt)}
                     </span>
                   </div>
 

@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { formatVietnamDateTime } from '@/lib/utils'
 import {
   NotificationListClient,
   AdminEmailLogItem,
@@ -106,7 +107,7 @@ export default async function AdminNotificationsPage() {
       note: evt.note,
       error: payload.error || payload.reason || null,
       messageId: payload.messageId || null,
-      createdAt: evt.createdAt.toLocaleString('vi-VN'),
+      createdAt: formatVietnamDateTime(evt.createdAt),
       customerName,
     }
   })

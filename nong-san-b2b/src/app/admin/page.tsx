@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { getAdminDashboardKpis, getBusinessReports } from '@/server/reports'
 import { formatVND } from '@/lib/money'
+import { formatVietnamDate } from '@/lib/utils'
 import { DashboardChart } from './dashboard-chart'
 import { OrderStatus } from '@prisma/client'
 
@@ -448,7 +449,7 @@ export default async function AdminDashboardPage() {
                       </div>
                     </td>
                     <td className="py-3 px-4 text-slate-600">
-                      {new Date(ord.createdAt).toLocaleDateString('vi-VN', {
+                      {formatVietnamDate(ord.createdAt, {
                         day: '2-digit',
                         month: '2-digit',
                         hour: '2-digit',

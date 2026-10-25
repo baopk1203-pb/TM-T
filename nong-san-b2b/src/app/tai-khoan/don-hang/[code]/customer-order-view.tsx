@@ -36,6 +36,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatVND } from '@/lib/money'
+import { formatVietnamDate, formatVietnamDateTime } from '@/lib/utils'
 import { cancelOrder, submitComplaint } from '@/actions/order-lifecycle'
 import { confirmRecurringDraft, createRecurringFromOrder } from '@/actions/recurring'
 import { customerDecidePreorder } from '@/actions/preorder'
@@ -454,7 +455,7 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
               )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Ngày đặt: {new Date(order.createdAt).toLocaleString('vi-VN')}
+              Ngày đặt: {formatVietnamDateTime(order.createdAt)}
             </p>
           </div>
         </div>
@@ -772,7 +773,7 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
                   Ngày giao:{' '}
                   <strong className="text-slate-800">
                     {order.deliveryDate
-                      ? new Date(order.deliveryDate).toLocaleDateString('vi-VN')
+                      ? formatVietnamDate(order.deliveryDate)
                       : 'Vụ mùa'}
                   </strong>
                 </span>
@@ -985,7 +986,7 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
                   <div key={evt.id} className="relative">
                     <div className="absolute -left-6 top-1 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white" />
                     <div className="text-slate-500 text-[11px]">
-                      {new Date(evt.createdAt).toLocaleString('vi-VN')}
+                      {formatVietnamDateTime(evt.createdAt)}
                     </div>
                     <div className="font-medium text-slate-800">
                       {evt.note || evt.type}

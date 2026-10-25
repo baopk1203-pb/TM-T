@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatVND } from '@/lib/money'
+import { formatVietnamDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -166,7 +167,7 @@ export default async function CustomerOrdersPage() {
 
                     <div className="text-xs text-slate-500 flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{new Date(order.createdAt).toLocaleDateString('vi-VN')}</span>
+                      <span>{formatVietnamDate(order.createdAt)}</span>
                     </div>
                   </div>
 

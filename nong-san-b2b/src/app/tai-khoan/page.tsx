@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { OrderStatus, OrderType, TimeSlot } from '@prisma/client'
 import { formatVND } from '@/lib/money'
+import { formatVietnamDate } from '@/lib/utils'
 import { derivePaymentStatus } from '@/lib/domain/settlement'
 import { isPreorderAwaitingCustomerDecision } from '@/lib/domain/preorder'
 import {
@@ -385,7 +386,7 @@ export default async function CustomerDashboardPage() {
                         <div>
                           <span className="text-slate-500">Dự kiến giao:</span>{' '}
                           <span className="font-medium text-slate-700">
-                            {new Date(order.deliveryDate).toLocaleDateString('vi-VN')}
+                            {formatVietnamDate(order.deliveryDate)}
                           </span>
                         </div>
                       )}
@@ -471,7 +472,7 @@ export default async function CustomerDashboardPage() {
                         <span className="text-slate-500">Ngày giao dự kiến:</span>{' '}
                         <strong className="text-slate-900">
                           {order.deliveryDate
-                            ? new Date(order.deliveryDate).toLocaleDateString('vi-VN')
+                            ? formatVietnamDate(order.deliveryDate)
                             : 'Chưa xếp'}
                         </strong>{' '}
                         {order.timeSlot && (
@@ -492,7 +493,7 @@ export default async function CustomerDashboardPage() {
                         <div>
                           <span className="text-slate-500">Hạn xác nhận:</span>{' '}
                           <span className="font-semibold text-rose-700">
-                            {deadline.toLocaleDateString('vi-VN')} 17:00
+                            {formatVietnamDate(deadline)} 17:00
                           </span>
                         </div>
                       )}
@@ -594,7 +595,7 @@ export default async function CustomerDashboardPage() {
 
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
                         <span>
-                          Ngày đặt: {new Date(order.createdAt).toLocaleDateString('vi-VN')}
+                          Ngày đặt: {formatVietnamDate(order.createdAt)}
                         </span>
                         <span>
                           Sản phẩm: {order.items.length} mặt hàng

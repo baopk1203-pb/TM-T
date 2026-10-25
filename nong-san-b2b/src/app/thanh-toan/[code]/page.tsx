@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getServerAuthSession } from '@/lib/auth'
 import { computePayableAmount } from '@/lib/domain/settlement'
+import { processExpiredOrders } from '@/lib/services/order-expiration'
 import { StorefrontHeader } from '@/components/shop/storefront-header'
 import { StorefrontFooter } from '@/components/shop/storefront-footer'
 import { PaymentView } from './payment-view'
@@ -25,6 +26,9 @@ export default async function OrderPaymentPage({
   if (!session?.user?.id) {
     redirect(`/dang-nhap?callbackUrl=/thanh-toan/${code}`)
   }
+
+  // Tự động kiểm tra và hủy đơn quá hạn 10 phút theo giờ Server (EV-IMP-01C)
+  await processExpiredOrders(new Date()).catch(() => undefined)
 
   const order = await db.order.findUnique({
     where: { code },

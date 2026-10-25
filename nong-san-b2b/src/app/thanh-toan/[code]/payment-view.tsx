@@ -277,7 +277,7 @@ export function PaymentView({ order, vietQrUrl, bankInfo, payable }: PaymentView
                 <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-3.5 flex items-center justify-center gap-2 text-xs text-amber-900 font-semibold shadow-xs">
                   <Clock className="w-4 h-4 text-amber-600 shrink-0" />
                   <span>Hạn chót thanh toán: </span>
-                  <span className="font-mono text-sm text-amber-950 font-extrabold">{timeLeft || '24:00:00'}</span>
+                  <span className="font-mono text-sm text-amber-950 font-extrabold">{timeLeft || '00:10:00'}</span>
                 </div>
 
                 {/* Thông tin số tài khoản chi tiết */}

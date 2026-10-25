@@ -836,3 +836,50 @@ export function calculateAvailableStock(
     unverifiedBatchesCount,
   }
 }
+
+// ============================================================================
+// 8. CHÍNH SÁCH GIỮ HÀNG 10 PHÚT & KIỂM TRA QUÁ HẠN THANH TOÁN (EV-IMP-01C)
+// ============================================================================
+
+export const RESERVATION_TIMEOUT_MINUTES = 10
+export const RESERVATION_TIMEOUT_MS = RESERVATION_TIMEOUT_MINUTES * 60 * 1000
+
+/**
+ * Tính thời điểm hết hạn giữ chỗ thanh toán: createdAt + 10 phút.
+ */
+export function computeOrderPaymentDueAt(createdAt: Date = new Date()): Date {
+  return new Date(createdAt.getTime() + RESERVATION_TIMEOUT_MS)
+}
+
+/**
+ * Kiểm tra xem đơn hàng chờ xác nhận có bị quá hạn giữ chỗ 10 phút hay chưa (theo giờ Server).
+ * Đơn chỉ bị coi là quá hạn khi:
+ * - Đang ở trạng thái PENDING_CONFIRMATION
+ * - Chưa có giao dịch thanh toán thành công (paidAmount <= 0)
+ * - Có paymentDueAt và thời điểm hiện tại (now) đã vượt qua paymentDueAt (paymentDueAt < now)
+ */
+export function isOrderPaymentExpired(
+  order: {
+    status: string
+    paymentDueAt?: Date | string | null
+    paidAmount?: number
+  },
+  now: Date = new Date()
+): boolean {
+  if (!order || order.status !== 'PENDING_CONFIRMATION') {
+    return false
+  }
+  if ((order.paidAmount ?? 0) > 0) {
+    return false
+  }
+  if (!order.paymentDueAt) {
+    return false
+  }
+  const dueDate =
+    typeof order.paymentDueAt === 'string' ? new Date(order.paymentDueAt) : order.paymentDueAt
+  if (isNaN(dueDate.getTime())) {
+    return false
+  }
+  return dueDate.getTime() < now.getTime()
+}
+

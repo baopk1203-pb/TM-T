@@ -16,6 +16,11 @@ import {
   canTransition,
   getRequiredConfirmationPayment,
 } from '@/lib/domain/order-state'
+import { isOrderPaymentExpired } from '@/lib/domain/inventory'
+import {
+  confirmOrderInventoryAllocations,
+  expireOverdueOrderInTx,
+} from '@/lib/services/inventory-reservation'
 
 export interface ConfirmPaymentInput {
   orderId: string
@@ -68,6 +73,32 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
         throw new Error('Đơn hàng đã hoàn tất (COMPLETED), không thể ghi nhận thanh toán')
       }
 
+      const now = new Date()
+      const paidBefore = (order.transactions ?? [])
+        .filter((t) => t.type === TxType.PAYMENT && t.status === TxStatus.DONE)
+        .reduce((sum, t) => sum + t.amount, 0)
+
+      // Kiểm tra hạn giữ chỗ 10 phút theo thời gian Server (EV-IMP-01C):
+      // Nếu đơn đã quá hạn mà chưa có thanh toán, tự động hủy đơn & giải phóng tồn kho đúng 1 lần, từ chối xác nhận thanh toán.
+      if (
+        isOrderPaymentExpired(
+          {
+            status: order.status,
+            paymentDueAt: (order as unknown as { paymentDueAt?: Date | null }).paymentDueAt,
+            paidAmount: paidBefore,
+          },
+          now
+        )
+      ) {
+        await expireOverdueOrderInTx(tx, order.id, now, admin.id)
+        return {
+          success: false as const,
+          expiredAndReleased: true as const,
+          error:
+            'Đơn hàng đã quá thời hạn giữ chỗ thanh toán (10 phút). Hệ thống đã tự động hủy đơn và giải phóng tồn kho.',
+        }
+      }
+
       // Tạo giao dịch thanh toán thành công
       const transaction = await tx.paymentTransaction.create({
         data: {
@@ -78,7 +109,7 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
           amount: input.amount,
           reference: input.reference?.trim() || null,
           note: input.note?.trim() || null,
-          completedAt: new Date(),
+          completedAt: now,
         },
       })
 
@@ -160,12 +191,26 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
         }
       }
 
+      if (statusChanged) {
+        await confirmOrderInventoryAllocations(tx, order.id)
+      }
+
       return {
-        success: true,
+        success: true as const,
+        expiredAndReleased: false as const,
         transactionId: transaction.id,
         statusChanged,
       }
     })
+
+    if (!result.success) {
+      revalidatePath(`/admin/don-hang/${input.orderId}`)
+      revalidatePath('/admin/don-hang')
+      return {
+        success: false,
+        error: result.error,
+      }
+    }
 
     if (result.success) {
       try {

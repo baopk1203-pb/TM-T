@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { getServerAuthSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { derivePaymentStatus } from '@/lib/domain/settlement'
+import { processExpiredOrders } from '@/lib/services/order-expiration'
 import { CustomerOrderView, CustomerOrderData } from './customer-order-view'
 import { Role } from '@prisma/client'
 
@@ -18,6 +19,8 @@ export default async function CustomerOrderDetailPage({
   }
 
   const { code } = await params
+
+  await processExpiredOrders(new Date()).catch(() => undefined)
 
   const order = await db.order.findFirst({
     where: {

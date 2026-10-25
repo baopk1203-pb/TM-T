@@ -15,6 +15,7 @@ import {
   computeComplaintCompensation,
   derivePaymentStatus,
 } from '@/lib/domain/settlement'
+import { releaseOrderInventoryAllocations } from '@/lib/services/inventory-reservation'
 import {
   OrderStatus,
   TxType,
@@ -126,6 +127,15 @@ export async function cancelOrder(input: {
           cancelledBy: cancelActorPrisma,
           cancelReason: input.reason.trim(),
         },
+      })
+
+      // Giải phóng phần tồn kho đang giữ chỗ nhưng chưa xuất kho (EV-IMP-01C)
+      await releaseOrderInventoryAllocations(tx, {
+        orderId: order.id,
+        orderCode: order.code,
+        actorId: session.user.id,
+        reason: `Giải phóng phần hàng chưa xuất kho khi hủy đơn: ${input.reason.trim()}`,
+        now: new Date(),
       })
 
       // Đồng bộ trạng thái chuyến giao nếu có (PENDING hoặc DISPATCHED)

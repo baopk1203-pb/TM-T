@@ -17,6 +17,8 @@ import {
 } from '@/lib/domain/capacity'
 import { createDynamicShippingCalculator } from '@/lib/services/shipping-config'
 import { computeDepositAmount } from '@/lib/domain/settlement'
+import { computeOrderPaymentDueAt } from '@/lib/domain/inventory'
+import { reserveOrderInventoryFefo } from '@/lib/services/inventory-reservation'
 import { recordOrderEvent } from '@/lib/events'
 import { generateOrderCode } from '@/lib/order-code'
 import {
@@ -397,12 +399,37 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
           }
         }
 
-        // 11. Hạn thanh toán 24h
-        const paymentDueAt = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+        // 11. Hạn thanh toán & giữ hàng FEFO 10 phút (EV-IMP-01C)
+        const paymentDueAt = computeOrderPaymentDueAt(now)
 
         // Phân loại đơn: SAMPLE nếu chỉ chứa hàng mẫu, ngược lại STANDARD
         const isAllSample = quote.lines.length === 0 && quote.sampleLines.length > 0
         const orderType = isAllSample ? OrderType.SAMPLE : OrderType.STANDARD
+
+        const orderItemCreateInputs = [
+          ...quote.lines.map((l) => ({
+            productId: l.productId,
+            packagingId: l.packagingId,
+            productName: l.productName,
+            packagingName: l.packagingName,
+            isSample: false,
+            quantity: l.quantity,
+            orderedGrams: l.totalGrams,
+            unitPricePerKg: l.unitPricePerKg,
+            lineTotal: l.lineTotal,
+          })),
+          ...quote.sampleLines.map((s) => ({
+            productId: s.productId,
+            packagingId: s.packagingId,
+            productName: s.productName,
+            packagingName: s.packagingName,
+            isSample: true,
+            quantity: s.quantity,
+            orderedGrams: s.weightGrams * s.quantity,
+            unitPricePerKg: 0,
+            lineTotal: s.lineTotal,
+          })),
+        ]
 
         // 12. Tạo đơn hàng và các dòng OrderItem trong database
         const order = await tx.order.create({
@@ -425,32 +452,34 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
             paymentDueAt,
             customerNote: validated.customerNote || null,
             items: {
-              create: [
-                ...quote.lines.map((l) => ({
-                  productId: l.productId,
-                  packagingId: l.packagingId,
-                  productName: l.productName,
-                  packagingName: l.packagingName,
-                  isSample: false,
-                  quantity: l.quantity,
-                  orderedGrams: l.totalGrams,
-                  unitPricePerKg: l.unitPricePerKg,
-                  lineTotal: l.lineTotal,
-                })),
-                ...quote.sampleLines.map((s) => ({
-                  productId: s.productId,
-                  packagingId: s.packagingId,
-                  productName: s.productName,
-                  packagingName: s.packagingName,
-                  isSample: true,
-                  quantity: s.quantity,
-                  orderedGrams: s.weightGrams * s.quantity,
-                  unitPricePerKg: 0,
-                  lineTotal: s.lineTotal,
-                })),
-              ],
+              create: orderItemCreateInputs,
             },
           },
+          include: {
+            items: true,
+          },
+        })
+
+        // 12B. Phân bổ tồn kho FEFO & ghi nhận RESERVATION_HOLD nguyên tử trong transaction (EV-IMP-01C)
+        const createdItems =
+          Array.isArray((order as unknown as { items?: unknown[] }).items) &&
+          (order as unknown as { items: Array<{ id: string; productId: string; productName: string; orderedGrams: number }> }).items.length > 0
+            ? (order as unknown as { items: Array<{ id: string; productId: string; productName: string; orderedGrams: number }> }).items
+            : orderItemCreateInputs.map((item, idx) => ({
+                id: `${order.id}-item-${idx + 1}`,
+                productId: item.productId,
+                productName: item.productName,
+                orderedGrams: item.orderedGrams,
+              }))
+
+        await reserveOrderInventoryFefo(tx, {
+          orderId: order.id,
+          orderCode: order.code,
+          userId: user.id,
+          items: createdItems,
+          products: dbProducts,
+          holdExpiresAt: paymentDueAt,
+          now,
         })
 
         // 13. Ghi vết sự kiện ORDER_CREATED

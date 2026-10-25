@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { db } from '@/lib/db'
 import { derivePaymentStatus } from '@/lib/domain/settlement'
+import { processExpiredOrders } from '@/lib/services/order-expiration'
 import { OrderDetailClient, OrderDetailData } from './order-detail-client'
 
 export const dynamic = 'force-dynamic'
@@ -11,6 +12,8 @@ export default async function AdminOrderDetailPage({
   params: Promise<{ code: string }>
 }) {
   const { code } = await params
+
+  await processExpiredOrders(new Date()).catch(() => undefined)
 
   const [order, batches] = await Promise.all([
     db.order.findFirst({

@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { recordOrderEvent } from '@/lib/events'
 import { isDraftExpired } from '@/lib/domain/recurring'
+import { releaseOrderInventoryAllocations } from '@/lib/services/inventory-reservation'
 import { OrderStatus, TxType, TxStatus, CancelActor } from '@prisma/client'
 
 export interface ExpireOrdersResult {
@@ -217,6 +218,14 @@ export async function processExpiredOrders(now: Date = new Date()): Promise<Expi
         if (updateResult.count === 0) {
           return false
         }
+
+        // Giải phóng tồn kho đang giữ chỗ (HOLD_PENDING) đúng 1 lần (EV-IMP-01C)
+        await releaseOrderInventoryAllocations(tx, {
+          orderId: current.id,
+          orderCode: (current as unknown as { code?: string | null }).code ?? null,
+          reason: 'Giải phóng giữ chỗ FEFO do đơn quá hạn thanh toán 10 phút',
+          now,
+        })
 
         await recordOrderEvent(tx, {
           orderId: current.id,

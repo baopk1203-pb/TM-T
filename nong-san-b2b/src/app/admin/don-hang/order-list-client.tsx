@@ -86,7 +86,7 @@ export function OrderListClient({ initialOrders }: OrderListClientProps) {
         const res = await expireOrdersJob()
         if (res.success) {
           toast.success(
-            `Quét thành công: Đã hủy ${res.expiredCount} đơn quá hạn (thanh toán 24h / đơn nháp định kỳ)!`
+            `Quét thành công: Đã xử lý ${res.expiredCount} đơn quá hạn (thanh toán / đơn nháp định kỳ)!`
           )
           router.refresh()
         } else {
@@ -157,7 +157,7 @@ export function OrderListClient({ initialOrders }: OrderListClientProps) {
             className="text-xs font-semibold gap-1.5 border-slate-200 hover:bg-slate-50 text-slate-700 rounded-full h-10 px-4 shadow-2xs"
           >
             <Clock className={`w-3.5 h-3.5 text-amber-600 ${isPending ? 'animate-spin' : ''}`} />
-            {isPending ? 'Đang quét...' : 'Quét đơn quá hạn (24h)'}
+            {isPending ? 'Đang quét...' : 'Quét đơn quá hạn thanh toán'}
           </Button>
         </div>
       </div>

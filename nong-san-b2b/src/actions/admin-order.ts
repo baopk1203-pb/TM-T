@@ -332,7 +332,7 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
 import { processExpiredOrders } from '@/lib/services/order-expiration'
 
 /**
- * Server Action: Quét và hủy các đơn PENDING_CONFIRMATION quá hạn 24h mà chưa thanh toán (paid = 0)
+ * Server Action: Quét và hủy các đơn PENDING_CONFIRMATION quá hạn giữ chỗ thanh toán 10 phút (F01C) mà chưa thanh toán (paid = 0)
  * - Bảo vệ bằng requireAdmin() ở server-side (SRC-SEC-07)
  * - Nút "Quét đơn quá hạn" tại trang Admin tiếp tục sử dụng action này an toàn
  */

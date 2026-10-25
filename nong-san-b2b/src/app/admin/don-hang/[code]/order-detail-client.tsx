@@ -566,7 +566,15 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
     }
   })()
 
+  // Phân biệt đơn F01C (giữ chỗ 10 phút) và đơn legacy (chính sách cũ 24 giờ)
+  const isF01cOrder = (() => {
+    if (!order.paymentDueAt || !order.createdAt) return false
+    const durationMs = new Date(order.paymentDueAt).getTime() - new Date(order.createdAt).getTime()
+    return durationMs <= 15 * 60 * 1000 // <= 15 phút (chuẩn F01C là 10 phút)
+  })()
+
   const isDueOver =
+    order.status === OrderStatus.PENDING_CONFIRMATION &&
     order.paymentDueAt &&
     new Date(order.paymentDueAt) < new Date() &&
     order.paidAmount === 0
@@ -701,13 +709,15 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
         </div>
       </div>
 
-      {/* Due Alert if overdue */}
+      {/* Due Alert if overdue (chỉ hiển thị cho đơn đang PENDING_CONFIRMATION) */}
       {isDueOver && (
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-3 text-amber-900 text-xs">
           <Clock className="w-5 h-5 text-amber-600 shrink-0" />
           <div>
-            <strong>Đơn hàng đã quá hạn thanh toán 24h:</strong> Hạn chót là{' '}
-            {formatVietnamDateTime(order.paymentDueAt)}. Khách hàng chưa hoàn tất thanh toán. Bạn có thể hủy hoặc chạy &quot;Quét đơn quá hạn&quot;.
+            <strong>
+              Đơn hàng đã quá hạn thanh toán ({isF01cOrder ? 'giữ chỗ 10 phút' : 'chính sách 24h'}):
+            </strong>{' '}
+            Hạn chót là {formatVietnamDateTime(order.paymentDueAt)}. Khách hàng chưa hoàn tất thanh toán. Bạn có thể hủy để giải phóng tồn kho hoặc chạy &quot;Quét đơn quá hạn&quot;.
           </div>
         </div>
       )}
@@ -716,9 +726,16 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
       {order.status === OrderStatus.CANCELLED && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 text-rose-900 text-xs">
           <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-          <div>
-            <strong>Đơn hàng đã bị hủy bởi {order.cancelledBy === 'CUSTOMER' ? 'Khách hàng' : order.cancelledBy === 'SELLER' ? 'Bên bán (Admin)' : 'Hệ thống'}:</strong>
-            <p className="mt-0.5 text-rose-800">Lý do: {order.cancelReason || 'Không có lý do cụ thể'}</p>
+          <div className="space-y-0.5">
+            <strong>
+              Đơn hàng đã bị hủy bởi {order.cancelledBy === 'CUSTOMER' ? 'Khách hàng' : order.cancelledBy === 'SELLER' ? 'Bên bán (Admin)' : 'Hệ thống'}:
+            </strong>
+            <p className="text-rose-800">Lý do: {order.cancelReason || 'Không có lý do cụ thể'}</p>
+            {order.paymentDueAt && (
+              <p className="text-rose-600/80 text-[11px]">
+                Thời hạn thanh toán ban đầu: {formatVietnamDateTime(order.paymentDueAt)} ({isF01cOrder ? 'Giữ chỗ FEFO 10 phút' : 'Chính sách cũ 24h'})
+              </p>
+            )}
           </div>
         </div>
       )}

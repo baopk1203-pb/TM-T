@@ -30,6 +30,7 @@ import { getCheckoutDiscountNotice, calculateCartSavings } from '@/lib/cart-summ
 import { quoteCart, QuoteCartResponse } from '@/actions/cart'
 import { placeOrder, calculateShippingQuoteAction } from '@/actions/order'
 import { computeDepositAmount } from '@/lib/domain/settlement'
+import { RESERVATION_TIMEOUT_MINUTES } from '@/lib/domain/inventory'
 import { TimeSlot, PaymentOption, VehicleType } from '@prisma/client'
 import { ShippingQuoteResult, DEFAULT_WAREHOUSE } from '@/lib/domain/shipping'
 import { toast } from 'sonner'
@@ -832,7 +833,7 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
                   Bảo đảm B2B E Vibe
                 </div>
-                <p>• Mã VietQR và hạn thanh toán 24h hiển thị ngay sau khi đặt.</p>
+                <p>• Mã VietQR và thời gian giữ chỗ {RESERVATION_TIMEOUT_MINUTES} phút hiển thị ngay sau khi đặt.</p>
                 <p>• Hỗ trợ hoàn cọc 100% nếu sự cố xuất phát từ nhà vườn.</p>
               </div>
             </CardContent>

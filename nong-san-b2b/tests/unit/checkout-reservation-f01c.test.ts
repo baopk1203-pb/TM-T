@@ -1486,6 +1486,37 @@ describe('EV-IMP-01C: Checkout FEFO Reservation & 10-Minute Payment Timeout', ()
       })
     ).toThrow(/Production/i)
 
+    // Chặn trực diện Production Endpoint ID (ep-square-scene-b5ddgxil)
+    expect(() =>
+      verifyDemoScriptSafetyGates({
+        connectionUrl: 'postgresql://user:pass@ep-square-scene-b5ddgxil.c-7.us-east-2.aws.neon.tech/neondb',
+        expectedHost: 'ep-square-scene-b5ddgxil.c-7.us-east-2.aws.neon.tech',
+        gitBranch: 'beta',
+        mode: 'DRY_RUN',
+      })
+    ).toThrow(/Production/i)
+
+    // Chặn kết nối Pooled connection (-pooler)
+    expect(() =>
+      verifyDemoScriptSafetyGates({
+        connectionUrl: 'postgresql://user:pass@ep-fancy-waterfall-b5f117np-pooler.c-7.us-east-2.aws.neon.tech/neondb',
+        expectedHost: 'ep-fancy-waterfall-b5f117np-pooler.c-7.us-east-2.aws.neon.tech',
+        gitBranch: 'beta',
+        mode: 'DRY_RUN',
+      })
+    ).toThrow(/Pooler/i)
+
+    // Chặn sai lệch ExpectedHost trong APPLY mode
+    expect(() =>
+      verifyDemoScriptSafetyGates({
+        connectionUrl: 'postgresql://user:pass@ep-other-branch.c-7.us-east-2.aws.neon.tech/neondb',
+        expectedHost: 'ep-fancy-waterfall-b5f117np.c-7.us-east-2.aws.neon.tech',
+        gitBranch: 'beta',
+        mode: 'APPLY',
+        confirmPreviewBeta: true,
+      })
+    ).toThrow(/không khớp/i)
+
     expect(() =>
       verifyDemoScriptSafetyGates({
         connectionUrl: 'postgresql://user:pass@ep-preview-beta.ap-southeast-1.aws.neon.tech/neondb',

@@ -1,6 +1,7 @@
 import {
   BatchStatus,
   InventoryLedgerType,
+  Prisma,
   PrismaClient,
 } from '@prisma/client'
 import {
@@ -93,6 +94,9 @@ export const F01C_DEMO_BATCH_SPECS: readonly DemoBatchSpec[] = [
   },
 ] as const
 
+export const KNOWN_PRODUCTION_ENDPOINT_HOST = 'ep-square-scene-b5ddgxil'
+export const KNOWN_PREVIEW_BETA_HOST = 'ep-fancy-waterfall-b5f117np.c-7.us-east-2.aws.neon.tech'
+
 export interface SafetyGateInput {
   connectionUrl: string
   expectedHost?: string
@@ -104,6 +108,8 @@ export interface SafetyGateInput {
 /**
  * Kiểm tra an toàn Fail-Closed trước khi kết nối hoặc ghi dữ liệu:
  * - Chặn tuyệt đối nhánh main/master hoặc URL Production.
+ * - Chặn trực diện Production Endpoint ID ('ep-square-scene-b5ddgxil').
+ * - Chặn kết nối Pooled connection ('-pooler').
  * - Khi ở chế độ APPLY, bắt buộc xác nhận --confirm-preview-beta và khớp --expected-host.
  */
 export function verifyDemoScriptSafetyGates(input: SafetyGateInput): {
@@ -134,11 +140,20 @@ export function verifyDemoScriptSafetyGates(input: SafetyGateInput): {
   }
 
   // Chặn các dấu hiệu Production hoặc Pooled connection khi ghi dữ liệu
-  const forbiddenPatterns = ['prod', 'production', 'main-db', 'ep-calm-', 'ep-billowing-']
+  const forbiddenPatterns = [
+    'prod',
+    'production',
+    'main-db',
+    'ep-calm-',
+    'ep-billowing-',
+    KNOWN_PRODUCTION_ENDPOINT_HOST,
+    'ep-square-scene',
+    '-pooler',
+  ]
   for (const pattern of forbiddenPatterns) {
     if (host.includes(pattern)) {
       throw new Error(
-        `[SAFETY GATE FAILED] Host "${host}" chứa dấu hiệu môi trường Production ("${pattern}"). Chặn thực thi!`
+        `[SAFETY GATE FAILED] Host "${host}" chứa dấu hiệu môi trường Production hoặc Pooler ("${pattern}"). Chặn thực thi!`
       )
     }
   }
@@ -161,6 +176,13 @@ export function verifyDemoScriptSafetyGates(input: SafetyGateInput): {
     if (!input.expectedHost || !input.expectedHost.trim()) {
       throw new Error(
         '[SAFETY GATE FAILED] Chế độ APPLY bắt buộc truyền --expected-host của Neon preview-beta.'
+      )
+    }
+    const normalizedHost = host.trim().toLowerCase()
+    const normalizedExpected = input.expectedHost.trim().toLowerCase()
+    if (normalizedHost !== normalizedExpected) {
+      throw new Error(
+        `[SAFETY GATE FAILED] Chế độ APPLY: Host "${normalizedHost}" không khớp với ExpectedHost "${normalizedExpected}".`
       )
     }
   }
@@ -290,6 +312,18 @@ export async function executePrepareF01CDemoBatches(
   const nonTargetProducts = allProducts.filter(
     (p) => !TARGET_DEMO_PRODUCT_SLUGS.includes(p.slug as (typeof TARGET_DEMO_PRODUCT_SLUGS)[number])
   )
+
+  // Xác minh không có mã lô demo trùng nhau và không trùng với mã lô lịch sử
+  const demoCodes = F01C_DEMO_BATCH_SPECS.map((s) => s.batchCode)
+  const uniqueDemoCodes = new Set(demoCodes)
+  if (uniqueDemoCodes.size !== demoCodes.length) {
+    throw new Error('Phát hiện mã lô trùng lặp trong danh sách cấu hình F01C_DEMO_BATCH_SPECS.')
+  }
+  for (const histCode of HISTORICAL_UNVERIFIED_BATCH_CODES) {
+    if (uniqueDemoCodes.has(histCode)) {
+      throw new Error(`Mã lô demo trùng với mã lô lịch sử "${histCode}".`)
+    }
+  }
 
   // Kiểm tra 3 lô lịch sử UNVERIFIED và 6 lô demo
   const allCodesToInspect = [
@@ -461,7 +495,9 @@ export async function executePrepareF01CDemoBatches(
   }
 }
 
-export function createPrismaDemoBatchAdapter(prisma: PrismaClient): DemoBatchStorageAdapter {
+export function createPrismaDemoBatchAdapter(
+  prisma: PrismaClient | Prisma.TransactionClient
+): DemoBatchStorageAdapter {
   return {
     async findProducts() {
       return await prisma.product.findMany({
@@ -499,7 +535,7 @@ export function createPrismaDemoBatchAdapter(prisma: PrismaClient): DemoBatchSto
       })
     },
     async upsertDemoBatchAndImportInTx(params) {
-      return await prisma.$transaction(async (tx) => {
+      const runner = async (tx: Prisma.TransactionClient) => {
         let batch = await tx.batch.findUnique({
           where: { code: params.spec.batchCode },
           include: { ledgerEntries: true },
@@ -573,7 +609,12 @@ export function createPrismaDemoBatchAdapter(prisma: PrismaClient): DemoBatchSto
           reservedGrams: stock.reservedGrams,
           availableGrams: stock.availableGrams,
         }
-      })
+      }
+
+      if ('$transaction' in prisma && typeof prisma.$transaction === 'function') {
+        return await (prisma as PrismaClient).$transaction(runner)
+      }
+      return await runner(prisma as Prisma.TransactionClient)
     },
     async enableTrackingForProducts(productIds: string[]) {
       const res = await prisma.product.updateMany({

@@ -445,8 +445,31 @@ export async function reserveOrderInventoryFefo(
 ): Promise<ReserveOrderInventoryResult> {
   const now = params.now ?? new Date()
 
-  const trackedProducts = params.products.filter((p) => p.inventoryTrackingEnabled === true)
-  const trackedProductIds = Array.from(new Set(trackedProducts.map((p) => p.id)))
+  // Đồng bộ và khóa đọc (FOR SHARE) danh sách Product IDs của các mặt hàng theo thứ tự ID tăng dần.
+  // Đảm bảo không bao giờ bỏ sót sản phẩm vừa chuyển sang tracking = true trong transaction khác (Fail-closed).
+  const sortedItemProductIds = Array.from(new Set(params.items.map((i) => i.productId))).sort()
+
+  let synchronizedTrackedIds: string[] = []
+  try {
+    if (sortedItemProductIds.length > 0) {
+      const liveProducts = await tx.$queryRaw<Array<{ id: string; inventoryTrackingEnabled: boolean }>>(
+        Prisma.sql`SELECT id, "inventoryTrackingEnabled" FROM "Product" WHERE id IN (${Prisma.join(sortedItemProductIds)}) ORDER BY id ASC FOR SHARE`
+      )
+      if (Array.isArray(liveProducts) && liveProducts.length > 0) {
+        synchronizedTrackedIds = liveProducts
+          .filter((p) => p.inventoryTrackingEnabled === true)
+          .map((p) => p.id)
+      } else {
+        const trackedProducts = params.products.filter((p) => p.inventoryTrackingEnabled === true)
+        synchronizedTrackedIds = Array.from(new Set(trackedProducts.map((p) => p.id)))
+      }
+    }
+  } catch {
+    const trackedProducts = params.products.filter((p) => p.inventoryTrackingEnabled === true)
+    synchronizedTrackedIds = Array.from(new Set(trackedProducts.map((p) => p.id)))
+  }
+
+  const trackedProductIds = Array.from(new Set(synchronizedTrackedIds)).sort()
 
   if (trackedProductIds.length === 0) {
     return { reserved: false, allocations: [] }

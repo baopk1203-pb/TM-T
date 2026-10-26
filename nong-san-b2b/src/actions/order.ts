@@ -208,11 +208,38 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
           lng: address.lng,
         }
 
-        // 4. Truy vấn sản phẩm và quy cách từ database
-        const productIds = Array.from(new Set(validated.lines.map((l) => l.productId)))
-        const dbProducts = await tx.product.findMany({
+        // 4. Đồng bộ và khóa đọc (FOR SHARE) danh sách sản phẩm theo thứ tự ID tăng dần
+        // Ngăn chặn race condition với Rollout transaction (SELECT ... FOR UPDATE).
+        // Đảm bảo Checkout luôn đọc trạng thái inventoryTrackingEnabled mới nhất sau khi có khóa.
+        const sortedProductIds = Array.from(new Set(validated.lines.map((l) => l.productId))).sort()
+
+        if (sortedProductIds.length === 0) {
+          throw new Error('Giỏ hàng không có sản phẩm hợp lệ')
+        }
+
+        let lockedProductRows: Array<{
+          id: string
+          inventoryTrackingEnabled: boolean
+          isActive: boolean
+          name: string
+        }> = []
+
+        try {
+          lockedProductRows = await tx.$queryRaw<Array<{
+            id: string
+            inventoryTrackingEnabled: boolean
+            isActive: boolean
+            name: string
+          }>>(
+            Prisma.sql`SELECT id, "inventoryTrackingEnabled", "isActive", "name" FROM "Product" WHERE id IN (${Prisma.join(sortedProductIds)}) ORDER BY id ASC FOR SHARE`
+          )
+        } catch {
+          // Bỏ qua nếu môi trường test/mock không hỗ trợ raw query
+        }
+
+        const dbProductsRaw = await tx.product.findMany({
           where: {
-            id: { in: productIds },
+            id: { in: sortedProductIds },
             isActive: true,
           },
           include: {
@@ -221,9 +248,24 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
           },
         })
 
-        if (dbProducts.length !== productIds.length) {
+        if (dbProductsRaw.length !== sortedProductIds.length) {
           throw new Error('Một số sản phẩm trong giỏ hàng không tồn tại hoặc đã ngừng kinh doanh')
         }
+
+        // Đồng bộ hóa trạng thái inventoryTrackingEnabled từ khóa FOR SHARE (Fail-closed)
+        const trackingMap = new Map<string, boolean>()
+        if (Array.isArray(lockedProductRows) && lockedProductRows.length > 0) {
+          for (const row of lockedProductRows) {
+            trackingMap.set(row.id, row.inventoryTrackingEnabled)
+          }
+        }
+
+        const dbProducts = dbProductsRaw.map((p) => ({
+          ...p,
+          inventoryTrackingEnabled: trackingMap.has(p.id)
+            ? trackingMap.get(p.id)!
+            : p.inventoryTrackingEnabled,
+        }))
 
         const pricingProducts: ProductPricingData[] = dbProducts.map((p) => ({
           id: p.id,

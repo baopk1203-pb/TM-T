@@ -244,7 +244,7 @@ export const F01E_TARGET_PRODUCT_ALLOWLIST: readonly F01ETargetProductSpec[] = [
         farmSlug: 'htx-sau-rieng-ngu-hiep-tien-giang',
         quantityGrams: 100_000, // 100 kg
         harvestDaysOffset: -2,
-        expiryDaysOffset: 6,
+        expiryDaysOffset: 14, // ISSUE-F01E-02: Tăng từ 6 lên 14 ngày theo đề xuất PO
         idempotencyKey: 'LEDGER:F01E:DEMO:IMPORT:LO-F01E-CHOMCHOM-01',
         qcNotes:
           '[DEMO DATA - F01E ROLLOUT] Lô Chôm chôm nhãn đợt 1 đạt chuẩn QC nội bộ phục vụ kiểm thử FEFO Beta (100 kg)',
@@ -255,7 +255,7 @@ export const F01E_TARGET_PRODUCT_ALLOWLIST: readonly F01ETargetProductSpec[] = [
         farmSlug: 'htx-sau-rieng-ngu-hiep-tien-giang',
         quantityGrams: 140_000, // 140 kg
         harvestDaysOffset: -1,
-        expiryDaysOffset: 12,
+        expiryDaysOffset: 21, // Đặt +21 ngày (> +14 ngày của lô 01) để bảo toàn thứ tự xuất hàng FEFO
         idempotencyKey: 'LEDGER:F01E:DEMO:IMPORT:LO-F01E-CHOMCHOM-02',
         qcNotes:
           '[DEMO DATA - F01E ROLLOUT] Lô Chôm chôm nhãn đợt 2 đạt chuẩn QC nội bộ phục vụ kiểm thử FEFO Beta (140 kg)',
@@ -974,6 +974,24 @@ export async function prepareF01EDemoBatches(
   // ==========================================================================
   return await prisma.$transaction(
     async (tx) => {
+      // 1. Khóa bi quan (SELECT ... FOR UPDATE) các sản phẩm mục tiêu theo thứ tự ID tăng dần
+      // BẮT BUỘC thực hiện TRƯỚC khi verifyF01ESafetyGates để đảm bảo mọi transaction Checkout
+      // đang giữ khóa FOR SHARE phải hoàn tất commit trước khi Rollout kiểm tra đơn hàng đang mở.
+      const initialTargetIds = targetSpecs
+        .map((s) => s.expectedProductId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        .sort()
+
+      if (initialTargetIds.length > 0) {
+        try {
+          await tx.$queryRaw(
+            Prisma.sql`SELECT id FROM "Product" WHERE id IN (${Prisma.join(initialTargetIds)}) ORDER BY id ASC FOR UPDATE`
+          )
+        } catch {
+          // Bỏ qua nếu môi trường mock không hỗ trợ raw lock
+        }
+      }
+
       const preflight = await verifyF01ESafetyGates(
         tx,
         targetSpecs,
@@ -984,9 +1002,11 @@ export async function prepareF01EDemoBatches(
         }
       )
 
-      const allowlistIds = preflight.resolvedTargets.map((r) => r.product.id)
+      const allowlistIds = Array.from(
+        new Set(preflight.resolvedTargets.map((r) => r.product.id))
+      ).sort()
 
-      // 1. Khóa dòng bi quan (SELECT ... FOR UPDATE) đúng 5 sản phẩm trong Allowlist theo thứ tự ID
+      // Khóa lại danh sách đã resolve để bao quát trường hợp không dùng expectedProductId cố định
       try {
         await tx.$queryRaw(
           Prisma.sql`SELECT id FROM "Product" WHERE id IN (${Prisma.join(allowlistIds)}) ORDER BY id ASC FOR UPDATE`

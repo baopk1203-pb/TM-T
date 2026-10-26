@@ -127,6 +127,45 @@ function renderExpiryBadge(alert: BatchExpiryAlert) {
   }
 }
 
+export interface BatchAdjustActionState {
+  canOpen: boolean
+  disabledReason: string | null
+}
+
+/**
+ * Đánh giá xem một lô hàng (kể cả lô UNVERIFIED / LOCKED_QC / không đủ điều kiện FEFO)
+ * có thể mở Modal Điều chỉnh tồn kho & Hao hụt (Module C) hay không.
+ */
+export function evaluateBatchAdjustActionState(batch: {
+  productTrackingEnabled: boolean
+  status: BatchStatus
+  physicalStockGrams: number
+  ledgerCount: number
+}): BatchAdjustActionState {
+  if (!batch.productTrackingEnabled) {
+    return {
+      canOpen: false,
+      disabledReason: 'Sản phẩm chưa bật quản lý tồn kho sổ cái',
+    }
+  }
+  if (batch.status === BatchStatus.DEPLETED) {
+    return {
+      canOpen: false,
+      disabledReason: 'Lô hàng đã cạn tồn (DEPLETED), không thể điều chỉnh',
+    }
+  }
+  if (batch.physicalStockGrams <= 0 && batch.ledgerCount <= 0) {
+    return {
+      canOpen: false,
+      disabledReason: 'Lô lịch sử chỉ phục vụ truy xuất QR, chưa có bút toán nhập kho (0 kg)',
+    }
+  }
+  return {
+    canOpen: true,
+    disabledReason: null,
+  }
+}
+
 export function BatchManagement({
   inventoryViews,
   products,
@@ -231,6 +270,20 @@ export function BatchManagement({
     startRefreshTransition(() => {
       router.refresh()
     })
+  }
+
+  const openAdjustModal = (view: AdminBatchDetailView) => {
+    const actionState = evaluateBatchAdjustActionState(view.batch)
+    if (!actionState.canOpen) return
+    const currentPhysicalKg = gramsToKg(view.batch.physicalStockGrams)
+    const defaultKg =
+      currentPhysicalKg > 0 ? String(Math.min(1, currentPhysicalKg)) : '1'
+    setAdjustModalBatch(view)
+    setAdjustType(view.batch.physicalStockGrams > 0 ? 'SHRINKAGE_LOSS' : 'QC_ADJUSTMENT_ADD')
+    setAdjustKg(defaultKg)
+    setAdjustReason('')
+    setAdjustRefCode('')
+    setAdjustError(null)
   }
 
   // Handle Stock Receipt (Module A)
@@ -778,14 +831,7 @@ export function BatchManagement({
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => {
-                            setAdjustModalBatch(view)
-                            setAdjustType('SHRINKAGE_LOSS')
-                            setAdjustKg('10')
-                            setAdjustReason('')
-                            setAdjustRefCode('')
-                            setAdjustError(null)
-                          }}
+                          onClick={() => openAdjustModal(view)}
                           className="h-7 px-2 text-[11px] gap-1 border-amber-200 text-amber-800 hover:bg-amber-50"
                           title="Điều chỉnh tồn kho / Hao hụt"
                         >
@@ -883,6 +929,7 @@ export function BatchManagement({
             <tbody className="divide-y divide-slate-100 bg-white">
               {nonEligibleViews.map((view) => {
                 const b = view.batch
+                const adjustActionState = evaluateBatchAdjustActionState(b)
                 return (
                   <tr key={b.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-3.5 py-3.5 font-mono font-bold text-slate-700">{b.code}</td>
@@ -922,6 +969,16 @@ export function BatchManagement({
                           className="h-7 px-2 text-[11px] gap-1"
                         >
                           <Eye className="w-3 h-3" /> Chi tiết
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!adjustActionState.canOpen}
+                          onClick={() => openAdjustModal(view)}
+                          className="h-7 px-2 text-[11px] gap-1 border-amber-200 text-amber-800 hover:bg-amber-50 disabled:opacity-45"
+                          title={adjustActionState.disabledReason || 'Điều chỉnh tồn kho / Hao hụt'}
+                        >
+                          <Scale className="w-3 h-3" /> Điều chỉnh
                         </Button>
                         <Button
                           variant="outline"
@@ -1095,16 +1152,18 @@ export function BatchManagement({
                 <div className="flex justify-between text-blue-800">
                   <span>Khả dụng xuất bán mới:</span>
                   <strong className="font-mono">
-                    {adjustType === 'QC_ADJUSTMENT_ADD'
-                      ? formatAvailableKgWithUnit(
-                          adjustModalBatch.batch.sellableAvailableGrams + Math.round(Number(adjustKg || 0) * 1000)
-                        )
-                      : formatAvailableKgWithUnit(
-                          Math.max(
-                            0,
-                            adjustModalBatch.batch.sellableAvailableGrams - Math.round(Number(adjustKg || 0) * 1000)
+                    {adjustModalBatch.batch.fefoEligibility.eligible
+                      ? adjustType === 'QC_ADJUSTMENT_ADD'
+                        ? formatAvailableKgWithUnit(
+                            adjustModalBatch.batch.sellableAvailableGrams + Math.round(Number(adjustKg || 0) * 1000)
                           )
-                        )}
+                        : formatAvailableKgWithUnit(
+                            Math.max(
+                              0,
+                              adjustModalBatch.batch.sellableAvailableGrams - Math.round(Number(adjustKg || 0) * 1000)
+                            )
+                          )
+                      : '0 kg (Lô không mở bán FEFO)'}
                   </strong>
                 </div>
               </div>
@@ -1331,9 +1390,7 @@ export function BatchManagement({
                 onClick={() => {
                   const b = dispatchModalBatch
                   setDispatchModalBatch(null)
-                  setAdjustModalBatch(b)
-                  setAdjustType('SHRINKAGE_LOSS')
-                  setAdjustKg('10')
+                  openAdjustModal(b)
                 }}
                 className="bg-amber-600 hover:bg-amber-700 text-white text-xs gap-1.5"
               >
@@ -1427,7 +1484,7 @@ export function BatchManagement({
                     <History className="w-4 h-4 text-emerald-600" />
                     Bút Toán Sổ Cái Kho (InventoryLedger — {detailBatchView.ledgerEntries.length} giao dịch)
                   </h4>
-                  <Link href={`/admin/ton-kho/lich-su?batchCode=${detailBatchView.batch.code}`}>
+                  <Link href={`/admin/ton-kho/lich-su?batchCode=${encodeURIComponent(detailBatchView.batch.code)}`}>
                     <Button variant="ghost" size="sm" className="h-6 text-[10px] text-emerald-700">
                       Xem trang sổ cái đầy đủ →
                     </Button>
@@ -1489,7 +1546,28 @@ export function BatchManagement({
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const detailAdjustState = evaluateBatchAdjustActionState(detailBatchView.batch)
+                  return (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!detailAdjustState.canOpen}
+                      onClick={() => {
+                        const target = detailBatchView
+                        setDetailBatchView(null)
+                        openAdjustModal(target)
+                      }}
+                      className="text-xs gap-1.5 border-amber-200 text-amber-800 hover:bg-amber-50 disabled:opacity-45"
+                      title={detailAdjustState.disabledReason || 'Mở Điều chỉnh tồn kho & Hao hụt (Module C)'}
+                    >
+                      <Scale className="w-3.5 h-3.5" /> Điều chỉnh tồn
+                    </Button>
+                  )
+                })()}
+              </div>
               <Button variant="outline" size="sm" onClick={() => setDetailBatchView(null)}>
                 Đóng
               </Button>

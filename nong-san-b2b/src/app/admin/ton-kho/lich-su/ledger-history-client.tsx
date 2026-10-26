@@ -29,6 +29,7 @@ interface LedgerHistoryClientProps {
   initialFilters: {
     productId: string
     batchId: string
+    batchCode?: string
     type: InventoryLedgerType | 'ALL'
     dateFrom: string
     dateTo: string
@@ -84,7 +85,14 @@ export function LedgerHistoryClient({ result, initialFilters }: LedgerHistoryCli
     const nextPage = overrides.page ?? 1
 
     if (nextProduct && nextProduct !== 'ALL') params.set('productId', nextProduct)
-    if (nextBatch && nextBatch !== 'ALL') params.set('batchId', nextBatch)
+    if (nextBatch && nextBatch !== 'ALL') {
+      const matchedBatch = result.filterOptions.batches.find((b) => b.id === nextBatch)
+      if (matchedBatch) {
+        params.set('batchCode', matchedBatch.code)
+      } else {
+        params.set('batchId', nextBatch)
+      }
+    }
     if (nextType && nextType !== 'ALL') params.set('type', nextType)
     if (nextFrom) params.set('dateFrom', nextFrom)
     if (nextTo) params.set('dateTo', nextTo)
@@ -273,6 +281,27 @@ export function LedgerHistoryClient({ result, initialFilters }: LedgerHistoryCli
       </Card>
 
       {/* Bảng lịch sử InventoryLedger (Module C — Section 7.1) */}
+      {result.appliedFilters?.unmatchedBatchQuery && (
+        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            Không tìm thấy lô hàng nào khớp với mã lọc{' '}
+            <code className="px-1.5 py-0.5 rounded bg-white border border-amber-200 font-mono font-bold">
+              {result.appliedFilters.unmatchedBatchQuery}
+            </code>
+            . Danh sách bên dưới đang hiển thị trạng thái rỗng (0 bản ghi).
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleResetFilters}
+            className="h-7 text-xs border-amber-300 bg-white hover:bg-amber-100 text-amber-900"
+          >
+            Xem tất cả lô hàng
+          </Button>
+        </div>
+      )}
+
       <Card className="border-slate-200/80 shadow-xs overflow-hidden">
         <CardHeader className="bg-slate-50/70 border-b border-slate-200/80 p-4 sm:p-5 flex flex-row items-center justify-between">
           <div>

@@ -11,6 +11,7 @@ interface AdminLedgerHistoryPageProps {
   searchParams?: Promise<{
     productId?: string
     batchId?: string
+    batchCode?: string
     type?: string
     dateFrom?: string
     dateTo?: string
@@ -35,6 +36,7 @@ export default async function AdminLedgerHistoryPage({
   const result = await getAdminInventoryLedgerHistory({
     productId: resolved.productId || 'ALL',
     batchId: resolved.batchId || 'ALL',
+    batchCode: resolved.batchCode || '',
     type: typeParam,
     dateFrom: resolved.dateFrom || '',
     dateTo: resolved.dateTo || '',
@@ -43,13 +45,26 @@ export default async function AdminLedgerHistoryPage({
     pageSize: 25,
   })
 
+  const filterKey = [
+    resolved.productId || 'ALL',
+    result.appliedFilters.batchId,
+    result.appliedFilters.batchCode,
+    result.appliedFilters.unmatchedBatchQuery || '',
+    typeParam,
+    resolved.dateFrom || '',
+    resolved.dateTo || '',
+    resolved.search || '',
+  ].join('|')
+
   return (
     <div className="space-y-6">
       <LedgerHistoryClient
+        key={filterKey}
         result={result}
         initialFilters={{
           productId: resolved.productId || 'ALL',
-          batchId: resolved.batchId || 'ALL',
+          batchId: result.appliedFilters.batchId,
+          batchCode: result.appliedFilters.batchCode,
           type: typeParam,
           dateFrom: resolved.dateFrom || '',
           dateTo: resolved.dateTo || '',

@@ -547,12 +547,84 @@ export async function getAdminBatchesInventoryView(
 export interface AdminLedgerHistoryFilter {
   productId?: string
   batchId?: string
+  batchCode?: string
   type?: InventoryLedgerType | 'ALL'
   dateFrom?: string
   dateTo?: string
   search?: string
   page?: number
   pageSize?: number
+}
+
+export interface LedgerBatchOption {
+  id: string
+  code: string
+  productName: string
+}
+
+export interface ResolvedLedgerBatchFilter {
+  selectedBatchId: string
+  resolvedBatchCode: string
+  unmatchedBatchQuery: string | null
+  whereBatchId: string | null
+}
+
+/**
+ * Phân giải bộ lọc lô hàng cho trang Lịch sử Sổ cái (`/admin/ton-kho/lich-su`).
+ * Hỗ trợ đồng thời `batchId` và deep-link `batchCode` từ trang Quản lý lô hàng.
+ * Nếu `batchCode` hoặc `batchId` trên URL không khớp với bất kỳ lô nào trong hệ thống,
+ * trả về `whereBatchId = '__UNMATCHED_BATCH__'` để truy vấn trả về 0 bản ghi an toàn.
+ */
+export function resolveLedgerBatchFilter(
+  batches: LedgerBatchOption[],
+  input: { batchId?: string; batchCode?: string }
+): ResolvedLedgerBatchFilter {
+  const rawBatchId = input.batchId?.trim() || 'ALL'
+  const rawBatchCode = input.batchCode?.trim() || ''
+
+  if (rawBatchId && rawBatchId !== 'ALL') {
+    const matchedById = batches.find((b) => b.id === rawBatchId)
+    if (matchedById) {
+      return {
+        selectedBatchId: matchedById.id,
+        resolvedBatchCode: matchedById.code,
+        unmatchedBatchQuery: null,
+        whereBatchId: matchedById.id,
+      }
+    }
+    return {
+      selectedBatchId: 'ALL',
+      resolvedBatchCode: '',
+      unmatchedBatchQuery: rawBatchId,
+      whereBatchId: '__UNMATCHED_BATCH__',
+    }
+  }
+
+  if (rawBatchCode && rawBatchCode.toUpperCase() !== 'ALL') {
+    const normalizedCode = rawBatchCode.toLowerCase()
+    const matchedByCode = batches.find((b) => b.code.toLowerCase() === normalizedCode)
+    if (matchedByCode) {
+      return {
+        selectedBatchId: matchedByCode.id,
+        resolvedBatchCode: matchedByCode.code,
+        unmatchedBatchQuery: null,
+        whereBatchId: matchedByCode.id,
+      }
+    }
+    return {
+      selectedBatchId: 'ALL',
+      resolvedBatchCode: rawBatchCode,
+      unmatchedBatchQuery: rawBatchCode,
+      whereBatchId: '__UNMATCHED_BATCH__',
+    }
+  }
+
+  return {
+    selectedBatchId: 'ALL',
+    resolvedBatchCode: '',
+    unmatchedBatchQuery: null,
+    whereBatchId: null,
+  }
 }
 
 export interface AdminLedgerRecordView {
@@ -584,7 +656,12 @@ export interface AdminLedgerHistoryResult {
   }
   filterOptions: {
     products: Array<{ id: string; name: string; trackingEnabled: boolean }>
-    batches: Array<{ id: string; code: string; productName: string }>
+    batches: LedgerBatchOption[]
+  }
+  appliedFilters: {
+    batchId: string
+    batchCode: string
+    unmatchedBatchQuery: string | null
   }
 }
 
@@ -597,10 +674,42 @@ export async function getAdminInventoryLedgerHistory(
   const page = Math.max(1, Math.trunc(filter.page || 1))
   const pageSize = Math.min(100, Math.max(10, Math.trunc(filter.pageSize || 25)))
 
+  const [products, batches] = await Promise.all([
+    db.product.findMany({
+      orderBy: [{ inventoryTrackingEnabled: 'desc' }, { name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        inventoryTrackingEnabled: true,
+      },
+    }),
+    db.batch.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        code: true,
+        product: {
+          select: { name: true },
+        },
+      },
+    }),
+  ])
+
+  const batchOptions: LedgerBatchOption[] = batches.map((b) => ({
+    id: b.id,
+    code: b.code,
+    productName: b.product.name,
+  }))
+
+  const resolvedBatchFilter = resolveLedgerBatchFilter(batchOptions, {
+    batchId: filter.batchId,
+    batchCode: filter.batchCode,
+  })
+
   const where: Prisma.InventoryLedgerWhereInput = {}
 
-  if (filter.batchId && filter.batchId !== 'ALL') {
-    where.batchId = filter.batchId
+  if (resolvedBatchFilter.whereBatchId) {
+    where.batchId = resolvedBatchFilter.whereBatchId
   }
 
   if (filter.productId && filter.productId !== 'ALL') {
@@ -646,7 +755,7 @@ export async function getAdminInventoryLedgerHistory(
     ]
   }
 
-  const [totalItems, records, products, batches] = await Promise.all([
+  const [totalItems, records] = await Promise.all([
     db.inventoryLedger.count({ where }),
     db.inventoryLedger.findMany({
       where,
@@ -674,24 +783,6 @@ export async function getAdminInventoryLedgerHistory(
             code: true,
             status: true,
           },
-        },
-      },
-    }),
-    db.product.findMany({
-      orderBy: [{ inventoryTrackingEnabled: 'desc' }, { name: 'asc' }],
-      select: {
-        id: true,
-        name: true,
-        inventoryTrackingEnabled: true,
-      },
-    }),
-    db.batch.findMany({
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        code: true,
-        product: {
-          select: { name: true },
         },
       },
     }),
@@ -730,11 +821,12 @@ export async function getAdminInventoryLedgerHistory(
         name: p.name,
         trackingEnabled: p.inventoryTrackingEnabled,
       })),
-      batches: batches.map((b) => ({
-        id: b.id,
-        code: b.code,
-        productName: b.product.name,
-      })),
+      batches: batchOptions,
+    },
+    appliedFilters: {
+      batchId: resolvedBatchFilter.selectedBatchId,
+      batchCode: resolvedBatchFilter.resolvedBatchCode,
+      unmatchedBatchQuery: resolvedBatchFilter.unmatchedBatchQuery,
     },
   }
 }

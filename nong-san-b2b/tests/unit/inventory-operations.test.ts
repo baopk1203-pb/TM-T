@@ -9,6 +9,8 @@ import {
   buildBatchStatusAuditKey,
 } from '@/lib/domain/inventory-operations'
 import type { BatchStockSummary } from '@/lib/domain/inventory'
+import { evaluateBatchAdjustActionState } from '@/app/admin/lo-hang/batch-management'
+import { resolveLedgerBatchFilter, type LedgerBatchOption } from '@/lib/services/inventory-read'
 
 describe('Domain: Inventory Operations (F01D Phase 2)', () => {
   describe('1. Feature Flag & Fail-Closed Guards', () => {
@@ -286,6 +288,118 @@ describe('Domain: Inventory Operations (F01D Phase 2)', () => {
     it('D5. Xây dựng Audit Key theo quy ước AppSetting', () => {
       const key = buildBatchStatusAuditKey('batch-123', 1700000000000)
       expect(key).toBe('AUDIT:BATCH_STATUS:batch-123:1700000000000')
+    })
+  })
+
+  describe('5. P203-UX-01 & P203-UX-02 — Admin Inventory UX Hotfix Regressions', () => {
+    it('UX01-1. Cho phép mở Điều chỉnh tồn (Module C) cho lô LOCKED_QC không đủ điều kiện FEFO (QA-F01D-P2-BO034-261026)', () => {
+      const state = evaluateBatchAdjustActionState({
+        productTrackingEnabled: true,
+        status: BatchStatus.LOCKED_QC,
+        physicalStockGrams: 8000, // 8 kg
+        ledgerCount: 2,
+      })
+      expect(state.canOpen).toBe(true)
+      expect(state.disabledReason).toBeNull()
+    })
+
+    it('UX01-2. Cho phép mở Điều chỉnh tồn cho lô UNVERIFIED có bút toán nhập kho hợp lệ', () => {
+      const state = evaluateBatchAdjustActionState({
+        productTrackingEnabled: true,
+        status: BatchStatus.UNVERIFIED,
+        physicalStockGrams: 10000, // 10 kg
+        ledgerCount: 1,
+      })
+      expect(state.canOpen).toBe(true)
+      expect(state.disabledReason).toBeNull()
+    })
+
+    it('UX01-3. Chặn an toàn kèm lý do rõ ràng cho lô DEPLETED, lô chưa bật tracking hoặc lô QR lịch sử 0 kg', () => {
+      const depletedState = evaluateBatchAdjustActionState({
+        productTrackingEnabled: true,
+        status: BatchStatus.DEPLETED,
+        physicalStockGrams: 0,
+        ledgerCount: 2,
+      })
+      expect(depletedState.canOpen).toBe(false)
+      expect(depletedState.disabledReason).toContain('DEPLETED')
+
+      const untrackedState = evaluateBatchAdjustActionState({
+        productTrackingEnabled: false,
+        status: BatchStatus.UNVERIFIED,
+        physicalStockGrams: 0,
+        ledgerCount: 0,
+      })
+      expect(untrackedState.canOpen).toBe(false)
+      expect(untrackedState.disabledReason).toContain('chưa bật quản lý tồn kho')
+
+      const historicalZeroState = evaluateBatchAdjustActionState({
+        productTrackingEnabled: true,
+        status: BatchStatus.UNVERIFIED,
+        physicalStockGrams: 0,
+        ledgerCount: 0,
+      })
+      expect(historicalZeroState.canOpen).toBe(false)
+      expect(historicalZeroState.disabledReason).toContain('0 kg')
+    })
+
+    const mockBatches: LedgerBatchOption[] = [
+      {
+        id: 'cmvp7i2wn00018p8omajuxjgz',
+        code: 'QA-F01D-P2-BO034-261026',
+        productName: 'Bơ Sáp 034 Đắk Lắk',
+      },
+      {
+        id: 'cmv6htn91001d8pzslori6a01',
+        code: 'LO-RI6-2610-FEFO-A',
+        productName: 'Sầu Riêng Ri6 Cái Mơn',
+      },
+    ]
+
+    it('UX02-1. Phân giải chính xác deep-link batchCode trên URL sang selectedBatchId và whereBatchId', () => {
+      const resolved = resolveLedgerBatchFilter(mockBatches, {
+        batchId: 'ALL',
+        batchCode: 'QA-F01D-P2-BO034-261026',
+      })
+      expect(resolved.selectedBatchId).toBe('cmvp7i2wn00018p8omajuxjgz')
+      expect(resolved.resolvedBatchCode).toBe('QA-F01D-P2-BO034-261026')
+      expect(resolved.whereBatchId).toBe('cmvp7i2wn00018p8omajuxjgz')
+      expect(resolved.unmatchedBatchQuery).toBeNull()
+    })
+
+    it('UX02-2. Phân giải không phân biệt hoa thường cho batchCode và hỗ trợ truyền trực tiếp batchId', () => {
+      const byLowerCode = resolveLedgerBatchFilter(mockBatches, {
+        batchCode: 'qa-f01d-p2-bo034-261026',
+      })
+      expect(byLowerCode.selectedBatchId).toBe('cmvp7i2wn00018p8omajuxjgz')
+      expect(byLowerCode.whereBatchId).toBe('cmvp7i2wn00018p8omajuxjgz')
+
+      const byId = resolveLedgerBatchFilter(mockBatches, {
+        batchId: 'cmv6htn91001d8pzslori6a01',
+      })
+      expect(byId.selectedBatchId).toBe('cmv6htn91001d8pzslori6a01')
+      expect(byId.resolvedBatchCode).toBe('LO-RI6-2610-FEFO-A')
+      expect(byId.whereBatchId).toBe('cmv6htn91001d8pzslori6a01')
+    })
+
+    it('UX02-3. Trả về trạng thái mặc định (ALL) khi đặt lại bộ lọc', () => {
+      const resetState = resolveLedgerBatchFilter(mockBatches, {
+        batchId: 'ALL',
+        batchCode: '',
+      })
+      expect(resetState.selectedBatchId).toBe('ALL')
+      expect(resetState.resolvedBatchCode).toBe('')
+      expect(resetState.whereBatchId).toBeNull()
+      expect(resetState.unmatchedBatchQuery).toBeNull()
+    })
+
+    it('UX02-4. Xử lý an toàn khi batchCode trên URL không tồn tại (không trả về tràn toàn bộ bản ghi)', () => {
+      const unmatched = resolveLedgerBatchFilter(mockBatches, {
+        batchCode: 'NON-EXISTENT-BATCH-999',
+      })
+      expect(unmatched.selectedBatchId).toBe('ALL')
+      expect(unmatched.whereBatchId).toBe('__UNMATCHED_BATCH__')
+      expect(unmatched.unmatchedBatchQuery).toBe('NON-EXISTENT-BATCH-999')
     })
   })
 })

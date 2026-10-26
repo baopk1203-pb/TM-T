@@ -561,17 +561,20 @@ export async function verifyF01ESafetyGates(
       )
     }
 
-    for (const preserved of F01C_PRESERVED_TRACKED_PRODUCTS) {
-      const p = await tx.product.findUnique({
-        where: { id: preserved.expectedProductId },
-        include: {
-          batches: {
-            include: {
-              ledgerEntries: { select: { type: true, quantityGrams: true } },
-            },
+    const preservedIds = F01C_PRESERVED_TRACKED_PRODUCTS.map((p) => p.expectedProductId)
+    const preservedProducts = await tx.product.findMany({
+      where: { id: { in: preservedIds } },
+      include: {
+        batches: {
+          include: {
+            ledgerEntries: { select: { type: true, quantityGrams: true } },
           },
         },
-      })
+      },
+    })
+
+    for (const preserved of F01C_PRESERVED_TRACKED_PRODUCTS) {
+      const p = preservedProducts.find((prod) => prod.id === preserved.expectedProductId)
 
       if (!p || p.slug !== preserved.expectedSlug || !p.inventoryTrackingEnabled) {
         throw new Error(
@@ -627,13 +630,16 @@ export async function verifyF01ESafetyGates(
     }
   }> = []
 
+  const targetSlugs = targetSpecs.map((s) => s.expectedSlug)
+  const targetProducts = await tx.product.findMany({
+    where: { slug: { in: targetSlugs } },
+    include: {
+      farm: { select: { id: true, slug: true, name: true } },
+    },
+  })
+
   for (const spec of targetSpecs) {
-    const product = await tx.product.findUnique({
-      where: { slug: spec.expectedSlug },
-      include: {
-        farm: { select: { id: true, slug: true, name: true } },
-      },
-    })
+    const product = targetProducts.find((p) => p.slug === spec.expectedSlug)
 
     if (!product) {
       throw new Error(
@@ -1006,18 +1012,40 @@ export async function prepareF01EDemoBatches(
         new Set(preflight.resolvedTargets.map((r) => r.product.id))
       ).sort()
 
-      // Khóa lại danh sách đã resolve để bao quát trường hợp không dùng expectedProductId cố định
-      try {
-        await tx.$queryRaw(
-          Prisma.sql`SELECT id FROM "Product" WHERE id IN (${Prisma.join(allowlistIds)}) ORDER BY id ASC FOR UPDATE`
-        )
-      } catch {
-        // Bỏ qua nếu môi trường mock không hỗ trợ raw lock
+      // Khóa lại danh sách đã resolve nếu có ID nào chưa được khóa ở initialTargetIds
+      const missingLockIds = allowlistIds.filter((id) => !initialTargetIds.includes(id))
+      if (missingLockIds.length > 0) {
+        try {
+          await tx.$queryRaw(
+            Prisma.sql`SELECT id FROM "Product" WHERE id IN (${Prisma.join(missingLockIds)}) ORDER BY id ASC FOR UPDATE`
+          )
+        } catch {
+          // Bỏ qua nếu môi trường mock không hỗ trợ raw lock
+        }
       }
 
       const batchesOutcome: F01EPreparedBatchOutcome[] = []
       const productSummaries: F01EProductSummaryOutcome[] = []
       let processedBatchIndex = 0
+
+      // Tối ưu hóa round-trip: Đọc trước toàn bộ Batch và Ledger hiện có thuộc 10 lô DEMO trong 2 query gom
+      const allBatchCodes = preflight.resolvedTargets.flatMap((r) =>
+        r.spec.batches.map((b) => b.code)
+      )
+      const allIdempotencyKeys = preflight.resolvedTargets.flatMap((r) =>
+        r.spec.batches.map((b) => b.idempotencyKey)
+      )
+
+      const existingBatchesList = await tx.batch.findMany({
+        where: { code: { in: allBatchCodes } },
+        include: { ledgerEntries: true },
+      })
+      const existingBatchMap = new Map(existingBatchesList.map((b) => [b.code, b]))
+
+      const existingLedgerList = await tx.inventoryLedger.findMany({
+        where: { idempotencyKey: { in: allIdempotencyKeys } },
+      })
+      const existingLedgerMap = new Map(existingLedgerList.map((l) => [l.idempotencyKey, l]))
 
       // 2. Bước 1 trong Transaction: Tạo 10 Batch ACTIVE + 10 InventoryLedger IMPORT TRƯỚC khi bật tracking
       for (const { spec, product } of preflight.resolvedTargets) {
@@ -1026,10 +1054,7 @@ export async function prepareF01EDemoBatches(
           const harvestDate = addDaysUtc(referenceDate, bSpec.harvestDaysOffset)
           const expiryDate = addDaysUtc(referenceDate, bSpec.expiryDaysOffset)
 
-          const existingBatch = await tx.batch.findUnique({
-            where: { code: bSpec.code },
-            include: { ledgerEntries: true },
-          })
+          const existingBatch = existingBatchMap.get(bSpec.code)
 
           let batchId: string
           let action: F01EPreparedBatchOutcome['action'] = 'CREATED'
@@ -1054,6 +1079,10 @@ export async function prepareF01EDemoBatches(
             })
             batchId = createdBatch.id
             action = 'CREATED'
+            existingBatchMap.set(bSpec.code, {
+              ...createdBatch,
+              ledgerEntries: [],
+            } as (typeof existingBatchesList)[number])
           } else {
             if (
               existingBatch.productId !== product.id ||
@@ -1091,12 +1120,10 @@ export async function prepareF01EDemoBatches(
             action = 'ALREADY_EXISTS_IDEMPOTENT'
           }
 
-          const existingLedger = await tx.inventoryLedger.findUnique({
-            where: { idempotencyKey: bSpec.idempotencyKey },
-          })
+          const existingLedger = existingLedgerMap.get(bSpec.idempotencyKey)
 
           if (!existingLedger) {
-            await tx.inventoryLedger.create({
+            const createdLedger = await tx.inventoryLedger.create({
               data: {
                 batchId,
                 type: InventoryLedgerType.IMPORT,
@@ -1107,6 +1134,10 @@ export async function prepareF01EDemoBatches(
                 notes: `Nhập kho lô DEMO ${bSpec.code} (${gramsToKg(bSpec.quantityGrams)} kg) cho sản phẩm ${product.name}`,
               },
             })
+            existingLedgerMap.set(
+              bSpec.idempotencyKey,
+              createdLedger as (typeof existingLedgerList)[number]
+            )
           } else if (
             existingLedger.batchId !== batchId ||
             existingLedger.type !== InventoryLedgerType.IMPORT ||
@@ -1147,12 +1178,22 @@ export async function prepareF01EDemoBatches(
       }
 
       // 3. Bước 2 trong Transaction: Kiểm chứng tồn kho hợp lệ > 200 kg cho từng sản phẩm TRƯỚC KHI bật cờ tracking
+      // Tối ưu hóa round-trip: Đọc các batch của toàn bộ 5 sản phẩm mục tiêu trong 1 query duy nhất
+      const allTargetProductIds = preflight.resolvedTargets.map((r) => r.product.id)
+      const allTargetDbBatches = await tx.batch.findMany({
+        where: { productId: { in: allTargetProductIds } },
+        include: { ledgerEntries: true },
+        orderBy: { code: 'asc' },
+      })
+      const batchesByProductId = new Map<string, typeof allTargetDbBatches>()
+      for (const b of allTargetDbBatches) {
+        const list = batchesByProductId.get(b.productId) ?? []
+        list.push(b)
+        batchesByProductId.set(b.productId, list)
+      }
+
       for (const { spec, product } of preflight.resolvedTargets) {
-        const dbBatches = await tx.batch.findMany({
-          where: { productId: product.id },
-          include: { ledgerEntries: true },
-          orderBy: { code: 'asc' },
-        })
+        const dbBatches = batchesByProductId.get(product.id) ?? []
 
         const candidates: BatchCandidate[] = dbBatches.map((b) => {
           const stock = calculateStockFromLedger(
@@ -1206,12 +1247,6 @@ export async function prepareF01EDemoBatches(
           )
         }
 
-        // 4. Bước 3 trong Transaction: Bật `inventoryTrackingEnabled = true` theo đúng ID sản phẩm sau khi đã có tồn kho hợp lệ
-        await tx.product.update({
-          where: { id: product.id },
-          data: { inventoryTrackingEnabled: true },
-        })
-
         const totalPhysicalGrams = candidates.reduce((s, c) => s + c.physicalStockGrams, 0)
         const totalReservedGrams = candidates.reduce((s, c) => s + c.reservedGrams, 0)
 
@@ -1234,6 +1269,12 @@ export async function prepareF01EDemoBatches(
           fefoPickOrder: fefoCheck.allocations.map((a) => a.batchCode),
         })
       }
+
+      // 4. Bước 3 trong Transaction: Bật `inventoryTrackingEnabled = true` cho toàn bộ 5 sản phẩm mục tiêu trong 1 query duy nhất
+      await tx.product.updateMany({
+        where: { id: { in: allTargetProductIds } },
+        data: { inventoryTrackingEnabled: true },
+      })
 
       // 5. Bước 4 trong Transaction: Đối soát tổng thể toàn danh mục sau khi bật tracking
       const allProductsAfter = await tx.product.findMany({
@@ -1316,7 +1357,8 @@ export async function prepareF01EDemoBatches(
       }
     },
     {
-      timeout: 30000,
+      maxWait: 15000,
+      timeout: 90000,
     }
   )
 }

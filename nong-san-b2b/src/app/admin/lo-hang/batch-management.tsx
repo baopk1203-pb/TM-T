@@ -18,6 +18,9 @@ import {
   Lock,
   Eye,
   ShieldAlert,
+  Scale,
+  Truck,
+  AlertTriangle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,6 +29,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { createBatch } from '@/server/actions/batch'
+import {
+  adminReceiveStock,
+  adminAdjustStock,
+  adminUpdateBatchStatus,
+  getBatchAuditHistory,
+} from '@/server/actions/inventory-operations'
 import { gramsToKg } from '@/lib/money'
 import type { AdminBatchDetailView } from '@/lib/services/inventory-read'
 import {
@@ -33,6 +42,11 @@ import {
   getLedgerTypePresentation,
   type BatchExpiryAlert,
 } from '@/lib/domain/inventory-view'
+import { BatchStatus } from '@prisma/client'
+import type {
+  BatchStatusAuditEntry,
+  StockAdjustmentType,
+} from '@/lib/domain/inventory-operations'
 
 interface ProductOption {
   id: string
@@ -45,6 +59,7 @@ interface ProductOption {
 interface BatchManagementProps {
   inventoryViews: AdminBatchDetailView[]
   products: ProductOption[]
+  writeEnabled?: boolean
   initialProductIdFilter?: string
   initialSearchQuery?: string
 }
@@ -115,6 +130,7 @@ function renderExpiryBadge(alert: BatchExpiryAlert) {
 export function BatchManagement({
   inventoryViews,
   products,
+  writeEnabled = false,
   initialProductIdFilter = 'ALL',
   initialSearchQuery = '',
 }: BatchManagementProps) {
@@ -123,12 +139,21 @@ export function BatchManagement({
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [selectedProductId, setSelectedProductId] = useState(products[0]?.id || '')
   const [harvestDate, setHarvestDate] = useState(new Date().toISOString().split('T')[0])
+  const [expiryDate, setExpiryDate] = useState(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + 14)
+    return d.toISOString().split('T')[0]
+  })
   const [harvestKg, setHarvestKg] = useState('500')
   const [qcNotes, setQcNotes] = useState('')
   const [customCode, setCustomCode] = useState('')
+  const [createStatus, setCreateStatus] = useState<BatchStatus>(BatchStatus.ACTIVE)
+  const [isFefoEligible, setIsFefoEligible] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+
+  // QR Modal
   const [qrModalBatch, setQrModalBatch] = useState<{
     code: string
     productName: string
@@ -137,16 +162,39 @@ export function BatchManagement({
     harvestGrams: number | null
   } | null>(null)
 
-  // Bộ lọc tìm kiếm (Module B — Section 6.2)
+  // Detail Modal
+  const [detailBatchView, setDetailBatchView] = useState<AdminBatchDetailView | null>(null)
+
+  // Module C: Adjust Modal
+  const [adjustModalBatch, setAdjustModalBatch] = useState<AdminBatchDetailView | null>(null)
+  const [adjustType, setAdjustType] = useState<StockAdjustmentType>('SHRINKAGE_LOSS')
+  const [adjustKg, setAdjustKg] = useState('10')
+  const [adjustReason, setAdjustReason] = useState('')
+  const [adjustRefCode, setAdjustRefCode] = useState('')
+  const [adjustLoading, setAdjustLoading] = useState(false)
+  const [adjustError, setAdjustError] = useState<string | null>(null)
+
+  // Module D: Status & FEFO Modal
+  const [statusModalBatch, setStatusModalBatch] = useState<AdminBatchDetailView | null>(null)
+  const [targetStatus, setTargetStatus] = useState<BatchStatus>(BatchStatus.ACTIVE)
+  const [targetEligibility, setTargetEligibility] = useState(true)
+  const [statusReason, setStatusReason] = useState('')
+  const [statusQcNotes, setStatusQcNotes] = useState('')
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [statusError, setStatusError] = useState<string | null>(null)
+  const [auditHistory, setAuditHistory] = useState<BatchStatusAuditEntry[] | null>(null)
+  const [loadingAuditHistory, setLoadingAuditHistory] = useState(false)
+
+  // Module B: Dispatch Modal
+  const [dispatchModalBatch, setDispatchModalBatch] = useState<AdminBatchDetailView | null>(null)
+
+  // Filter states
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery)
   const [productFilter, setProductFilter] = useState(initialProductIdFilter)
   const [farmFilter, setFarmFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [fefoFilter, setFefoFilter] = useState<'ALL' | 'ELIGIBLE' | 'INELIGIBLE'>('ALL')
   const [expiryFilter, setExpiryFilter] = useState<'ALL' | 'EXPIRING_SOON' | 'EXPIRED' | 'NORMAL'>('ALL')
-
-  // Modal chi tiết lô hàng (Module B — Section 6.4)
-  const [detailBatchView, setDetailBatchView] = useState<AdminBatchDetailView | null>(null)
 
   const selectedProduct = products.find((p) => p.id === selectedProductId)
 
@@ -176,7 +224,6 @@ export function BatchManagement({
     return true
   })
 
-  // Tách nhóm lô đủ điều kiện FEFO và lô không đủ điều kiện / UNVERIFIED (Section 6.3)
   const fefoEligibleViews = filteredViews.filter((v) => v.batch.fefoEligibility.eligible)
   const nonEligibleViews = filteredViews.filter((v) => !v.batch.fefoEligibility.eligible)
 
@@ -186,6 +233,7 @@ export function BatchManagement({
     })
   }
 
+  // Handle Stock Receipt (Module A)
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedProduct) return
@@ -197,24 +245,117 @@ export function BatchManagement({
       customCode.trim() ||
       `LO-${harvestDate.replace(/-/g, '').slice(2)}-${String(inventoryViews.length + 1).padStart(3, '0')}`
 
-    const res = await createBatch({
-      code: autoCode,
-      productId: selectedProduct.id,
-      farmId: selectedProduct.farmId,
-      harvestDate: new Date(harvestDate),
-      quantityGrams: Math.round(Number(harvestKg) * 1000),
-      note: qcNotes,
-    })
+    try {
+      let res
+      if (selectedProduct.inventoryTrackingEnabled) {
+        res = await adminReceiveStock({
+          productId: selectedProduct.id,
+          farmId: selectedProduct.farmId,
+          code: autoCode,
+          harvestDate: new Date(harvestDate),
+          expiryDate: expiryDate ? new Date(expiryDate) : null,
+          quantityKg: Number(harvestKg),
+          status: createStatus,
+          isFefoEligible: createStatus === BatchStatus.ACTIVE ? isFefoEligible : false,
+          qcNotes: qcNotes.trim() || undefined,
+        })
+      } else {
+        res = await createBatch({
+          code: autoCode,
+          productId: selectedProduct.id,
+          farmId: selectedProduct.farmId,
+          harvestDate: new Date(harvestDate),
+          quantityGrams: Math.round(Number(harvestKg) * 1000),
+          note: qcNotes,
+        })
+      }
 
-    setLoading(false)
-    if (!res.success) {
-      setError(res.error || 'Lỗi khi tạo lô hàng')
-    } else {
-      setSuccessMsg(`Đã tạo thành công lô hàng ${res.batch?.code}`)
-      setCustomCode('')
-      setQcNotes('')
-      setShowCreateForm(false)
-      router.refresh()
+      setLoading(false)
+      if (!res.success) {
+        setError(res.error || 'Lỗi khi tạo lô hàng')
+      } else {
+        setSuccessMsg(res.message || `Đã tạo thành công lô hàng ${autoCode}`)
+        setCustomCode('')
+        setQcNotes('')
+        setShowCreateForm(false)
+        router.refresh()
+      }
+    } catch (err: unknown) {
+      setLoading(false)
+      setError(err instanceof Error ? err.message : 'Lỗi hệ thống khi nhập kho')
+    }
+  }
+
+  // Handle Stock Adjustment (Module C)
+  const handleAdjustSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!adjustModalBatch) return
+    setAdjustLoading(true)
+    setAdjustError(null)
+
+    try {
+      const res = await adminAdjustStock({
+        batchId: adjustModalBatch.batch.id,
+        type: adjustType,
+        quantityKg: Number(adjustKg),
+        reason: adjustReason,
+        referenceCode: adjustRefCode.trim() || null,
+      })
+
+      setAdjustLoading(false)
+      if (!res.success) {
+        setAdjustError(res.error || 'Lỗi khi điều chỉnh tồn kho')
+      } else {
+        setSuccessMsg(res.message || 'Đã điều chỉnh tồn kho thành công')
+        setAdjustModalBatch(null)
+        router.refresh()
+      }
+    } catch (err: unknown) {
+      setAdjustLoading(false)
+      setAdjustError(err instanceof Error ? err.message : 'Lỗi hệ thống khi điều chỉnh tồn kho')
+    }
+  }
+
+  // Handle Status Update (Module D)
+  const handleStatusSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!statusModalBatch) return
+    setStatusLoading(true)
+    setStatusError(null)
+
+    try {
+      const res = await adminUpdateBatchStatus({
+        batchId: statusModalBatch.batch.id,
+        targetStatus,
+        targetEligibility,
+        reason: statusReason,
+        qcNotes: statusQcNotes.trim() || undefined,
+      })
+
+      setStatusLoading(false)
+      if (!res.success) {
+        setStatusError(res.error || 'Lỗi khi cập nhật trạng thái lô hàng')
+      } else {
+        setSuccessMsg(res.message || 'Đã cập nhật trạng thái lô hàng thành công')
+        setStatusModalBatch(null)
+        router.refresh()
+      }
+    } catch (err: unknown) {
+      setStatusLoading(false)
+      setStatusError(err instanceof Error ? err.message : 'Lỗi hệ thống khi cập nhật trạng thái')
+    }
+  }
+
+  const handleFetchAuditHistory = async (batchId: string) => {
+    setLoadingAuditHistory(true)
+    try {
+      const res = await getBatchAuditHistory(batchId)
+      setLoadingAuditHistory(false)
+      if (res.success && Array.isArray(res.data)) {
+        setAuditHistory(res.data as BatchStatusAuditEntry[])
+      }
+    } catch {
+      setLoadingAuditHistory(false)
     }
   }
 
@@ -236,7 +377,7 @@ export function BatchManagement({
             Quản Lý Lô Hàng FEFO &amp; Truy Xuất QR
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Theo dõi thứ tự xuất kho FEFO (First-Expired, First-Out), số dư sổ cái từng lô, lịch sử giữ chỗ đơn hàng và cấp mã QR truy xuất.
+            Theo dõi thứ tự xuất kho FEFO (First-Expired, First-Out), số dư sổ cái từng lô, điều chỉnh tồn kho và cấp mã QR truy xuất.
           </p>
         </div>
 
@@ -269,29 +410,49 @@ export function BatchManagement({
             className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 text-xs"
           >
             <Plus className="w-3.5 h-3.5" />
-            {showCreateForm ? 'Đóng biểu mẫu' : 'Tạo lô QR truy xuất'}
+            {showCreateForm ? 'Đóng biểu mẫu' : 'Nhập kho lô mới'}
           </Button>
         </div>
       </div>
 
-      {error && (
-        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-      {successMsg && (
-        <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          {successMsg}
+      {/* Feature Flag Fail-Closed Warning Banner */}
+      {!writeEnabled && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 shadow-xs">
+          <Lock className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+          <div className="space-y-1">
+            <div className="font-bold text-sm flex items-center gap-2">
+              Chế độ Chỉ Đọc (Khóa ghi kho an toàn — Fail-Closed)
+              <Badge variant="outline" className="text-[10px] bg-amber-100 text-amber-800 border-amber-300">
+                ENABLE_ADMIN_INVENTORY_WRITES = false
+              </Badge>
+            </div>
+            <p className="text-xs text-amber-800 leading-relaxed">
+              Các chức năng ghi kho Admin (Nhập kho, Điều chỉnh tồn, Cập nhật trạng thái) hiện đang được bảo vệ ở trạng thái khóa trên môi trường Beta theo chính sách an toàn. Bảng điều khiển và Sổ cái đang hoạt động ở chế độ đọc dữ liệu chuẩn xác.
+            </p>
+          </div>
         </div>
       )}
 
-      {/* Form tạo lô QR truy xuất */}
+      {error && (
+        <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+      {successMsg && (
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{successMsg}</span>
+        </div>
+      )}
+
+      {/* Form tạo lô / Nhập kho mới (Module A) */}
       {showCreateForm && (
         <Card className="border-emerald-200 bg-emerald-50/30">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base font-bold text-slate-900">
-              Khởi tạo Lô thu hoạch &amp; Cấp mã QR Truy xuất
+            <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Plus className="w-4 h-4 text-emerald-600" />
+              Khởi tạo Lô thu hoạch &amp; Nhập kho FEFO (Module A)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -306,7 +467,7 @@ export function BatchManagement({
                 >
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name} — Vườn: {p.farm.name}
+                      {p.name} {p.inventoryTrackingEnabled ? '(Có quản lý FEFO)' : '(Chỉ QR)'} — Vườn: {p.farm.name}
                     </option>
                   ))}
                 </select>
@@ -333,11 +494,21 @@ export function BatchManagement({
               </div>
 
               <div className="space-y-1.5">
-                <Label>Sản lượng thu hoạch của lô (Kg) *</Label>
+                <Label>Hạn sử dụng dự kiến (Bắt buộc để đủ điều kiện FEFO)</Label>
+                <Input
+                  type="date"
+                  value={expiryDate}
+                  onChange={(e) => setExpiryDate(e.target.value)}
+                  className="bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Sản lượng nhập kho thực tế (Kg) *</Label>
                 <Input
                   type="number"
                   min={1}
-                  step="0.5"
+                  step="0.1"
                   value={harvestKg}
                   onChange={(e) => setHarvestKg(e.target.value)}
                   required
@@ -345,10 +516,34 @@ export function BatchManagement({
                 />
               </div>
 
+              <div className="space-y-1.5">
+                <Label>Trạng thái ban đầu &amp; Điều kiện FEFO</Label>
+                <div className="flex items-center gap-4 pt-1.5">
+                  <select
+                    value={createStatus}
+                    onChange={(e) => setCreateStatus(e.target.value as BatchStatus)}
+                    className="h-10 px-3 rounded-md border border-slate-300 bg-white text-sm"
+                  >
+                    <option value={BatchStatus.ACTIVE}>ACTIVE (Khả dụng)</option>
+                    <option value={BatchStatus.UNVERIFIED}>UNVERIFIED (Chưa xác minh)</option>
+                  </select>
+                  <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isFefoEligible}
+                      onChange={(e) => setIsFefoEligible(e.target.checked)}
+                      disabled={createStatus !== BatchStatus.ACTIVE}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                    />
+                    <span>Đủ điều kiện xuất bán FEFO</span>
+                  </label>
+                </div>
+              </div>
+
               <div className="space-y-1.5 md:col-span-2">
-                <Label>Mã lô tùy chỉnh (Bỏ trống để hệ thống tự sinh theo chuẩn LO-YYMMDD-XXX)</Label>
+                <Label>Mã lô tùy chỉnh (Bỏ trống để hệ thống tự sinh LO-YYMMDD-XXX)</Label>
                 <Input
-                  placeholder="VD: LO-261015-001"
+                  placeholder="VD: LO-RI6-261026-001"
                   value={customCode}
                   onChange={(e) => setCustomCode(e.target.value)}
                   className="bg-white"
@@ -358,8 +553,8 @@ export function BatchManagement({
               <div className="space-y-1.5 md:col-span-2">
                 <Label>Biên bản Kiểm định Chất lượng (QC Notes) *</Label>
                 <Textarea
-                  rows={3}
-                  placeholder="Ghi rõ độ ngọt Brix, kích cỡ quả, tỷ lệ đạt chuẩn loại 1, nhiệt độ đóng gói..."
+                  rows={2}
+                  placeholder="Ghi rõ độ ngọt Brix, kích cỡ quả, tỷ lệ đạt chuẩn loại 1, nhiệt độ bảo quản..."
                   value={qcNotes}
                   onChange={(e) => setQcNotes(e.target.value)}
                   required
@@ -373,10 +568,10 @@ export function BatchManagement({
                 </Button>
                 <Button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || !writeEnabled}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white"
                 >
-                  {loading ? 'Đang khởi tạo...' : 'Xác nhận & Sinh mã QR'}
+                  {loading ? 'Đang ghi Sổ cái...' : writeEnabled ? 'Xác nhận Nhập kho & Sinh QR' : 'Ghi kho đang bị khóa'}
                 </Button>
               </div>
             </form>
@@ -384,17 +579,17 @@ export function BatchManagement({
         </Card>
       )}
 
-      {/* Thanh tìm kiếm & bộ lọc (Module B — Section 6.2) */}
+      {/* BỘ LỌC TÌM KIẾM */}
       <Card className="border-slate-200/80 shadow-xs">
-        <CardContent className="p-4 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-            <div className="lg:col-span-2 relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        <CardContent className="p-4 sm:p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               <Input
+                placeholder="Tìm mã lô, tên sản phẩm, nhà vườn..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Tìm mã lô (VD: F01C-SR6...), sản phẩm, nhà vườn..."
-                className="pl-8 h-9 text-xs"
+                className="pl-9 bg-white text-xs"
               />
             </div>
 
@@ -402,12 +597,12 @@ export function BatchManagement({
               <select
                 value={productFilter}
                 onChange={(e) => setProductFilter(e.target.value)}
-                className="w-full h-9 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700"
+                className="w-full h-9 px-3 rounded-md border border-slate-300 bg-white text-xs text-slate-700"
               >
                 <option value="ALL">Tất cả sản phẩm</option>
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} {p.inventoryTrackingEnabled ? '(FEFO)' : ''}
+                    {p.name}
                   </option>
                 ))}
               </select>
@@ -417,7 +612,7 @@ export function BatchManagement({
               <select
                 value={farmFilter}
                 onChange={(e) => setFarmFilter(e.target.value)}
-                className="w-full h-9 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700"
+                className="w-full h-9 px-3 rounded-md border border-slate-300 bg-white text-xs text-slate-700"
               >
                 <option value="ALL">Tất cả nhà vườn</option>
                 {uniqueFarms.map((f) => (
@@ -432,82 +627,46 @@ export function BatchManagement({
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full h-9 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700"
+                className="w-full h-9 px-3 rounded-md border border-slate-300 bg-white text-xs text-slate-700"
               >
-                <option value="ALL">Mọi trạng thái lô</option>
-                <option value="ACTIVE">ACTIVE (Đang hoạt động)</option>
-                <option value="UNVERIFIED">UNVERIFIED (Lô QR lịch sử)</option>
-                <option value="EXPIRED">EXPIRED (Hết hạn)</option>
-                <option value="LOCKED_QC">LOCKED_QC (Khóa QC)</option>
-                <option value="DEPLETED">DEPLETED (Đã xuất hết)</option>
+                <option value="ALL">Tất cả trạng thái</option>
+                <option value={BatchStatus.ACTIVE}>ACTIVE (Khả dụng)</option>
+                <option value={BatchStatus.UNVERIFIED}>UNVERIFIED (Chưa xác minh)</option>
+                <option value={BatchStatus.LOCKED_QC}>LOCKED_QC (Phong tỏa)</option>
+                <option value={BatchStatus.EXPIRED}>EXPIRED (Hết hạn)</option>
+                <option value={BatchStatus.DEPLETED}>DEPLETED (Hết hàng)</option>
               </select>
             </div>
 
-            <div className="flex gap-2">
+            <div>
               <select
                 value={fefoFilter}
                 onChange={(e) => setFefoFilter(e.target.value as 'ALL' | 'ELIGIBLE' | 'INELIGIBLE')}
-                className="w-full h-9 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700"
+                className="w-full h-9 px-3 rounded-md border border-slate-300 bg-white text-xs text-slate-700"
               >
-                <option value="ALL">Mọi điều kiện FEFO</option>
-                <option value="ELIGIBLE">Đủ điều kiện FEFO</option>
-                <option value="INELIGIBLE">Không đủ ĐK / Lô QR</option>
+                <option value="ALL">Tất cả điều kiện FEFO</option>
+                <option value="ELIGIBLE">Chỉ lô ĐỦ ĐIỀU KIỆN FEFO</option>
+                <option value="INELIGIBLE">Lô KHÔNG ĐỦ ĐIỀU KIỆN / Lịch sử</option>
               </select>
             </div>
-          </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100 text-xs">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-slate-500 font-medium mr-1">Lọc nhanh hạn dùng:</span>
-              {[
-                { key: 'ALL', label: 'Tất cả' },
-                { key: 'NORMAL', label: 'Còn hạn an toàn (> 7 ngày)' },
-                { key: 'EXPIRING_SOON', label: 'Sắp hết hạn (≤ 7 ngày)' },
-                { key: 'EXPIRED', label: 'Đã hết hạn' },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() =>
-                    setExpiryFilter(tab.key as 'ALL' | 'EXPIRING_SOON' | 'EXPIRED' | 'NORMAL')
-                  }
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${
-                    expiryFilter === tab.key
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {(searchQuery ||
-              productFilter !== 'ALL' ||
-              farmFilter !== 'ALL' ||
-              statusFilter !== 'ALL' ||
-              fefoFilter !== 'ALL' ||
-              expiryFilter !== 'ALL') && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('')
-                  setProductFilter('ALL')
-                  setFarmFilter('ALL')
-                  setStatusFilter('ALL')
-                  setFefoFilter('ALL')
-                  setExpiryFilter('ALL')
-                }}
-                className="text-emerald-700 hover:underline font-semibold text-xs"
+            <div>
+              <select
+                value={expiryFilter}
+                onChange={(e) => setExpiryFilter(e.target.value as 'ALL' | 'EXPIRING_SOON' | 'EXPIRED' | 'NORMAL')}
+                className="w-full h-9 px-3 rounded-md border border-slate-300 bg-white text-xs text-slate-700"
               >
-                Xóa bộ lọc
-              </button>
-            )}
+                <option value="ALL">Tất cả hạn dùng</option>
+                <option value="EXPIRING_SOON">Sắp hết hạn (≤ 7 ngày)</option>
+                <option value="EXPIRED">Đã hết hạn</option>
+                <option value="NORMAL">Hạn dùng bình thường</option>
+              </select>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* PHẦN 1: DANH SÁCH LÔ ĐỦ ĐIỀU KIỆN FEFO (SẮP XẾP THEO EXPIRY ASC, HARVEST ASC, CODE ASC) */}
+      {/* PHẦN 1: DANH SÁCH LÔ ĐỦ ĐIỀU KIỆN FEFO */}
       <Card className="border-emerald-200/90 shadow-xs overflow-hidden">
         <CardHeader className="bg-emerald-50/50 border-b border-emerald-100 p-4 sm:p-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -517,7 +676,7 @@ export function BatchManagement({
                 Lô Hàng Đủ Điều Kiện Xuất Bán FEFO ({fefoEligibleViews.length} lô)
               </CardTitle>
               <p className="text-xs text-slate-600 mt-0.5">
-                Sắp xếp tự động theo thứ tự ưu tiên xuất kho FEFO: <strong>Hạn sử dụng gần nhất (expiryDate ASC) → Ngày thu hoạch (harvestDate ASC) → Mã lô (code ASC)</strong>.
+                Sắp xếp theo thứ tự ưu tiên FEFO: <strong>Hạn sử dụng gần nhất (expiryDate ASC) → Ngày thu hoạch (harvestDate ASC) → Mã lô (code ASC)</strong>.
               </p>
             </div>
           </div>
@@ -595,11 +754,7 @@ export function BatchManagement({
                     </td>
 
                     <td className="px-3.5 py-3.5 text-right font-mono">
-                      <span
-                        className={
-                          b.reservedGrams > 0 ? 'font-bold text-amber-700' : 'text-slate-400'
-                        }
-                      >
+                      <span className={b.reservedGrams > 0 ? 'font-bold text-amber-700' : 'text-slate-400'}>
                         {formatAvailableKgWithUnit(b.reservedGrams)}
                       </span>
                     </td>
@@ -611,14 +766,56 @@ export function BatchManagement({
                     <td className="px-3.5 py-3.5">{renderExpiryBadge(b.expiryAlert)}</td>
 
                     <td className="px-3.5 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => setDetailBatchView(view)}
-                          className="h-7 px-2.5 text-[11px] gap-1 border-emerald-200 text-emerald-800 hover:bg-emerald-50"
+                          className="h-7 px-2 text-[11px] gap-1 border-emerald-200 text-emerald-800 hover:bg-emerald-50"
                         >
-                          <Eye className="w-3 h-3" /> Chi tiết &amp; Sổ cái
+                          <Eye className="w-3 h-3" /> Sổ cái
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setAdjustModalBatch(view)
+                            setAdjustType('SHRINKAGE_LOSS')
+                            setAdjustKg('10')
+                            setAdjustReason('')
+                            setAdjustRefCode('')
+                            setAdjustError(null)
+                          }}
+                          className="h-7 px-2 text-[11px] gap-1 border-amber-200 text-amber-800 hover:bg-amber-50"
+                          title="Điều chỉnh tồn kho / Hao hụt"
+                        >
+                          <Scale className="w-3 h-3" /> Điều chỉnh
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setStatusModalBatch(view)
+                            setTargetStatus(b.status)
+                            setTargetEligibility(b.fefoEligibility.eligible)
+                            setStatusReason('')
+                            setStatusQcNotes(b.qcNotes || '')
+                            setStatusError(null)
+                            setAuditHistory(null)
+                          }}
+                          className="h-7 px-2 text-[11px] gap-1 border-blue-200 text-blue-800 hover:bg-blue-50"
+                          title="Quản lý trạng thái & FEFO"
+                        >
+                          <ShieldAlert className="w-3 h-3" /> Trạng thái
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDispatchModalBatch(view)}
+                          className="h-7 px-1.5 text-[11px] text-slate-500 hover:text-slate-800"
+                          title="Xuất kho"
+                        >
+                          <Truck className="w-3.5 h-3.5" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -632,7 +829,7 @@ export function BatchManagement({
                               harvestGrams: b.initialQuantityGrams,
                             })
                           }
-                          className="h-7 px-2 text-[11px] text-slate-600"
+                          className="h-7 px-1.5 text-[11px] text-slate-600"
                           title="In tem QR"
                         >
                           <QrCode className="w-3.5 h-3.5" />
@@ -654,64 +851,57 @@ export function BatchManagement({
         </div>
       </Card>
 
-      {/* PHẦN 2: LÔ LỊCH SỬ / UNVERIFIED / KHÔNG ĐỦ ĐIỀU KIỆN FEFO (TÁCH BIỆT RÕ RÀNG) */}
-      <Card className="border-slate-200/80 shadow-xs overflow-hidden">
-        <CardHeader className="bg-slate-50 border-b border-slate-200/80 p-4 sm:p-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <CardTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
-                <Lock className="w-4 h-4 text-slate-500" />
-                Lô Lịch Sử Truy Xuất QR / Không Thuộc Tồn Khả Dụng FEFO ({nonEligibleViews.length} lô)
-              </CardTitle>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Bao gồm các lô lịch sử <code>UNVERIFIED</code> (chỉ phục vụ quét mã QR truy xuất nguồn gốc) hoặc các lô đã hết hạn / khóa QC. Các lô này <strong>không bao giờ được cộng vào tồn khả dụng</strong> trên trang bán hàng.
-              </p>
-            </div>
+      {/* PHẦN 2: DANH SÁCH LÔ LỊCH SỬ / CHƯA XÁC MINH / KHÔNG ĐỦ ĐIỀU KIỆN FEFO */}
+      <Card className="border-slate-200 shadow-xs overflow-hidden">
+        <CardHeader className="bg-slate-50 border-b border-slate-200 p-4 sm:p-5">
+          <div>
+            <CardTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-slate-500" />
+              Lô Hàng Lịch Sử / Chưa Xác Minh / Không Đủ Điều Kiện FEFO ({nonEligibleViews.length} lô)
+            </CardTitle>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Các lô này chỉ phục vụ quét mã QR và không mở bán trên Storefront.
+            </p>
           </div>
         </CardHeader>
 
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase">
+            <thead className="bg-slate-50/50 text-slate-500 border-b border-slate-200 uppercase">
               <tr>
                 <th className="px-3.5 py-3 font-semibold">Mã lô</th>
                 <th className="px-3.5 py-3 font-semibold">Sản phẩm &amp; Nhà vườn</th>
-                <th className="px-3.5 py-3 font-semibold">Thu hoạch / Hết hạn</th>
+                <th className="px-3.5 py-3 font-semibold">Thu hoạch / HSD</th>
                 <th className="px-3.5 py-3 font-semibold">Trạng thái</th>
-                <th className="px-3.5 py-3 font-semibold">Lý do loại trừ khỏi FEFO</th>
-                <th className="px-3.5 py-3 font-semibold text-right">Sản lượng ghi nhận</th>
-                <th className="px-3.5 py-3 font-semibold text-right">Tồn sổ cái</th>
-                <th className="px-3.5 py-3 font-semibold text-right">Khả dụng bán</th>
+                <th className="px-3.5 py-3 font-semibold">Lý do không mở bán</th>
+                <th className="px-3.5 py-3 font-semibold text-right">Sản lượng</th>
+                <th className="px-3.5 py-3 font-semibold text-right">Tồn thực tế</th>
+                <th className="px-3.5 py-3 font-semibold text-right">Khả dụng</th>
                 <th className="px-3.5 py-3 font-semibold text-right">Thao tác</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200 bg-white">
+            <tbody className="divide-y divide-slate-100 bg-white">
               {nonEligibleViews.map((view) => {
                 const b = view.batch
                 return (
-                  <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
+                  <tr key={b.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-3.5 py-3.5 font-mono font-bold text-slate-700">{b.code}</td>
                     <td className="px-3.5 py-3.5">
                       <div className="font-semibold text-slate-800">{b.productName}</div>
-                      <div className="text-[11px] text-slate-500">{b.farmName}</div>
-                    </td>
-                    <td className="px-3.5 py-3.5 text-slate-600">
-                      <div>Hái: {formatVnDate(b.harvestDate)}</div>
-                      <div className="text-[11px] text-slate-400">
-                        HSD: {formatVnDate(b.expiryDate)}
-                      </div>
+                      <div className="text-[11px] text-slate-400">{b.farmName}</div>
                     </td>
                     <td className="px-3.5 py-3.5">
-                      <Badge
-                        variant="outline"
-                        className="bg-slate-100 text-slate-700 border-slate-300 text-[10px]"
-                      >
+                      <div className="text-slate-600">Hái: {formatVnDate(b.harvestDate)}</div>
+                      <div className="text-[11px] text-slate-400">HSD: {formatVnDate(b.expiryDate)}</div>
+                    </td>
+                    <td className="px-3.5 py-3.5">
+                      <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-[10px]">
                         {b.status}
                       </Badge>
                     </td>
                     <td className="px-3.5 py-3.5 text-slate-600">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px]">
-                        Không đủ ĐK FEFO: {b.fefoEligibility.label}
+                        {b.fefoEligibility.label}
                       </span>
                     </td>
                     <td className="px-3.5 py-3.5 text-right font-mono text-slate-500">
@@ -724,14 +914,30 @@ export function BatchManagement({
                       0 kg (Không mở bán)
                     </td>
                     <td className="px-3.5 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => setDetailBatchView(view)}
-                          className="h-7 px-2.5 text-[11px] gap-1"
+                          className="h-7 px-2 text-[11px] gap-1"
                         >
                           <Eye className="w-3 h-3" /> Chi tiết
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setStatusModalBatch(view)
+                            setTargetStatus(b.status)
+                            setTargetEligibility(b.fefoEligibility.eligible)
+                            setStatusReason('')
+                            setStatusQcNotes(b.qcNotes || '')
+                            setStatusError(null)
+                            setAuditHistory(null)
+                          }}
+                          className="h-7 px-2 text-[11px] gap-1 border-blue-200 text-blue-800 hover:bg-blue-50"
+                        >
+                          <ShieldAlert className="w-3 h-3" /> Duyệt QC
                         </Button>
                         <Button
                           variant="outline"
@@ -762,7 +968,7 @@ export function BatchManagement({
               {nonEligibleViews.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-4 py-6 text-center text-slate-400 text-xs">
-                    Không có lô lịch sử / không đủ điều kiện FEFO nào trong bộ lọc.
+                    Không có lô lịch sử nào trong bộ lọc.
                   </td>
                 </tr>
               )}
@@ -771,7 +977,374 @@ export function BatchManagement({
         </div>
       </Card>
 
-      {/* MODAL CHI TIẾT LÔ HÀNG: SỔ CÁI LEDGER & PHÂN BỔ GIỮ CHỖ (Module B — Section 6.4) */}
+      {/* MODAL 1: ĐIỀU CHỈNH TỒN KHO & HAO HỤT (MODULE C) */}
+      {adjustModalBatch && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 bg-amber-600 text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base flex items-center gap-2">
+                  <Scale className="w-5 h-5" />
+                  Điều Chỉnh Tồn Kho &amp; Hao Hụt (Module C)
+                </h3>
+                <p className="text-xs text-amber-100 mt-0.5">
+                  Lô hàng: <strong className="font-mono text-white">{adjustModalBatch.batch.code}</strong> • {adjustModalBatch.batch.productName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdjustModalBatch(null)}
+                className="p-1 rounded-full text-white/80 hover:text-white hover:bg-white/10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAdjustSubmit} className="p-6 space-y-4 text-xs">
+              {adjustError && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700">
+                  {adjustError}
+                </div>
+              )}
+
+              {/* Tình trạng tồn hiện tại */}
+              <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                <div>
+                  <div className="text-slate-500">Tồn vật lý</div>
+                  <div className="font-mono font-bold text-slate-900 mt-0.5">
+                    {formatAvailableKgWithUnit(adjustModalBatch.batch.physicalStockGrams)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-amber-800">Đang giữ chỗ</div>
+                  <div className="font-mono font-bold text-amber-700 mt-0.5">
+                    {formatAvailableKgWithUnit(adjustModalBatch.batch.reservedGrams)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-emerald-800">Khả dụng</div>
+                  <div className="font-mono font-bold text-emerald-700 mt-0.5">
+                    {formatAvailableKgWithUnit(adjustModalBatch.batch.sellableAvailableGrams)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Loại điều chỉnh tồn *</Label>
+                <select
+                  value={adjustType}
+                  onChange={(e) => setAdjustType(e.target.value as StockAdjustmentType)}
+                  className="w-full h-9 px-3 rounded-md border border-slate-300 bg-white text-xs"
+                >
+                  <option value="SHRINKAGE_LOSS">Hao hụt tự nhiên / Hư hỏng kho lạnh (SHRINKAGE_LOSS, Giảm tồn)</option>
+                  <option value="QC_ADJUSTMENT_SUB">Điều chỉnh giảm sau kiểm kê thực tế (QC_ADJUSTMENT_SUB, Giảm tồn)</option>
+                  <option value="QC_ADJUSTMENT_ADD">Điều chỉnh tăng sau kiểm kê thực tế (QC_ADJUSTMENT_ADD, Tăng tồn)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Khối lượng điều chỉnh (Kg) *</Label>
+                <Input
+                  type="number"
+                  min={0.1}
+                  step="0.1"
+                  value={adjustKg}
+                  onChange={(e) => setAdjustKg(e.target.value)}
+                  required
+                  className="bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Lý do nghiệp vụ (Bắt buộc, tối thiểu 5 ký tự) *</Label>
+                <Textarea
+                  rows={2}
+                  placeholder="Ghi rõ lý do hao hụt, hư hỏng nhiệt độ hoặc biên bản kiểm kê..."
+                  value={adjustReason}
+                  onChange={(e) => setAdjustReason(e.target.value)}
+                  required
+                  className="bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Mã biên bản / Mã tham chiếu kiểm kê (Tùy chọn)</Label>
+                <Input
+                  placeholder="VD: BB-KK-20261026-01"
+                  value={adjustRefCode}
+                  onChange={(e) => setAdjustRefCode(e.target.value)}
+                  className="bg-white"
+                />
+              </div>
+
+              {/* Dự kiến số dư sau điều chỉnh */}
+              <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200 space-y-1">
+                <div className="font-semibold text-blue-900">Dự kiến số dư sau điều chỉnh:</div>
+                <div className="flex justify-between text-blue-800">
+                  <span>Tồn vật lý mới:</span>
+                  <strong className="font-mono">
+                    {adjustType === 'QC_ADJUSTMENT_ADD'
+                      ? formatAvailableKgWithUnit(
+                          adjustModalBatch.batch.physicalStockGrams + Math.round(Number(adjustKg || 0) * 1000)
+                        )
+                      : formatAvailableKgWithUnit(
+                          adjustModalBatch.batch.physicalStockGrams - Math.round(Number(adjustKg || 0) * 1000)
+                        )}
+                  </strong>
+                </div>
+                <div className="flex justify-between text-blue-800">
+                  <span>Khả dụng xuất bán mới:</span>
+                  <strong className="font-mono">
+                    {adjustType === 'QC_ADJUSTMENT_ADD'
+                      ? formatAvailableKgWithUnit(
+                          adjustModalBatch.batch.sellableAvailableGrams + Math.round(Number(adjustKg || 0) * 1000)
+                        )
+                      : formatAvailableKgWithUnit(
+                          Math.max(
+                            0,
+                            adjustModalBatch.batch.sellableAvailableGrams - Math.round(Number(adjustKg || 0) * 1000)
+                          )
+                        )}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <Button type="button" variant="outline" onClick={() => setAdjustModalBatch(null)}>
+                  Hủy
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={adjustLoading || !writeEnabled}
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                  {adjustLoading ? 'Đang ghi Sổ cái...' : writeEnabled ? 'Xác nhận điều chỉnh' : 'Khóa ghi kho'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: QUẢN LÝ TRẠNG THÁI & FEFO ELIGIBILITY & AUDIT TRAIL (MODULE D) */}
+      {statusModalBatch && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-blue-400" />
+                  Quản Lý Trạng Thái Lô &amp; Điều Kiện FEFO (Module D)
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Lô hàng: <strong className="font-mono text-white">{statusModalBatch.batch.code}</strong> • {statusModalBatch.batch.productName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStatusModalBatch(null)}
+                className="p-1 rounded-full text-white/80 hover:text-white hover:bg-white/10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleStatusSubmit} className="p-6 space-y-4 text-xs">
+              {statusError && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700">
+                  {statusError}
+                </div>
+              )}
+
+              {/* Cảnh báo nếu đang có hàng giữ chỗ */}
+              {statusModalBatch.batch.reservedGrams > 0 && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Cảnh báo bảo vệ Reservation:</strong> Lô hàng đang có{' '}
+                    <strong>{formatAvailableKgWithUnit(statusModalBatch.batch.reservedGrams)}</strong> đang được giữ chỗ cho các đơn hàng. Hệ thống sẽ chặn các thao tác phong tỏa LOCKED_QC hoặc tắt FEFO để bảo vệ đơn hàng của khách.
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Trạng thái đích *</Label>
+                  <select
+                    value={targetStatus}
+                    onChange={(e) => setTargetStatus(e.target.value as BatchStatus)}
+                    className="w-full h-9 px-3 rounded-md border border-slate-300 bg-white text-xs"
+                  >
+                    <option value={BatchStatus.ACTIVE}>ACTIVE (Khả dụng xuất bán)</option>
+                    <option value={BatchStatus.LOCKED_QC}>LOCKED_QC (Phong tỏa kiểm định)</option>
+                    <option value={BatchStatus.EXPIRED}>EXPIRED (Hết hạn sử dụng)</option>
+                    <option value={BatchStatus.DEPLETED}>DEPLETED (Đã xuất hết kho)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Cờ đủ điều kiện FEFO</Label>
+                  <div className="pt-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={targetEligibility}
+                        onChange={(e) => setTargetEligibility(e.target.checked)}
+                        disabled={targetStatus !== BatchStatus.ACTIVE}
+                        className="rounded border-slate-300 text-emerald-600 w-4 h-4"
+                      />
+                      <span className="font-semibold text-slate-800">Đủ điều kiện xuất bán FEFO</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Lý do thay đổi trạng thái (Bắt buộc lưu Audit Trail, tối thiểu 5 ký tự) *</Label>
+                <Textarea
+                  rows={2}
+                  placeholder="VD: Kiểm định đạt chuẩn VietGAP sau ủ lạnh; hoặc phát hiện nấm mốc cần phong tỏa kiểm định..."
+                  value={statusReason}
+                  onChange={(e) => setStatusReason(e.target.value)}
+                  required
+                  className="bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Ghi chú QC bổ sung</Label>
+                <Input
+                  placeholder="Ghi chú chi tiết kết quả kiểm định..."
+                  value={statusQcNotes}
+                  onChange={(e) => setStatusQcNotes(e.target.value)}
+                  className="bg-white"
+                />
+              </div>
+
+              {/* Lịch sử kiểm toán (Audit Trail) */}
+              <div className="border-t border-slate-200 pt-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5 text-slate-500" />
+                    Lịch sử chuyển trạng thái (Audit Trail)
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleFetchAuditHistory(statusModalBatch.batch.id)}
+                    className="h-6 text-[10px] text-blue-600 hover:text-blue-700 p-0"
+                  >
+                    {loadingAuditHistory ? 'Đang tải...' : 'Xem lịch sử'}
+                  </Button>
+                </div>
+
+                {auditHistory && auditHistory.length > 0 ? (
+                  <div className="max-h-36 overflow-y-auto space-y-2 p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    {auditHistory.map((entry, i) => (
+                      <div key={i} className="text-[11px] p-2 bg-white rounded border border-slate-100 shadow-2xs">
+                        <div className="flex items-center justify-between text-slate-500 text-[10px]">
+                          <span>{formatVnDateTime(entry.timestamp)}</span>
+                          <span className="font-mono">{entry.actorId}</span>
+                        </div>
+                        <div className="font-semibold text-slate-800 mt-0.5">
+                          {entry.oldStatus} → {entry.newStatus} (FEFO: {entry.newEligibility ? 'Bật' : 'Tắt'})
+                        </div>
+                        <div className="text-slate-600 mt-0.5 italic">Lý do: {entry.reason}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : auditHistory && auditHistory.length === 0 ? (
+                  <div className="p-2 text-center text-slate-400 text-[11px] bg-slate-50 rounded">
+                    Chưa có nhật ký chuyển trạng thái nào cho lô này.
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <Button type="button" variant="outline" onClick={() => setStatusModalBatch(null)}>
+                  Hủy
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={statusLoading || !writeEnabled}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {statusLoading ? 'Đang lưu...' : writeEnabled ? 'Cập nhật trạng thái' : 'Khóa ghi kho'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: XUẤT KHO THỦ CÔNG (MODULE B — RESERVATION PROTECTION & ARCHITECTURE NOTICE) */}
+      {dispatchModalBatch && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                  <Truck className="w-5 h-5 text-slate-600" />
+                  Nghiệp Vụ Xuất Kho (Module B)
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Lô: <strong className="font-mono">{dispatchModalBatch.batch.code}</strong> • {dispatchModalBatch.batch.productName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDispatchModalBatch(null)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs text-slate-700">
+              <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-amber-600" />
+                Kiểm Soát Xuất Kho &amp; Bảo Vệ Sổ Cái FEFO
+              </div>
+              <p className="leading-relaxed">
+                Theo thiết kế Sổ Cái FEFO chuẩn (F01A), mọi lượng xuất kho <strong>DISPATCH_OUT</strong> được tính toán để triệt tiêu đúng lượng giữ chỗ <strong>RESERVATION_HOLD</strong> của đơn hàng, chống trừ hai lần (Double-Counting).
+              </p>
+              <div className="p-2.5 rounded bg-white border border-slate-200 font-mono text-[11px] text-slate-800">
+                Tồn thực tế: {formatAvailableKgWithUnit(dispatchModalBatch.batch.physicalStockGrams)} | Đang giữ: {formatAvailableKgWithUnit(dispatchModalBatch.batch.reservedGrams)}
+              </div>
+              <ul className="list-disc list-inside space-y-1 text-slate-600 text-[11px]">
+                <li>
+                  <strong>Xuất kho theo đơn hàng:</strong> Tự động tích hợp trong luồng Vận Chuyển &amp; Giao Hàng tại Phase 8.
+                </li>
+                <li>
+                  <strong>Giảm kho do hư hỏng / kiểm kê:</strong> Vui lòng sử dụng tính năng <em>Điều chỉnh tồn kho (Hao hụt)</em> để ghi nhận đúng chuẩn Sổ Cái mà không làm sai lệch giữ chỗ.
+                </li>
+              </ul>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" size="sm" onClick={() => setDispatchModalBatch(null)}>
+                Đóng
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  const b = dispatchModalBatch
+                  setDispatchModalBatch(null)
+                  setAdjustModalBatch(b)
+                  setAdjustType('SHRINKAGE_LOSS')
+                  setAdjustKg('10')
+                }}
+                className="bg-amber-600 hover:bg-amber-700 text-white text-xs gap-1.5"
+              >
+                <Scale className="w-3.5 h-3.5" /> Chuyển sang Điều chỉnh tồn
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: CHI TIẾT LÔ HÀNG & SỔ CÁI */}
       {detailBatchView && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
@@ -847,206 +1420,71 @@ export function BatchManagement({
                 </div>
               </div>
 
-              {/* Thông tin lô & QC */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-slate-50 border border-slate-200/80">
-                <div>
-                  <span className="text-slate-400 block">Ngày thu hoạch:</span>
-                  <strong className="text-slate-900">
-                    {formatVnDate(detailBatchView.batch.harvestDate)}
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-slate-400 block">Ngày hết hạn (HSD):</span>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <strong className="text-slate-900">
-                      {formatVnDate(detailBatchView.batch.expiryDate)}
-                    </strong>
-                    {renderExpiryBadge(detailBatchView.batch.expiryAlert)}
-                  </div>
-                </div>
-                <div>
-                  <span className="text-slate-400 block">Ngày nhập kho:</span>
-                  <strong className="text-slate-900">
-                    {formatVnDateTime(detailBatchView.batch.receivedAt || detailBatchView.batch.createdAt)}
-                  </strong>
-                </div>
-                {detailBatchView.batch.qcNotes && (
-                  <div className="sm:col-span-3 pt-2 border-t border-slate-200/70">
-                    <span className="text-slate-400 block">Biên bản QC:</span>
-                    <p className="text-slate-700 mt-0.5">{detailBatchView.batch.qcNotes}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Cảnh báo bất thường nếu có */}
-              {detailBatchView.batch.anomalies.length > 0 && (
-                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 space-y-1">
-                  <div className="font-bold flex items-center gap-1.5">
-                    <ShieldAlert className="w-4 h-4 text-rose-600" />
-                    Cảnh báo đối soát dữ liệu lô:
-                  </div>
-                  <ul className="list-disc pl-5">
-                    {detailBatchView.batch.anomalies.map((a, idx) => (
-                      <li key={idx}>{a.message}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Danh sách phân bổ giữ chỗ đơn hàng (OrderItemBatchAllocation) — Read-Only */}
+              {/* Lịch sử Sổ cái */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-slate-900 text-sm">
-                    1. Bản Ghi Phân Bổ &amp; Giữ Chỗ Đơn Hàng (OrderItemBatchAllocation —{' '}
-                    {detailBatchView.allocations.length})
+                  <h4 className="font-bold text-slate-900 flex items-center gap-1.5">
+                    <History className="w-4 h-4 text-emerald-600" />
+                    Bút Toán Sổ Cái Kho (InventoryLedger — {detailBatchView.ledgerEntries.length} giao dịch)
                   </h4>
-                  <span className="text-[11px] text-slate-500">Chế độ xem chỉ đọc (Read-only)</span>
-                </div>
-
-                {detailBatchView.allocations.length > 0 ? (
-                  <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                        <tr>
-                          <th className="px-3 py-2 font-semibold">Mã đơn hàng</th>
-                          <th className="px-3 py-2 font-semibold">Trạng thái giữ chỗ</th>
-                          <th className="px-3 py-2 font-semibold text-right">Đã cấp phát</th>
-                          <th className="px-3 py-2 font-semibold text-right">Đã giải phóng</th>
-                          <th className="px-3 py-2 font-semibold text-right">Đang khóa thực tế</th>
-                          <th className="px-3 py-2 font-semibold">Thời điểm giữ</th>
-                          <th className="px-3 py-2 font-semibold">Hạn giữ chỗ (10p)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {detailBatchView.allocations.map((alloc) => (
-                          <tr key={alloc.id}>
-                            <td className="px-3 py-2 font-mono font-bold text-emerald-700">
-                              <Link
-                                href={`/admin/don-hang/${alloc.orderId}`}
-                                className="hover:underline"
-                              >
-                                {alloc.orderCode}
-                              </Link>
-                            </td>
-                            <td className="px-3 py-2">
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] ${
-                                  alloc.status === 'HOLD_PENDING'
-                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                    : alloc.status === 'ALLOCATED_CONFIRMED'
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    : alloc.status === 'RELEASED'
-                                    ? 'bg-slate-100 text-slate-600 border-slate-200'
-                                    : 'bg-blue-50 text-blue-700 border-blue-200'
-                                }`}
-                              >
-                                {alloc.status}
-                              </Badge>
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono">
-                              {formatAvailableKgWithUnit(alloc.allocatedGrams)}
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono text-slate-500">
-                              {formatAvailableKgWithUnit(alloc.releasedGrams)}
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
-                              {formatAvailableKgWithUnit(alloc.unreleasedGrams)}
-                            </td>
-                            <td className="px-3 py-2 text-slate-600">
-                              {formatVnDateTime(alloc.createdAt)}
-                            </td>
-                            <td className="px-3 py-2 text-slate-600">
-                              {formatVnDateTime(alloc.holdExpiresAt)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-500 text-center">
-                    Lô hàng này hiện chưa có bản ghi phân bổ đơn hàng (OrderItemBatchAllocation) nào.
-                  </div>
-                )}
-              </div>
-
-              {/* Lịch sử sổ cái InventoryLedger của lô */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-slate-900 text-sm">
-                    2. Lịch Sử Biến Động Sổ Cái Của Lô (InventoryLedger —{' '}
-                    {detailBatchView.ledgerEntries.length})
-                  </h4>
-                  <Link
-                    href={`/admin/ton-kho/lich-su?batchId=${detailBatchView.batch.id}`}
-                    className="text-emerald-700 hover:underline font-semibold"
-                  >
-                    Mở trong trang Sổ cái kho →
+                  <Link href={`/admin/ton-kho/lich-su?batchCode=${detailBatchView.batch.code}`}>
+                    <Button variant="ghost" size="sm" className="h-6 text-[10px] text-emerald-700">
+                      Xem trang sổ cái đầy đủ →
+                    </Button>
                   </Link>
                 </div>
 
-                {detailBatchView.ledgerEntries.length > 0 ? (
-                  <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                        <tr>
-                          <th className="px-3 py-2 font-semibold">Thời gian (GMT+7)</th>
-                          <th className="px-3 py-2 font-semibold">Loại giao dịch</th>
-                          <th className="px-3 py-2 font-semibold text-right">Khối lượng</th>
-                          <th className="px-3 py-2 font-semibold">Đơn hàng</th>
-                          <th className="px-3 py-2 font-semibold">Idempotency Key / Tham chiếu</th>
-                          <th className="px-3 py-2 font-semibold">Ghi chú</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {detailBatchView.ledgerEntries.map((entry) => {
-                          const pres = getLedgerTypePresentation(entry.type)
-                          return (
-                            <tr key={entry.id}>
-                              <td className="px-3 py-2 text-slate-600 whitespace-nowrap">
-                                {formatVnDateTime(entry.createdAt)}
-                              </td>
-                              <td className="px-3 py-2">
-                                <span
-                                  className={`inline-flex px-2 py-0.5 rounded border text-[10px] font-semibold ${pres.badgeClass}`}
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                      <tr>
+                        <th className="px-3 py-2 font-semibold">Thời gian</th>
+                        <th className="px-3 py-2 font-semibold">Loại giao dịch</th>
+                        <th className="px-3 py-2 font-semibold text-right">Biến động</th>
+                        <th className="px-3 py-2 font-semibold">Mã đơn / Tham chiếu</th>
+                        <th className="px-3 py-2 font-semibold">Ghi chú</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {detailBatchView.ledgerEntries.map((e) => {
+                        const pres = getLedgerTypePresentation(e.type)
+                        return (
+                          <tr key={e.id} className="hover:bg-slate-50/50">
+                            <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
+                              {formatVnDateTime(e.createdAt)}
+                            </td>
+                            <td className="px-3 py-2">
+                              <Badge className={`${pres.badgeClass} text-[10px]`}>
+                                {pres.label}
+                              </Badge>
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono font-bold whitespace-nowrap">
+                              <span className={pres.sign === '+' ? 'text-emerald-700' : 'text-rose-700'}>
+                                {pres.sign}
+                                {formatAvailableKgWithUnit(e.quantityGrams)}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-slate-700">
+                              {e.orderCode ? (
+                                <Link
+                                  href={`/admin/don-hang/${e.orderCode}`}
+                                  className="text-emerald-700 hover:underline"
                                 >
-                                  {pres.shortLabel} ({entry.type})
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-right font-mono font-bold text-slate-900">
-                                {pres.sign === '+' ? '+' : pres.sign === '-' ? '-' : ''}
-                                {formatAvailableKgWithUnit(entry.quantityGrams)}
-                              </td>
-                              <td className="px-3 py-2 font-mono">
-                                {entry.orderCode && entry.orderId ? (
-                                  <Link
-                                    href={`/admin/don-hang/${entry.orderId}`}
-                                    className="text-emerald-700 font-bold hover:underline"
-                                  >
-                                    {entry.orderCode}
-                                  </Link>
-                                ) : (
-                                  <span className="text-slate-400">—</span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 font-mono text-[11px] text-slate-600">
-                                {entry.idempotencyKey}
-                              </td>
-                              <td className="px-3 py-2 text-slate-600 max-w-xs truncate">
-                                {entry.notes || '—'}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-500 text-center">
-                    Lô hàng này không có bút toán InventoryLedger (Lô lịch sử chỉ phục vụ truy xuất QR).
-                  </div>
-                )}
+                                  {e.orderCode}
+                                </Link>
+                              ) : (
+                                e.referenceCode || '—'
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600 max-w-xs truncate">
+                              {e.notes || '—'}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
@@ -1060,7 +1498,7 @@ export function BatchManagement({
         </div>
       )}
 
-      {/* Modal hiển thị & In Tem QR Code cho Lô hàng */}
+      {/* MODAL 5: TEM QR CODE */}
       {qrModalBatch && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 relative space-y-5">

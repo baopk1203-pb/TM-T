@@ -56,10 +56,11 @@ export async function verifyGeminiModelAccess(
   const timeoutId = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS)
 
   try {
-    const res = await fetch(`${GEMINI_API_BASE_URL}/models?key=${encodeURIComponent(apiKey)}`, {
+    const res = await fetch(`${GEMINI_API_BASE_URL}/models`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
+        'x-goog-api-key': apiKey,
       },
       signal: controller.signal,
     })
@@ -232,12 +233,13 @@ export async function queryGemini(
   }
 
   try {
-    const url = `${GEMINI_API_BASE_URL}/models/${encodeURIComponent(modelToUse)}:generateContent?key=${encodeURIComponent(apiKey)}`
+    const url = `${GEMINI_API_BASE_URL}/models/${encodeURIComponent(modelToUse)}:generateContent`
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        'x-goog-api-key': apiKey,
       },
       body: JSON.stringify(requestBody),
       signal: controller.signal,

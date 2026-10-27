@@ -226,6 +226,19 @@ describe('F03 — Gemini Executive AI Assistant Suite', () => {
       expect(res.availableModels).toContain('gemini-3.1-flash-lite')
       expect(res.availableModels).toContain('gemini-1.5-flash')
       expect(res.availableModels).not.toContain('text-embedding-004') // filtered out non-generation
+
+      // Verify header transmission and URL cleanliness
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://generativelanguage.googleapis.com/v1beta/models',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            'x-goog-api-key': 'test-valid-key',
+          }),
+        })
+      )
+      const calledUrl = mockFetch.mock.calls[0][0] as string
+      expect(calledUrl).not.toContain('key=')
     })
 
     it('2.4 should handle HTTP 429 Rate Limit as QUOTA_EXCEEDED', async () => {
@@ -255,7 +268,7 @@ describe('F03 — Gemini Executive AI Assistant Suite', () => {
     })
 
     it('2.6 should query Gemini and extract candidate text answer', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
           candidates: [
@@ -271,6 +284,7 @@ describe('F03 — Gemini Executive AI Assistant Suite', () => {
           ],
         }),
       })
+      global.fetch = mockFetch
 
       const res = await queryGemini({
         prompt: 'Tóm tắt doanh thu',
@@ -282,6 +296,61 @@ describe('F03 — Gemini Executive AI Assistant Suite', () => {
       expect(res.success).toBe(true)
       expect(res.answer).toContain('150.000.000 đ')
       expect(res.metadata?.model).toBe('gemini-2.5-flash')
+
+      // Verify header transmission and URL cleanliness
+      const calledUrl = mockFetch.mock.calls[0][0] as string
+      const calledOptions = mockFetch.mock.calls[0][1] as RequestInit
+      expect(calledUrl).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent')
+      expect(calledUrl).not.toContain('key=')
+      expect((calledOptions.headers as Record<string, string>)['x-goog-api-key']).toBe('test-key')
+    })
+
+    it('2.7 (SECURITY) should transmit API key via x-goog-api-key header and never in URL query parameter', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.endsWith('/models')) {
+          return {
+            ok: true,
+            json: async () => ({
+              models: [{ name: 'models/gemini-3.1-flash-lite', supportedGenerationMethods: ['generateContent'] }],
+            }),
+          }
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            candidates: [{ content: { parts: [{ text: 'Response' }] } }],
+          }),
+        }
+      })
+      global.fetch = mockFetch
+
+      // Test verifyGeminiModelAccess
+      await verifyGeminiModelAccess('secret-test-key-123')
+      const verifyCall = mockFetch.mock.calls[0]
+      const verifyUrl = verifyCall[0] as string
+      const verifyOptions = verifyCall[1] as RequestInit
+
+      expect(verifyUrl).toBe('https://generativelanguage.googleapis.com/v1beta/models')
+      expect(verifyUrl).not.toContain('key=')
+      expect(verifyUrl).not.toContain('secret-test-key-123')
+      expect((verifyOptions.headers as Record<string, string>)['x-goog-api-key']).toBe('secret-test-key-123')
+
+      // Test queryGemini
+      mockFetch.mockClear()
+      await queryGemini({
+        prompt: 'Check security',
+        context: 'Context data',
+        apiKey: 'secret-test-key-456',
+        model: 'gemini-3.1-flash-lite',
+      })
+      const queryCall = mockFetch.mock.calls[0]
+      const queryUrl = queryCall[0] as string
+      const queryOptions = queryCall[1] as RequestInit
+
+      expect(queryUrl).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent')
+      expect(queryUrl).not.toContain('key=')
+      expect(queryUrl).not.toContain('secret-test-key-456')
+      expect((queryOptions.headers as Record<string, string>)['x-goog-api-key']).toBe('secret-test-key-456')
     })
   })
 
@@ -362,8 +431,12 @@ describe('F03 — Gemini Executive AI Assistant Suite', () => {
         batchesWithAnomalies: [],
       })
 
-      global.fetch = vi.fn().mockImplementation(async (url: string) => {
-        if (url.includes('/models?key=')) {
+      global.fetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        expect(url).not.toContain('key=')
+        const headers = init?.headers as Record<string, string> | undefined
+        expect(headers?.['x-goog-api-key']).toBe('test-valid-key')
+
+        if (url.endsWith('/models')) {
           return {
             ok: true,
             json: async () => ({
@@ -400,17 +473,27 @@ describe('F03 — Gemini Executive AI Assistant Suite', () => {
       mockRequireAdmin.mockResolvedValue({ id: 'admin1', role: 'ADMIN' })
       process.env.GEMINI_API_KEY = 'test-valid-key'
 
-      global.fetch = vi.fn().mockResolvedValue({
+      const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
           models: [{ name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] }],
         }),
       })
+      global.fetch = mockFetch
 
       const status = await getAdminAiStatusAction()
       expect(status.configured).toBe(true)
       expect(status.activeModel).toBe('gemini-2.5-flash')
       expect(status.statusMessage).toContain('Sẵn sàng')
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://generativelanguage.googleapis.com/v1beta/models',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'x-goog-api-key': 'test-valid-key',
+          }),
+        })
+      )
     })
   })
 })

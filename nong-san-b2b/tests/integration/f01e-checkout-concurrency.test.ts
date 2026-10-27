@@ -495,7 +495,7 @@ describe('EV-IMP-01E-A1 — PostgreSQL Concurrency & Checkout Synchronization (C
           },
         ],
         addressId: userAddressId,
-        deliveryDate: '2026-10-28',
+        deliveryDate: '2026-10-30',
         timeSlot: TimeSlot.MORNING,
         vehicleType: 'NORMAL' as unknown as import('@prisma/client').VehicleType,
         paymentOption: PaymentOption.FULL,

@@ -118,7 +118,7 @@ Cập nhật mục này mỗi khi nhiệm vụ DEV tạm dừng hoặc hoàn t�
 
 | Agent | Feature | Nhánh / worktree | HEAD SHA | Trạng thái | Việc tiếp theo / QA gate |
 | --- | --- | --- | --- | --- | --- |
-| DEV 1 | F03 | _ghi sau khi tạo_ | _ghi nhận_ | CHƯA BẮT ĐẦU | Bootstrap + rà soát phạm vi F03 |
+| DEV 1 | F03 | `feature/f03-gemini-ai` / `D:\TDTU\wt_f03_gemini` | `14a4ccd` | HOÀN TẤT AI-1 (READY FOR QA) | Targeted QA Audit cho EV-IMP-03-AI-01 |
 | DEV 2 | F04 | _ghi sau khi tạo_ | _ghi nhận_ | CHƯA BẮT ĐẦU | Bootstrap + kiểm tra phần công thức Model B còn thiếu |
 | DEV 3 | F02 | _ghi sau khi tạo_ | _ghi nhận_ | CHƯA BẮT ĐẦU | Bootstrap + kiểm tra schema/quy trình khiếu nại |
 | QA | Độc lập | _ghi sau khi tạo_ | _ghi nhận_ | SẴN SÀNG CHỜ | Audit các thay đổi khi được bàn giao |

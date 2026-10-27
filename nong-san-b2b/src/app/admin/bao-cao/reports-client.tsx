@@ -34,6 +34,7 @@ import {
   ReportGrouping,
 } from '@/lib/domain/reports'
 import { BusinessReportData, getBusinessReports } from '@/server/reports'
+import { AdminAiAssistant } from '@/components/admin/admin-ai-assistant'
 import { toast } from 'sonner'
 import {
   ResponsiveContainer,
@@ -145,6 +146,9 @@ export function ReportsClient({ initialData }: ReportsClientProps) {
           <code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs font-mono font-semibold">finalTotal ?? total</code>), không cộng dồn trực tiếp giao dịch cọc để tránh trùng số liệu.
         </div>
       </div>
+
+      {/* F03 Admin Executive AI Assistant */}
+      <AdminAiAssistant />
 
       {/* Date Filter & Grouping Controls */}
       <Card className="rounded-3xl border-slate-200/90 shadow-card bg-white">

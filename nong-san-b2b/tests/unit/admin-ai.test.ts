@@ -206,14 +206,14 @@ describe('F03 — Gemini Executive AI Assistant Suite', () => {
       expect(res.errorType).toBe('MISSING_API_KEY')
     })
 
-    it('2.3 should correctly probe models and prioritize gemini-2.5-flash or gemini-1.5-flash', async () => {
+    it('2.3 should correctly probe models and prioritize gemini-3.1-flash-lite or gemini-1.5-flash', async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
           models: [
             { name: 'models/gemini-1.0-pro', supportedGenerationMethods: ['generateContent'] },
             { name: 'models/gemini-1.5-flash', supportedGenerationMethods: ['generateContent'] },
-            { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] },
+            { name: 'models/gemini-3.1-flash-lite', supportedGenerationMethods: ['generateContent'] },
             { name: 'models/text-embedding-004', supportedGenerationMethods: ['embedContent'] },
           ],
         }),
@@ -222,8 +222,8 @@ describe('F03 — Gemini Executive AI Assistant Suite', () => {
 
       const res = await verifyGeminiModelAccess('test-valid-key')
       expect(res.ok).toBe(true)
-      expect(res.activeModel).toBe('gemini-2.5-flash')
-      expect(res.availableModels).toContain('gemini-2.5-flash')
+      expect(res.activeModel).toBe('gemini-3.1-flash-lite')
+      expect(res.availableModels).toContain('gemini-3.1-flash-lite')
       expect(res.availableModels).toContain('gemini-1.5-flash')
       expect(res.availableModels).not.toContain('text-embedding-004') // filtered out non-generation
     })

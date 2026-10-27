@@ -17,10 +17,13 @@ const VERIFY_TIMEOUT_MS = 8000 // 8s timeout for probe
 
 // Priority order for production models supported by Gemini API
 const PREFERRED_MODELS = [
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-3-flash-preview',
+  'gemini-3.5-flash',
+  'gemini-3.8-flash',
   'gemini-2.5-flash',
-  'gemini-2.0-flash',
   'gemini-1.5-flash',
-  'gemini-1.5-pro',
 ]
 
 /**
@@ -245,6 +248,14 @@ export async function queryGemini(
     if (!res.ok) {
       const errorBody = await res.json().catch(() => ({}))
       const errorMsg = errorBody?.error?.message || res.statusText
+
+      if (res.status === 400 && (errorMsg?.includes('API key') || errorMsg?.includes('API_KEY'))) {
+        return {
+          success: false,
+          errorType: 'INVALID_API_KEY',
+          message: `Khóa GEMINI_API_KEY không hợp lệ hoặc bị từ chối truy cập (HTTP 400: ${errorMsg}).`,
+        }
+      }
 
       if (res.status === 429) {
         return {

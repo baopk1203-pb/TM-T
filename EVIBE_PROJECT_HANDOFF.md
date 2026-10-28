@@ -118,10 +118,21 @@ Cập nhật mục này mỗi khi nhiệm vụ DEV tạm dừng hoặc hoàn t�
 
 | Agent | Feature | Nhánh / worktree | HEAD SHA | Trạng thái | Việc tiếp theo / QA gate |
 | --- | --- | --- | --- | --- | --- |
-| DEV 1 | F03 | `beta` / `D:\TDTU\TMĐT Website` | `a9fa35f` | TÍCH HỢP HOTFIX-03 BETA THÀNH CÔNG (FEFO CONTENT ACCURACY) | Chờ kết quả Final Browser Retest (QA-WORK-F03-03) |
+| DEV 1 | F03 | `beta` / `D:\TDTU\TMĐT Website` | `8746c08` | F03 AI-1 — CLOSED (BETA ACCEPTANCE) | AI-2 CHƯA BẮT ĐẦU (Chờ PO giao nhiệm vụ riêng) |
 | DEV 2 | F04 | _ghi sau khi tạo_ | _ghi nhận_ | CHƯA BẮT ĐẦU | Bootstrap + kiểm tra phần công thức Model B còn thiếu |
 | DEV 3 | F02 | _ghi sau khi tạo_ | _ghi nhận_ | CHƯA BẮT ĐẦU | Bootstrap + kiểm tra schema/quy trình khiếu nại |
 | QA | Độc lập | _ghi sau khi tạo_ | _ghi nhận_ | SẴN SÀNG CHỜ | Audit các thay đổi khi được bàn giao |
+
+> **Chi tiết hoàn tất F03 AI-1 (Beta Acceptance):**
+> 1. Source QA-F03-04: PASS (`2f35027c395cc3e2b2a36c40349b07da423ddd63`).
+> 2. Hotfix 03 Beta Integration: Hoàn tất theo DEV (Merge `a9fa35f5b8a898bf3ca944dce03cdf2dd76ad5a5`, Push `8746c08`).
+> 3. Cloud Browser Retest QA-WORK-F03-03: PASS (`QA_WORK_F03_03_FINAL_BETA_ACCEPTANCE.md`).
+> 4. F03-WORK-01 (P1 Runtime Timeout): CLOSED.
+> 5. F03-WORK-02 (P2 Expiry Batch Overcounting): CLOSED FOR BETA ACCEPTANCE.
+> 6. F03-WORK-03 (P2 FEFO vs FIFO Definition): CLOSED FOR BETA ACCEPTANCE.
+> 7. OBS-06 (P3 Model Allowlist): Deferred / Monitoring.
+> 8. Deployment SHA: Chưa xác minh độc lập qua Browser (ghi nhận Git HEAD `8746c08` / dev deployment baseline `dc52d6d`).
+> 9. Database & Schema: Không có thay đổi schema, không chạy migration, `ENABLE_ADMIN_INVENTORY_WRITES` = OFF.
 
 Mỗi lần cập nhật handoff cần ghi: **thời gian thực tế + múi giờ; nhánh/đường dẫn worktree; Git HEAD; trạng thái working tree; file đã đổi; các lệnh đã chạy và đầu ra quan sát được; quyết định đã áp dụng; blocker; một hoặc hai hành động tiếp theo; khả năng merge an toàn**. Không coi báo cáo DEV là bằng chứng QA đã tự chạy test.
 

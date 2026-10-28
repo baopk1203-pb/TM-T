@@ -6,6 +6,11 @@
  * và tổng khối lượng đơn hàng (bậc tải trọng).
  */
 
+import {
+  MembershipTier,
+  calculateMembershipShippingBenefit,
+} from '../membership'
+
 export type VehicleType = 'NORMAL' | 'COLD'
 
 export interface ShippingRateRule {
@@ -26,10 +31,13 @@ export interface ShippingQuoteInput {
   addressText?: string
   district?: string
   province?: string
+  membershipTier?: MembershipTier | null
 }
 
 export interface ShippingQuoteResult {
   fee: number
+  baseShippingFee?: number
+  membershipShippingDiscount?: number
   vehicleType: VehicleType
   distanceKm: number
   billedKm: number
@@ -435,8 +443,17 @@ export async function calculateShippingQuote(
       maxRadiusKm: warehouse.maxRadiusKm,
     })
 
+    const baseCalculatedFee = feeResult.fee
+    const shippingBenefit = calculateMembershipShippingBenefit({
+      baseShippingFee: baseCalculatedFee,
+      totalGrams: input.totalGrams,
+      tier: input.membershipTier ?? null,
+    })
+
     return {
-      fee: feeResult.fee,
+      fee: shippingBenefit.finalShippingFee,
+      baseShippingFee: shippingBenefit.baseShippingFee,
+      membershipShippingDiscount: shippingBenefit.membershipShippingDiscount,
       vehicleType,
       distanceKm,
       billedKm: feeResult.billedKm,
@@ -481,6 +498,8 @@ export const zeroShippingCalculator: ShippingCalculator = {
     const vehicleType = input.requiresCold ? 'COLD' : 'NORMAL'
     return {
       fee: 0,
+      baseShippingFee: 0,
+      membershipShippingDiscount: 0,
       vehicleType,
       distanceKm: 0,
       billedKm: 0,

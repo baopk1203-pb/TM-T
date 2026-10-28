@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Building2,
   Sparkles,
+  Award,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { SignOutButton } from '@/components/auth/sign-out-button'
@@ -103,6 +104,12 @@ export default async function AccountLayout({
                 className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
               >
                 <MapPin className="w-4 h-4 text-slate-500" /> Sổ địa chỉ nhận hàng
+              </Link>
+              <Link
+                href="/tai-khoan/thanh-vien"
+                className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+              >
+                <Award className="w-4 h-4 text-slate-500" /> Hạng thành viên & KPI
               </Link>
               <Link
                 href="/tai-khoan/ho-so"

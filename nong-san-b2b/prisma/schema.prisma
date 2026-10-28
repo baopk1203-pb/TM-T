@@ -78,8 +78,18 @@ enum CertType {
 
 enum ComplaintStatus {
   OPEN
+  PROPOSED
+  UNDER_REVIEW
+  CUSTOMER_ACCEPTED
+  WITHDRAWN
   RESOLVED
   REJECTED
+}
+
+enum ComplaintResolutionType {
+  REFUND_MONEY
+  REPLACE_GOODS
+  REJECT_COMPLAINT
 }
 
 enum Resolution {
@@ -126,6 +136,13 @@ enum AllocationStatus {
   RELEASED
 }
 
+enum MembershipTier {
+  BRONZE
+  SILVER
+  GOLD
+  DIAMOND
+}
+
 model CustomerGroup {
   id              String   @id @default(cuid())
   code            String   @unique
@@ -151,6 +168,9 @@ model User {
   addresses          Address[]
   orders             Order[]
   recurringSchedules RecurringSchedule[]
+  membershipTier     MembershipTier?     @default(BRONZE)
+  tierUpdatedAt      DateTime?
+  membershipLogs     MembershipEvaluationLog[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 }
@@ -309,6 +329,12 @@ model Order {
   depositAmount            Int
   finalSubtotal            Int?
   finalTotal               Int?
+  // F04 Membership Financial Snapshots (Additive-only)
+  membershipTierSnapshot   MembershipTier?
+  membershipDiscountPercent Int?                 @default(0)
+  combinedDiscountPercent  Int?                 @default(0)
+  baseShippingFee          Int?
+  shippingDiscountAmount   Int?                 @default(0)
   paymentDueAt             DateTime?
   deliveredAt              DateTime?
   cancelledBy              CancelActor?
@@ -388,8 +414,19 @@ model Complaint {
   status        ComplaintStatus @default(OPEN)
   resolution    Resolution?
   compensation  Int?
-  adminNote     String?
-  createdAt     DateTime        @default(now())
+  adminNote          String?
+  proposalType       ComplaintResolutionType?
+  proposalAmount     Int?
+  proposalNotes      String?
+  proposedAt         DateTime?
+  reviewDueAt        DateTime?
+  customerAcceptedAt DateTime?
+  reReviewCount      Int                      @default(0)
+  reReviewReason     String?
+  reReviewedAt       DateTime?
+  isFinalProposal    Boolean                  @default(false)
+  autoClosedAt       DateTime?
+  createdAt          DateTime                 @default(now())
   resolvedAt    DateTime?
   order         Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
@@ -500,4 +537,18 @@ model OrderItemBatchAllocation {
   @@index([orderItemId])
   @@index([batchId])
   @@index([status])
+}
+
+model MembershipEvaluationLog {
+  id                 String          @id @default(cuid())
+  userId             String
+  evaluationQuarter  String
+  score              Float
+  previousTier       MembershipTier?
+  newTier            MembershipTier
+  evaluatedAt        DateTime        @default(now())
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, evaluationQuarter])
+  @@index([userId])
 }

@@ -19,6 +19,7 @@ import {
   renderOrderCompletedTemplate,
   renderComplaintOpenedTemplate,
   renderComplaintResolvedTemplate,
+  renderComplaintProposedTemplate,
   renderRefundConfirmedTemplate,
 } from './templates'
 
@@ -239,6 +240,30 @@ export async function sendOrderNotification(
             reportedGrams: complaint?.reportedGrams || 0,
             description: complaint?.description || 'Khiếu nại nông sản',
             photosCount: complaint?.photos?.length || 0,
+            itemProductName: item?.productName,
+          },
+        })
+        break
+      }
+
+      case 'COMPLAINT_PROPOSED': {
+        const complaint = input.complaintId
+          ? order.complaints.find((c) => c.id === input.complaintId)
+          : order.complaints[0]
+        const item = complaint
+          ? order.items.find((i) => i.id === complaint.orderItemId)
+          : undefined
+
+        templateResult = renderComplaintProposedTemplate({
+          order,
+          user: order.user,
+          complaint: {
+            id: complaint?.id || 'KN-PROPOSED',
+            proposalType: complaint?.proposalType || 'REFUND_MONEY',
+            proposalAmount: complaint?.proposalAmount,
+            proposalNotes: complaint?.proposalNotes,
+            reviewDueAt: complaint?.reviewDueAt,
+            isFinalProposal: input.isFinalProposal ?? complaint?.isFinalProposal,
             itemProductName: item?.productName,
           },
         })

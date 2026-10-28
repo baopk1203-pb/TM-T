@@ -11,6 +11,7 @@ export default async function AdminComplaintsPage() {
         include: {
           user: true,
           items: true,
+          transactions: true,
         },
       },
     },
@@ -18,6 +19,10 @@ export default async function AdminComplaintsPage() {
 
   const mappedComplaints: AdminComplaintItem[] = complaints.map((c) => {
     const item = c.order.items.find((i) => i.id === c.orderItemId)
+    const refundTx = c.order.transactions.find(
+      (t) => t.type === 'REFUND' && t.reference === `COMPLAINT_${c.id}`
+    )
+
     return {
       id: c.id,
       orderId: c.orderId,
@@ -42,6 +47,18 @@ export default async function AdminComplaintsPage() {
         companyName: c.order.user.companyName,
         phone: c.order.user.phone,
       },
+      proposalType: c.proposalType,
+      proposalAmount: c.proposalAmount,
+      proposalNotes: c.proposalNotes,
+      proposedAt: c.proposedAt ? c.proposedAt.toISOString() : null,
+      reviewDueAt: c.reviewDueAt ? c.reviewDueAt.toISOString() : null,
+      customerAcceptedAt: c.customerAcceptedAt ? c.customerAcceptedAt.toISOString() : null,
+      reReviewCount: c.reReviewCount,
+      reReviewReason: c.reReviewReason,
+      reReviewedAt: c.reReviewedAt ? c.reReviewedAt.toISOString() : null,
+      isFinalProposal: c.isFinalProposal,
+      autoClosedAt: c.autoClosedAt ? c.autoClosedAt.toISOString() : null,
+      refundTxStatus: refundTx ? refundTx.status : null,
     }
   })
 

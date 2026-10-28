@@ -23,6 +23,7 @@ import {
   reserveOrderInventoryFefo,
 } from '@/lib/services/inventory-reservation'
 import { placeOrder } from '@/actions/order'
+import { earliestDeliveryDate } from '@/lib/domain/delivery-date'
 import { computeOrderPaymentDueAt } from '@/lib/domain/inventory'
 
 vi.mock('@/lib/auth', () => ({
@@ -495,7 +496,11 @@ describe('EV-IMP-01E-A1 — PostgreSQL Concurrency & Checkout Synchronization (C
           },
         ],
         addressId: userAddressId,
-        deliveryDate: '2026-10-30',
+        deliveryDate: (() => {
+          const target = earliestDeliveryDate(new Date(), [1])
+          target.setUTCDate(target.getUTCDate() + 1)
+          return target.toISOString().split('T')[0]
+        })(),
         timeSlot: TimeSlot.MORNING,
         vehicleType: 'NORMAL' as unknown as import('@prisma/client').VehicleType,
         paymentOption: PaymentOption.FULL,

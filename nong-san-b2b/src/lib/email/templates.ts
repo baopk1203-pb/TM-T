@@ -116,6 +116,18 @@ export interface RefundConfirmedEmailData extends BaseEmailData {
 /**
  * Khung HTML chuẩn, responsive, hỗ trợ email clients (Gmail, Outlook, Apple Mail...)
  */
+export interface ComplaintProposedEmailData extends BaseEmailData {
+  complaint: {
+    id: string
+    proposalType: string
+    proposalAmount?: number | null
+    proposalNotes?: string | null
+    reviewDueAt?: Date | string | null
+    isFinalProposal?: boolean
+    itemProductName?: string
+  }
+}
+
 function wrapHtmlEmail(title: string, bodyContent: string): string {
   return `<!DOCTYPE html>
 <html lang="vi">
@@ -538,6 +550,88 @@ export function renderRefundConfirmedTemplate(data: RefundConfirmedEmailData): E
 
   return {
     subject: `[Nông Sản B2B] Hoàn tất chuyển khoản bồi hoàn cho đơn hàng #${data.order.code}`,
+    html,
+    text,
+  }
+}
+
+
+// ============================================================================
+// COMPLAINT_PROPOSED: THÔNG BÁO ĐỀ XUẤT XỬ LÝ KHIẾU NẠI (F02 - 48H SLA)
+// ============================================================================
+export function renderComplaintProposedTemplate(data: ComplaintProposedEmailData): EmailTemplateResult {
+  const recipientName = data.user.fullName
+  const isFinal = Boolean(data.complaint.isFinalProposal)
+  const proposalType = data.complaint.proposalType
+  const deadlineDate = data.complaint.reviewDueAt ? new Date(data.complaint.reviewDueAt) : null
+  const deadlineStr = formatDateVN(deadlineDate)
+
+  let typeLabel = 'Bồi thường bằng tiền'
+  if (proposalType === 'REJECT_COMPLAINT' || proposalType === 'REJECT') {
+    typeLabel = 'Từ chối khiếu nại'
+  } else if (proposalType === 'REPLACE_GOODS' || proposalType === 'REPLACE') {
+    typeLabel = 'Bù hàng chuyến sau'
+  }
+
+  const subject = `[E Vibe] Đề xuất xử lý khiếu nại${isFinal ? ' (Lần cuối)' : ''} đơn hàng #${data.order.code}`
+
+  const orderUrl = process.env.NEXTAUTH_URL
+    ? `${process.env.NEXTAUTH_URL}/tai-khoan/don-hang/${data.order.code}`
+    : `/tai-khoan/don-hang/${data.order.code}`
+
+  const html = wrapHtmlEmail(
+    `Đề xuất xử lý khiếu nại đơn hàng #${data.order.code}`,
+    `<h2 style="color: #0f172a; margin-top: 0;">Kính gửi ${recipientName},</h2>
+    <p>Ban quản trị E Vibe — Nông Sản B2B đã xem xét khiếu nại của quý khách cho đơn hàng <strong>#${data.order.code}</strong> và đưa ra phương án xử lý như sau:</p>
+
+    <div class="highlight-box" style="border-left: 4px solid ${isFinal ? '#e11d48' : '#0284c7'}; background: ${isFinal ? '#fff1f2' : '#f0f9ff'}; padding: 16px; margin: 16px 0; border-radius: 8px;">
+      <strong style="color: ${isFinal ? '#9f1239' : '#0369a1'}; font-size: 15px;">
+        ${isFinal ? '⚠️ ĐÂY LÀ ĐỀ XUẤT CUỐI CÙNG (ĐÃ QUA PHÚC TRA)' : 'ĐỀ XUẤT GIẢI QUYẾT KHIẾU NẠI'}
+      </strong><br>
+      <div style="margin-top: 8px; font-size: 14px;">
+        <strong>Phương án:</strong> ${typeLabel}<br>
+        ${
+          proposalType === 'REFUND_MONEY' && data.complaint.proposalAmount
+            ? `<strong>Số tiền bồi hoàn:</strong> <span style="font-size: 16px; color: #059669; font-weight: bold;">${formatVND(data.complaint.proposalAmount)}</span><br>`
+            : ''
+        }
+        <strong>Thời hạn phản hồi:</strong> <span style="color: #dc2626; font-weight: bold;">${deadlineStr} (48 giờ)</span>
+      </div>
+    </div>
+
+    ${
+      data.complaint.proposalNotes
+        ? `<div class="card" style="background: #f8fafc; padding: 12px; border-radius: 6px; margin-bottom: 16px;">
+            <strong style="color: #475569; font-size: 13px;">Ghi chú từ Ban quản trị:</strong>
+            <p style="margin: 4px 0 0; font-size: 13px; color: #1e293b;">${data.complaint.proposalNotes}</p>
+          </div>`
+        : ''
+    }
+
+    <p style="font-size: 13px; color: #475569;">
+      ${
+        isFinal
+          ? 'Vì đây là phương án sau phúc tra (vòng cuối), quý khách có thể <strong>Chấp nhận đề xuất</strong> hoặc <strong>Rút khiếu nại</strong> trên hệ thống.'
+          : 'Quý khách có thể <strong>Chấp nhận đề xuất</strong>, <strong>Yêu cầu phúc tra (tối đa 1 lần)</strong> hoặc <strong>Rút khiếu nại</strong> trực tiếp tại trang chi tiết đơn hàng.'
+      }
+      Nếu không có phản hồi trong vòng <strong>48 giờ</strong>, khiếu nại sẽ được tự động đóng theo quy chế.
+    </p>
+
+    <div style="text-align: center; margin: 24px 0;">
+      <a href="${orderUrl}" style="background-color: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+        Xem chi tiết và Phản hồi đề xuất
+      </a>
+    </div>`
+  )
+
+  const text = `Kính gửi ${recipientName},\n\nBan quản trị đã gửi đề xuất xử lý khiếu nại cho đơn hàng #${data.order.code}.\nPhương án: ${typeLabel}\n${
+    proposalType === 'REFUND_MONEY' && data.complaint.proposalAmount
+      ? `Số tiền bồi hoàn: ${formatVND(data.complaint.proposalAmount)}\n`
+      : ''
+  }Hạn phản hồi: ${deadlineStr} (48 giờ).\n${isFinal ? 'Lưu ý: Đây là đề xuất cuối cùng.\n' : ''}\nChi tiết: ${orderUrl}\n\nTrân trọng,\nE Vibe — Nông Sản B2B.`
+
+  return {
+    subject,
     html,
     text,
   }

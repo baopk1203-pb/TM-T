@@ -501,6 +501,7 @@ describe('Email Notification System (Phase 9 & DEV-TASK-45 Reliability Hotfix)',
       expect(isNotificationEventEnabled('PAYMENT_CONFIRMED')).toBe(true)
       expect(isNotificationEventEnabled('ORDER_COMPLETED')).toBe(true)
       expect(isNotificationEventEnabled('COMPLAINT_RESOLVED')).toBe(true)
+      expect(isNotificationEventEnabled('COMPLAINT_PROPOSED')).toBe(true)
       expect(isNotificationEventEnabled('REFUND_CONFIRMED')).toBe(true)
 
       // Kiểm tra danh sách constant
@@ -513,6 +514,7 @@ describe('Email Notification System (Phase 9 & DEV-TASK-45 Reliability Hotfix)',
         'PAYMENT_CONFIRMED',
         'ORDER_COMPLETED',
         'COMPLAINT_RESOLVED',
+        'COMPLAINT_PROPOSED',
         'REFUND_CONFIRMED',
       ])
     })

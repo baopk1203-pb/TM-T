@@ -118,7 +118,7 @@ Cập nhật mục này mỗi khi nhiệm vụ DEV tạm dừng hoặc hoàn t�
 
 | Agent | Feature | Nhánh / worktree | HEAD SHA | Trạng thái | Việc tiếp theo / QA gate |
 | --- | --- | --- | --- | --- | --- |
-| DEV 1 | F03 | `beta` / `D:\TDTU\TMĐT Website` | `43c4791` | TÍCH HỢP BETA THÀNH CÔNG (AI-1 CLOSED) | Sẵn sàng cho Phase AI-2 (Inventory Intelligence) khi có chỉ đạo |
+| DEV 1 | F03 | `beta` / `D:\TDTU\TMĐT Website` | `801aa96` | TÍCH HỢP HOTFIX-02 BETA THÀNH CÔNG (P1 TIMEOUT RESOLVED) | Chờ kết quả Browser Acceptance (QA-WORK-F03-02) |
 | DEV 2 | F04 | _ghi sau khi tạo_ | _ghi nhận_ | CHƯA BẮT ĐẦU | Bootstrap + kiểm tra phần công thức Model B còn thiếu |
 | DEV 3 | F02 | _ghi sau khi tạo_ | _ghi nhận_ | CHƯA BẮT ĐẦU | Bootstrap + kiểm tra schema/quy trình khiếu nại |
 | QA | Độc lập | _ghi sau khi tạo_ | _ghi nhận_ | SẴN SÀNG CHỜ | Audit các thay đổi khi được bàn giao |

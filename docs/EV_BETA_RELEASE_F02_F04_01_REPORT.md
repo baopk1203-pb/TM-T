@@ -14,139 +14,77 @@
 
 ---
 
-## II. KẾT LUẬN PHÁT HÀNH (FINAL RELEASE VERDICT)
+## II. KẾT LUẬN PHÁT HÀNH HIỆN TẠI (CURRENT RELEASE STATUS)
 
-> ### **`F02/F04 BETA RELEASE — BLOCKED AT PREFLIGHT`**
+> ### **`F02/F04 BETA RELEASE — PREFLIGHT GATES 1-4 VERIFIED / AWAITING DIRECT NEON CREDENTIAL`**
 
-### ⚠️ NGUYÊN NHÂN CHẶN AN TOÀN THEO CHỈ THỊ FAIL-CLOSED:
-1. **Thiếu chuỗi kết nối trực tiếp đến Neon Preview-Beta:** Cấu hình local `.env` hiện trỏ `localhost`, còn `.env.production` trỏ Production host (`ep-square-scene-b5ddgxil`) — bị chặn tuyệt đối bởi chốt chặn an toàn (Hard Guard Blocklist). Chuỗi kết nối đến Neon Preview (`ep-fancy-waterfall-b5f117np`) không được lưu trong môi trường tiến trình hoặc file để bảo đảm an toàn credential.
-2. **Vercel CLI ở trạng thái Logged Out:** Phiên làm việc CLI ghi nhận `Vercel CLI 63.1.2: Logged out`, không thể tự động trích xuất biến môi trường `DATABASE_URL` từ Vercel Preview Project.
-3. **Quy tắc Deployment Ordering (An toàn thứ tự phát hành):** Tuyệt đối **KHÔNG PUSH** mã nguồn F02/F04 lên nhánh `beta` trước khi cơ sở dữ liệu Neon hoàn tất Migration, nhằm ngăn ngừa Vercel Preview kích hoạt deploy tự động gây lỗi runtime truy vấn cột/bảng chưa tồn tại trên database trực tiếp.
+### 📋 TIẾN TRÌNH THẨM ĐỊNH MỚI NHẤT (SAU KHI PO ĐĂNG NHẬP VERCEL CLI):
+1. ✅ **Vercel CLI Authentication:** Đã xác minh thành công tài khoản `baopk1203-pb` qua `npx vercel whoami`.
+2. ✅ **Vercel Project & Branch Scope:** Đã xác minh dự án `baopk/nong-san-b2b` với cấu hình môi trường nhánh riêng biệt cho `Preview (beta)`. Biến `DATABASE_URL` được định nghĩa chính thức trong Preview scope.
+3. 🔒 **Vercel Zero-Trust Security Redaction:** Vercel CLI từ chối trích xuất giá trị plaintext của `DATABASE_URL` về máy local (`! 3 Secret values cannot be pulled from the 'preview' Environment. Wrote '[SENSITIVE]' as placeholders`). Đây là cơ chế bảo mật tiêu chuẩn của Vercel đối với biến kiểu `Secret`, bảo vệ credentials không bị lộ qua CLI.
+4. ✅ **Đối chiếu Release Candidate HEAD & Lineage:** Đã đối chiếu toàn bộ lịch sử Git. Khẳng định **Zero Code Divergence** (Mọi khác biệt SHA trước đó chỉ xuất phát từ các commit tài liệu báo cáo `docs/*.md`). Phép thử 3-Way Merge đạt **0 xung đột (Clean Merge 100%)**.
 
 ---
 
-## III. SOURCE IDENTITIES & RELEASE CANDIDATE
+## III. SOURCE IDENTITIES & RELEASE CANDIDATE AUDIT
 
-| Thuộc tính | Giá trị kiểm tra / SHA | Ghi chú |
+| Thuộc tính | Giá trị kiểm tra / SHA | Ghi chú kỹ thuật |
 | :--- | :--- | :--- |
 | **Official Repository** | `D:\TDTU\TMĐT Website` | Thư mục repo chính thức của dự án |
 | **Target Branch** | `beta` | Nhánh phát hành Beta Preview |
 | **Integration Worktree** | `D:\TDTU\wt_f02_f04_integration` | Worktree cô lập của DEV 1 |
 | **Release Candidate Branch** | `test/f02-f04-integration` | Nhánh ứng viên release candidate |
-| **Final Candidate HEAD** | `4dd7cdbfd3fdc218255c0cb20d3dc377766ea6b5` | HEAD hoàn tất tích hợp, tests và migration artifacts |
-| **Beta Base SHA** | `34fc2591c3877ed92c4642e4f01c629c0d02227f` | Baseline `beta` chứa F01 và F03 Gemini AI-1 |
-| **Integration Commit** | `053dabcd82185093d0ce7966dd71814e81b778d5` | Commit tích hợp mã nguồn F02 + F04 + Cross Financial |
-| **F02 Migration Commit** | `9902a930776b3c46a6fbb8d56b006fc454cbfb40` | Commit tạo F02 Migration SQL Artifact chính thức |
-| **Report Intake Commit** | `4dd7cdbfd3fdc218255c0cb20d3dc377766ea6b5` | Báo cáo DB Readiness ghi nhận vào candidate |
-| **Candidate Working Tree** | Clean (`nothing to commit, working tree clean`) | 0 modified, 0 untracked |
+| **Common Ancestor SHA** | `34fc2591c3877ed92c4642e4f01c629c0d02227f` | Điểm phân nhánh chung (`beta` base) |
+| **Source Integration Commit** | `053dabcd82185093d0ce7966dd71814e81b778d5` | 39 tệp mã nguồn F02 + F04 + Cross Financial contract |
+| **F02 Migration Commit** | `9902a930776b3c46a6fbb8d56b006fc454cbfb40` | Tệp migration SQL F02 hoàn chỉnh có explicit transaction |
+| **Candidate HEAD (Worktree)**| `7592c287e53098001894b2f4f9a2a6209aa71a24` | HEAD hiện tại trên worktree (bao gồm các báo cáo release) |
+| **Local Beta HEAD (Repo)** | `a699465cbd3d275b10eae54834518bac9cd20b68` | HEAD hiện tại trên repo chính |
+| **Remote `origin/beta` HEAD** | `8746c08958ba0cd1f14c0d74cea68a6e623d14d5` | HEAD trên remote GitHub |
+| **3-Way Merge Simulation** | **0 conflicts (Sạch 100%)** | Xác nhận qua `git merge-tree` độc lập |
 
 ---
 
-## IV. KẾT QUẢ KIỂM TRA BƯỚC 1 — BETA PREFLIGHT
+## IV. BẢNG TỔNG HỢP PREFLIGHT GATES
 
-Toàn bộ 8 tiêu chí Preflight được kiểm tra nghiêm ngặt:
-
-| Tiêu chuẩn Preflight | Kết quả thực tế | Trạng thái | Đánh giá an toàn |
+| Tiêu chuẩn Preflight | Kết quả thực tế | Trạng thái | Đánh giá kỹ thuật |
 | :--- | :--- | :---: | :--- |
-| **1. HEAD thực tế nhánh `beta`** | Local: `7dfb099` (ahead 4 doc commits)<br>Remote `origin/beta`: `8746c08` | **PASS** | Nhánh sạch, đồng bộ tuyến tính |
-| **2. Release Candidate HEAD** | `4dd7cdb` tại `wt_f02_f04_integration` | **PASS** | Đúng SHA, working tree sạch 100% |
-| **3. Thay đổi Git chưa bảo toàn** | Không có thay đổi mã nguồn nào bị thất thoát; các tệp untracked là docs | **PASS** | Toàn vẹn lịch sử Git |
-| **4. Vercel deployment branch** | Vercel Webhook liên kết nhánh `beta`; Deployment gần nhất `7377933697` tại `8746c08` | **PASS** | Xác nhận đúng Preview scope qua `gh api` |
-| **5. Xác định Database đích** | Known Host: `ep-fancy-waterfall-b5f117np.c-7.us-east-2.aws.neon.tech`<br>Local `.env`: `localhost`<br>Local `.env.production`: `ep-square-scene-b5ddgxil` (PROD) | **FAIL-CLOSED** | **Không có credential kết nối Neon Preview** |
-| **6. Xác nhận không phải Production** | Production Host `ep-square-scene-b5ddgxil` được blocklist nghiêm ngặt | **PASS** | Chặn đứng hoàn toàn truy cập Production |
-| **7. Lịch sử Migration trên DB đích** | Không thể truy vấn từ xa do thiếu chuỗi kết nối live | **BLOCKED** | Không thể đối chiếu `_prisma_migrations` |
-| **8. Kiểm tra Schema compatibility** | Không thể truy vấn từ xa do thiếu chuỗi kết nối live | **BLOCKED** | Không thể đối chiếu trực tiếp trên Neon Beta |
+| **1. Vercel CLI Session** | `npx vercel whoami` ➔ `baopk1203-pb` | **PASS** | Đã đăng nhập hợp lệ |
+| **2. Vercel Project & Scope** | `baopk/nong-san-b2b` ➔ `Preview (beta)` | **PASS** | Nhận diện đúng project & branch override |
+| **3. Blocklist Production** | `ep-square-scene-b5ddgxil` được blocklist nghiêm ngặt | **PASS** | Chặn đứng hoàn toàn truy cập Production |
+| **4. Release Candidate Lineage** | 100% mã nguồn F02 + F04 tập trung tại `053dabc` và `9902a93` | **PASS** | Zero code divergence, 0 conflicts |
+| **5. Direct Neon Connection** | Vercel CLI redact `[SENSITIVE]`, không thể pull plaintext | **AWAITING PO** | Cần chuỗi kết nối trực tiếp để chạy migrate |
+| **6. Remote Prisma Migration** | Sẵn sàng chạy ngay khi có kết nối trực tiếp | **READY** | 5/5 migrations đã PASS trên test engine |
+| **7. Git Push Safety Guard** | Chặn push cho tới khi migration hoàn tất | **HELD** | Tuân thủ Deployment Ordering Rule |
 
 ---
 
-## V. THẨM ĐỊNH MỤC TIÊU CƠ SỞ DỮ LIỆU (DATABASE TARGET VERIFICATION)
+## V. ĐÚNG MỘT THAO TÁC CẦN THIẾT DÀNH CHO PRODUCT OWNER
 
-### 1. Phân định ranh giới hạ tầng Neon:
-- **Production Endpoint (CẤM TUYỆT ĐỐI):** `ep-square-scene-b5ddgxil` — Đang được khai báo trong `.env.production`. Chốt chặn fail-closed ngăn ngừa việc sử dụng nhầm tệp này cho môi trường Beta.
-- **Preview Beta Endpoint:** `ep-fancy-waterfall-b5f117np.c-7.us-east-2.aws.neon.tech` (Neon branch `preview-beta`, database `neondb`).
+Để DEV 1 hoàn tất toàn bộ quy trình phát hành tự động mà không làm lộ credentials trong chat:
 
-### 2. Hiện trạng Credential:
-- Theo chính sách bảo mật của PO từ các phase trước, thông tin đăng nhập Neon không được lưu vào Git, không ghi vào file unencrypted và không hiển thị trên transcript.
-- `Vercel CLI` trên máy chủ hiện đang ở trạng thái `Logged out`, do đó không thể tự động đồng bộ biến môi trường `DATABASE_URL` từ Vercel Preview.
-
----
-
-## VI. TRẠNG THÁI PRISMA MIGRATIONS
-
-- **Tình trạng Artifacts:** Sẵn sàng 100% tại `prisma/migrations/`:
-  1. `20261013094130_init` (Core B2B)
-  2. `20261019193200_phase8_shipping_engine` (Phase 8 Shipping)
-  3. `20261023235900_add_f01_inventory_ledger` (F01 FEFO Ledger)
-  4. `20261028203000_f04_membership_and_quarterly_kpi` (F04 Membership DDL)
-  5. `20261028213000_f02_two_way_complaints` (F02 Complaints DDL)
-- **Kiểm chứng Offline (Embedded PostgreSQL 18.4):** Đã kiểm chứng 5/5 migrations chạy thành công bằng `prisma migrate deploy`, `prisma migrate status` trả về `Database schema is up to date!`, Zero Schema Drift.
-- **Trạng thái trên Neon Beta:** **CHƯA THỰC THI (PENDING REMOTE APPLY)** do chờ người vận hành cung cấp kết nối hoặc tự thực thi theo runbook.
-
----
-
-## VII. TRẠNG THÁI GIT INTEGRATION
-
-- **Đánh giá 3-Way Merge (`git merge-tree`):**
-  - Thực hiện mô phỏng merge giữa `beta` (`7dfb099`) và Release Candidate (`4dd7cdb`): **0 xung đột (Zero Conflicts)**.
-  - Toàn bộ 41 tệp thay đổi của F02 và F04 sẽ tích hợp sạch sẽ vào `beta`.
-- **Trạng thái Push:** **CHẶN PUSH AN TOÀN (PUSH WITHHELD)**:
-  - Do Vercel có webhook tự động build khi có push lên `origin/beta`, việc push code trước khi migrate database sẽ dẫn đến việc Vercel triển khai mã nguồn mới kết nối với database chưa có các cột/bảng F02/F04.
-  - Tuân thủ nguyên tắc an toàn kiến trúc: **DB Migration TRƯỚC, Git Push SAU**.
-
----
-
-## VIII. TRẠNG THÁI VERCEL DEPLOYMENT
-
-- **Vercel Preview URL:** `https://nong-san-b2b-git-beta-baopk.vercel.app`
-- **Deployment hiện tại:** `https://nong-san-b2b-83w6nzsf0-baopk.vercel.app` (trên commit `8746c08`, trạng thái `SUCCESS`).
-- **Xác thực HTTP:** Phản hồi `HTTP/1.1 302 Found` kèm tiêu đề bảo vệ `Vercel SSO Protection`.
-- **Trạng thái sẵn sàng:** Vercel webhook hoạt động bình thường, sẽ tự động biên dịch và triển khai ngay khi nhận commit push từ nhánh `beta`.
-
----
-
-## IX. KẾ HOẠCH HÀNH ĐỘNG KHẮC PHỤC (UNBLOCK RUNBOOK)
-
-Để hoàn tất việc triển khai bản phát hành F02 + F04 lên Beta, DEV 1 đề xuất **phương án xử lý ngắn nhất** gồm 2 tùy chọn:
-
-### TÙY CHỌN 1 (KHUYẾN NGHỊ — NGƯỜI VẬN HÀNH CHẠY MIGRATION TRỰC TIẾP):
-Người vận hành / PO mở một cửa sổ PowerShell tại thư mục `nong-san-b2b` trong repo chính hoặc worktree và chạy tuần tự 3 lệnh:
+### 🎯 THAO TÁC DUY NHẤT:
+PO mở **PowerShell** trên máy tính và chạy **ĐÚNG MỘT DÒNG LỆNH**:
 
 ```powershell
-# Bước 1: Điều hướng vào thư mục ứng dụng
-cd "D:\TDTU\wt_f02_f04_integration\nong-san-b2b"
-
-# Bước 2: Thiết lập chuỗi kết nối Direct của Neon preview-beta (thay thế chuỗi thực tế)
-$env:DATABASE_URL = "postgres://<USER>:<PASSWORD>@ep-fancy-waterfall-b5f117np.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require"
-
-# Bước 3: Chạy migration và kiểm tra trạng thái
-npx prisma migrate deploy
-npx prisma migrate status
+[System.Environment]::SetEnvironmentVariable("DATABASE_URL", "<DAN_CHUOI_DIRECT_NEON_PREVIEW_BETA_TAI_DAY>", "User")
 ```
 
-Sau khi hoàn tất, phản hồi cho DEV 1: **"Migration đã chạy thành công"**. DEV 1 sẽ ngay lập tức thực hiện Git Merge `beta`, push lên `origin/beta`, theo dõi Vercel Preview Deploy và thực hiện Smoke Test.
+> **Cách lấy chuỗi kết nối:**
+> 1. Truy cập [Neon Console](https://console.neon.tech) ➔ Chọn project **E Vibe / nong-san-b2b**.
+> 2. Chọn branch **`preview-beta`**.
+> 3. Tại mục **Connection Details**, chọn **Direct connection** (không chọn Pooled connection).
+> 4. Sao chép chuỗi kết nối (dạng `postgres://...@ep-fancy-waterfall-b5f117np.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require`) và dán vào lệnh trên.
+
+Sau khi chạy xong, PO chỉ cần phản hồi trong chat: **`"Đã set DATABASE_URL"`**.
+
+### 🤖 CÁC BƯỚC DEV 1 TỰ ĐỘNG THỰC THI NGAY SAU ĐÓ:
+1. Đọc biến môi trường tạm thời từ User scope.
+2. Kiểm tra an toàn hostname (xác nhận đúng `ep-fancy-waterfall-b5f117np`, cấm tuyệt đối production).
+3. Thực thi `npx prisma migrate deploy` và kiểm tra `npx prisma migrate status`.
+4. **Xóa ngay lập tức** biến môi trường khỏi User scope để dọn dẹp sạch sẽ (`SetEnvironmentVariable("DATABASE_URL", $null, "User")`).
+5. Thực hiện Git Merge vào `beta` và `git push origin beta`.
+6. Giám sát Vercel Preview Build hoàn tất và chạy Smoke Test.
 
 ---
-
-### TÙY CHỌN 2 (CẤP QUYỀN MÔI TRƯỜNG CHO DEV 1):
-Người vận hành thiết lập biến môi trường `$env:DATABASE_URL` trong phiên làm việc hoặc đăng nhập Vercel CLI (`npx vercel login`). DEV 1 sẽ tự động hoàn tất toàn bộ chuỗi:
-1. `prisma migrate deploy` trên Neon Beta.
-2. Kiểm tra `prisma migrate status` và đối chiếu schema.
-3. Merge candidate `4dd7cdb` vào `beta`.
-4. `git push origin beta`.
-5. Giám sát Vercel Preview Build hoàn tất.
-6. Thực hiện Smoke Test và báo cáo kết quả cuối cùng.
-
----
-
-## X. TỔNG KẾT RỦI RO & BẢO TOÀN HỆ THỐNG
-
-| Đối tượng | Trạng thái bảo vệ |
-| :--- | :--- |
-| **Nhánh `main` & Production** | **AN TOÀN TUYỆT ĐỐI (0 writes, 0 pushes)** |
-| **Production Neon Database** | **AN TOÀN TUYỆT ĐỐI (Blocklist bảo vệ 100%)** |
-| **Nhánh `beta` remote** | **AN TOÀN TUYỆT ĐỐI (Chưa bị push đè khi DB chưa sẵn sàng)** |
-| **Mã nguồn Release Candidate** | **ĐÃ HOÀN TẤT & ĐÓNG GÓI SẠCH TẠI `4dd7cdb`** |
-
----
-*Báo cáo được lập bởi DEV 1 — Release Integrator theo chỉ thị Fail-Closed.*  
-*Thời điểm ghi nhận: 2026-10-28 22:00:00 (UTC+7)*
+*Báo cáo được cập nhật bởi DEV 1 — Release Integrator.*  
+*Thời điểm ghi nhận: 2026-10-28 22:25:00 (UTC+7)*

@@ -12,19 +12,29 @@ import {
 } from './types'
 
 const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
-const DEFAULT_TIMEOUT_MS = 15000 // 15s timeout
+const DEFAULT_TIMEOUT_MS = 35000 // 35s timeout
 const VERIFY_TIMEOUT_MS = 8000 // 8s timeout for probe
+const CACHE_TTL_MS = 15 * 60 * 1000 // 15 minutes TTL for verified model cache
 
 // Priority order for production models supported by Gemini API
 const PREFERRED_MODELS = [
-  'gemini-3.1-flash-lite',
   'gemini-3.5-flash-lite',
   'gemini-3-flash-preview',
+  'gemini-3.1-flash-lite',
   'gemini-3.5-flash',
   'gemini-3.8-flash',
   'gemini-2.5-flash',
   'gemini-1.5-flash',
 ]
+
+let cachedVerification: { result: ModelVerificationResult; expiresAt: number } | null = null
+
+/**
+ * Xóa bộ nhớ đệm xác minh model (dùng khi kiểm thử hoặc làm mới cưỡng bức)
+ */
+export function clearModelVerificationCache(): void {
+  cachedVerification = null
+}
 
 /**
  * Lấy API Key từ biến môi trường máy chủ (không bao giờ lộ ra client)
@@ -39,7 +49,8 @@ export function getGeminiApiKey(): string | null {
  * (Preflight Verification Strategy)
  */
 export async function verifyGeminiModelAccess(
-  providedApiKey?: string | null
+  providedApiKey?: string | null,
+  forceRefresh = false
 ): Promise<ModelVerificationResult> {
   const apiKey = providedApiKey !== undefined ? providedApiKey : getGeminiApiKey()
 
@@ -50,6 +61,11 @@ export async function verifyGeminiModelAccess(
       message:
         'Biến môi trường GEMINI_API_KEY chưa được cấu hình trên máy chủ. Vui lòng thiết lập GEMINI_API_KEY trong .env.local hoặc Vercel Environment Variables.',
     }
+  }
+
+  // Sử dụng cache trong bộ nhớ nếu còn hiệu lực và không yêu cầu làm mới
+  if (!forceRefresh && cachedVerification && cachedVerification.expiresAt > Date.now() && cachedVerification.result.ok) {
+    return cachedVerification.result
   }
 
   const controller = new AbortController()
@@ -120,12 +136,19 @@ export async function verifyGeminiModelAccess(
       }
     }
 
-    return {
+    const verificationResult: ModelVerificationResult = {
       ok: true,
       activeModel,
       availableModels: contentModels,
       message: `Xác thực thành công. Đang sử dụng mô hình: ${activeModel}`,
     }
+
+    cachedVerification = {
+      result: verificationResult,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    }
+
+    return verificationResult
   } catch (error: unknown) {
     clearTimeout(timeoutId)
 
@@ -173,48 +196,25 @@ CÁC NGUYÊN TẮC BẮT BUỘC:
    - Nêu bật ngay các chỉ số trọng yếu, các phát hiện bất thường (ví dụ: tỷ lệ hủy đơn cao, lô hàng sắp cận date, chênh lệch dòng tiền) và gợi ý hành động cụ thể cho ban quản trị.
 
 4. BẢO MẬT DỮ LIỆU:
-   - Dữ liệu khách hàng đã được khử định danh (PII). Hãy giữ nguyên các mã định danh đã khử (ví dụ: DOANH_NGHIEP_#1234).`
+   - Dữ liệu khách hàng đã được khử định danh (PII). Hãy giữ nguyên các mã định danh đã khử (ví dụ: DOANH_NGHIEP_#1234).
+
+5. ĐỘ DÀI VÀ TRỌNG TÂM:
+   - Trình bày cô đọng, súc tích (khoảng 150 - 250 từ), tập trung trực tiếp vào câu trả lời và số liệu then chốt.
+   - Không sao chép lại toàn bộ bảng số liệu thô; chỉ trích dẫn các chỉ số quan trọng nhất và đưa ra nhận xét/cảnh báo thiết thực.`
 
 /**
- * Thực hiện truy vấn Gemini API để phân tích dữ liệu kinh doanh / kho bãi
+ * Thực hiện gọi API generateContent với một mô hình cụ thể
  */
-export async function queryGemini(
-  options: QueryGeminiOptions
+async function callGeminiGenerateContent(
+  model: string,
+  apiKey: string,
+  fullUserPrompt: string,
+  systemInstruction: string,
+  timeoutMs: number,
+  startTime: number
 ): Promise<GeminiQueryResult> {
-  const startTime = Date.now()
-  const apiKey = options.apiKey !== undefined ? options.apiKey : getGeminiApiKey()
-
-  if (!apiKey) {
-    return {
-      success: false,
-      errorType: 'MISSING_API_KEY',
-      message:
-        'Trợ lý AI chưa thể hoạt động: Chưa cấu hình GEMINI_API_KEY trên máy chủ. Vui lòng thêm biến môi trường GEMINI_API_KEY vào .env.local hoặc Vercel dashboard.',
-    }
-  }
-
-  // Nếu không truyền model, thực hiện thăm dò hoặc lấy model mặc định
-  let modelToUse = options.model
-  if (!modelToUse) {
-    const verification = await verifyGeminiModelAccess(apiKey)
-    if (!verification.ok || !verification.activeModel) {
-      return {
-        success: false,
-        errorType: verification.errorType || 'MODEL_ACCESS_DENIED',
-        message:
-          verification.message ||
-          'Không thể xác thực quyền truy cập mô hình Gemini với API Key hiện tại.',
-      }
-    }
-    modelToUse = verification.activeModel
-  }
-
-  const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-
-  const systemInstruction = options.systemInstruction || DEFAULT_SYSTEM_INSTRUCTION
-  const fullUserPrompt = `[NGỮ CẢNH DỮ LIỆU QUẢN TRỊ E VIBE]\n${options.context}\n\n[CÂU HỎI CỦA QUẢN TRỊ VIÊN]\n${options.prompt}`
 
   const requestBody = {
     contents: [
@@ -233,7 +233,7 @@ export async function queryGemini(
   }
 
   try {
-    const url = `${GEMINI_API_BASE_URL}/models/${encodeURIComponent(modelToUse)}:generateContent`
+    const url = `${GEMINI_API_BASE_URL}/models/${encodeURIComponent(model)}:generateContent`
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -272,7 +272,7 @@ export async function queryGemini(
         return {
           success: false,
           errorType: 'MODEL_ACCESS_DENIED',
-          message: `Không có quyền truy cập mô hình ${modelToUse} (HTTP ${res.status}: ${errorMsg}).`,
+          message: `Không có quyền truy cập mô hình ${model} (HTTP ${res.status}: ${errorMsg}).`,
         }
       }
 
@@ -281,7 +281,7 @@ export async function queryGemini(
           success: false,
           errorType: 'SERVICE_UNAVAILABLE',
           message:
-            'Dịch vụ Google Gemini đang tạm thời gián đoạn (HTTP 5xx). Vui lòng thử lại sau.',
+            `Dịch vụ Google Gemini đang tạm thời gián đoạn (HTTP ${res.status}: ${errorMsg}).`,
         }
       }
 
@@ -308,7 +308,7 @@ export async function queryGemini(
       success: true,
       answer: candidateText,
       metadata: {
-        model: modelToUse,
+        model,
         timestamp: new Date().toISOString(),
         processingTimeMs: Date.now() - startTime,
       },
@@ -330,4 +330,89 @@ export async function queryGemini(
       message: error instanceof Error ? error.message : 'Lỗi kết nối mạng tới Gemini API.',
     }
   }
+}
+
+/**
+ * Thực hiện truy vấn Gemini API để phân tích dữ liệu kinh doanh / kho bãi
+ * Tích hợp cơ chế tự động chuyển model dự phòng (fallback) nếu gặp lỗi 5xx hoặc nghẽn mạng (OBS-04)
+ */
+export async function queryGemini(
+  options: QueryGeminiOptions
+): Promise<GeminiQueryResult> {
+  const startTime = Date.now()
+  const apiKey = options.apiKey !== undefined ? options.apiKey : getGeminiApiKey()
+
+  if (!apiKey) {
+    return {
+      success: false,
+      errorType: 'MISSING_API_KEY',
+      message:
+        'Trợ lý AI chưa thể hoạt động: Chưa cấu hình GEMINI_API_KEY trên máy chủ. Vui lòng thêm biến môi trường GEMINI_API_KEY vào .env.local hoặc Vercel dashboard.',
+    }
+  }
+
+  // Nếu không truyền model, thực hiện thăm dò hoặc lấy model mặc định từ cache
+  let modelToUse = options.model
+  let availableModels: string[] = []
+
+  if (!modelToUse) {
+    const verification = await verifyGeminiModelAccess(apiKey)
+    if (!verification.ok || !verification.activeModel) {
+      return {
+        success: false,
+        errorType: verification.errorType || 'MODEL_ACCESS_DENIED',
+        message:
+          verification.message ||
+          'Không thể xác thực quyền truy cập mô hình Gemini với API Key hiện tại.',
+      }
+    }
+    modelToUse = verification.activeModel
+    availableModels = verification.availableModels || []
+  }
+
+  const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS
+  const systemInstruction = options.systemInstruction || DEFAULT_SYSTEM_INSTRUCTION
+  const fullUserPrompt = `[NGỮ CẢNH DỮ LIỆU QUẢN TRỊ E VIBE]\n${options.context}\n\n[CÂU HỎI CỦA QUẢN TRỊ VIÊN]\n${options.prompt}`
+
+  // Lần thử 1 với model ưu tiên
+  const initialResult = await callGeminiGenerateContent(
+    modelToUse,
+    apiKey,
+    fullUserPrompt,
+    systemInstruction,
+    timeoutMs,
+    startTime
+  )
+
+  if (initialResult.success) {
+    return initialResult
+  }
+
+  // Tự động chuyển model dự phòng nếu gặp lỗi 5xx từ máy chủ Google (OBS-04)
+  const isRetryable = initialResult.errorType === 'SERVICE_UNAVAILABLE'
+
+  if (isRetryable) {
+    const fallbackCandidates = PREFERRED_MODELS.filter((m) => m !== modelToUse)
+    const fallbackModel =
+      availableModels.length > 0
+        ? fallbackCandidates.find((m) => availableModels.includes(m))
+        : fallbackCandidates[0]
+
+    if (fallbackModel) {
+      const fallbackResult = await callGeminiGenerateContent(
+        fallbackModel,
+        apiKey,
+        fullUserPrompt,
+        systemInstruction,
+        timeoutMs,
+        startTime
+      )
+
+      if (fallbackResult.success) {
+        return fallbackResult
+      }
+    }
+  }
+
+  return initialResult
 }

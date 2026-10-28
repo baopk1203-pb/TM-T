@@ -136,5 +136,6 @@ export async function queryAdminExecutiveAiAction(
     prompt: query,
     context,
     apiKey,
+    model: payload?.model,
   })
 }

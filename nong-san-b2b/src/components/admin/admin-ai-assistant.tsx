@@ -122,7 +122,10 @@ export function AdminAiAssistant() {
 
     startTransition(async () => {
       try {
-        const res: GeminiQueryResult = await queryAdminExecutiveAiAction({ query: text })
+        const res: GeminiQueryResult = await queryAdminExecutiveAiAction({
+          query: text,
+          model: status?.activeModel,
+        })
 
         if (res.success && res.answer) {
           const assistantMsg: ChatMessage = {
@@ -154,7 +157,7 @@ export function AdminAiAssistant() {
         setMessages((prev) => [...prev, fallbackMsg])
       }
     })
-  }, [inputQuery, isPending])
+  }, [inputQuery, isPending, status])
 
   const handleCopy = (id: string, text: string) => {
     navigator.clipboard.writeText(text)

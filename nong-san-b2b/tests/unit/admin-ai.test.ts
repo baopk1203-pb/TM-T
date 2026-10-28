@@ -16,6 +16,7 @@ import {
   getGeminiApiKey,
   verifyGeminiModelAccess,
   queryGemini,
+  clearModelVerificationCache,
 } from '@/lib/gemini/client'
 import {
   sanitizeCustomerIdentifier,
@@ -56,6 +57,7 @@ describe('F03 — Gemini Executive AI Assistant Suite', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    clearModelVerificationCache()
     process.env = { ...originalEnv }
   })
 
@@ -351,6 +353,66 @@ describe('F03 — Gemini Executive AI Assistant Suite', () => {
       expect(queryUrl).not.toContain('key=')
       expect(queryUrl).not.toContain('secret-test-key-456')
       expect((queryOptions.headers as Record<string, string>)['x-goog-api-key']).toBe('secret-test-key-456')
+    })
+
+    it('2.8 (RESILIENCE) should retry with fallback model if initial model returns HTTP 5xx (OBS-04)', async () => {
+      let callCount = 0
+      const mockFetch = vi.fn().mockImplementation(async () => {
+        callCount++
+        if (callCount === 1) {
+          // First attempt to gemini-3.5-flash-lite fails with HTTP 500
+          return {
+            ok: false,
+            status: 500,
+            statusText: 'Internal Server Error',
+            json: async () => ({ error: { message: 'Upstream server error' } }),
+          }
+        }
+        // Fallback retry to next model succeeds
+        return {
+          ok: true,
+          json: async () => ({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: 'Phản hồi thành công từ mô hình dự phòng.' }],
+                },
+              },
+            ],
+          }),
+        }
+      })
+      global.fetch = mockFetch
+
+      const res = await queryGemini({
+        prompt: 'Câu hỏi phân tích',
+        context: 'Dữ liệu ngữ cảnh',
+        apiKey: 'test-key',
+        model: 'gemini-3.5-flash-lite',
+      })
+
+      expect(res.success).toBe(true)
+      expect(res.answer).toContain('Phản hồi thành công từ mô hình dự phòng')
+      expect(callCount).toBe(2)
+      // Verify fallback model was one of PREFERRED_MODELS other than gemini-3.5-flash-lite
+      expect(res.metadata?.model).toBe('gemini-3-flash-preview')
+    })
+
+    it('2.9 should prioritize gemini-3.5-flash-lite over gemini-3.1-flash-lite when available', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          models: [
+            { name: 'models/gemini-1.5-flash', supportedGenerationMethods: ['generateContent'] },
+            { name: 'models/gemini-3.1-flash-lite', supportedGenerationMethods: ['generateContent'] },
+            { name: 'models/gemini-3.5-flash-lite', supportedGenerationMethods: ['generateContent'] },
+          ],
+        }),
+      })
+
+      const res = await verifyGeminiModelAccess('test-valid-key')
+      expect(res.ok).toBe(true)
+      expect(res.activeModel).toBe('gemini-3.5-flash-lite')
     })
   })
 

@@ -34,6 +34,7 @@ export interface GeminiQueryResult {
 
 export interface AdminAiQueryPayload {
   query: string
+  model?: string
 }
 
 export interface AdminAiStatus {

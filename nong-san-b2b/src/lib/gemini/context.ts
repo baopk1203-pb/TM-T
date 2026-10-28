@@ -139,17 +139,52 @@ export function buildExecutiveContext(input: BuildExecutiveContextInput): string
       lowStockProductsCount,
     } = inventoryData.kpis
 
+    // Nhóm ≤3 ngày là tập con lồng trong nhóm ≤7 ngày.
+    // Phân tách thành hai nhóm không giao nhau để tránh cộng trùng (F03-WORK-02):
+    // - Nhóm A (khẩn cấp cao): ≤ 3 ngày
+    // - Nhóm B (khẩn cấp trung bình): > 3 ngày đến ≤ 7 ngày
+    // Tổng số lô cận date ≤ 7 ngày = expiringWithin7DaysBatchesCount (= A + B)
+    const urgentExpiringWithin3Days = expiringWithin3DaysBatchesCount
+    const moderateExpiring3To7Days = Math.max(
+      0,
+      expiringWithin7DaysBatchesCount - expiringWithin3DaysBatchesCount
+    )
+    const totalExpiringWithin7Days = expiringWithin7DaysBatchesCount
+
+    let expiryAlertText =
+      `\n- Cảnh báo rủi ro hạn dùng lô hàng (QUY TẮC TẬP HỢP: Nhóm ≤3 ngày là tập con lồng trong nhóm ≤7 ngày; KHÔNG ĐƯỢC cộng dồn hai số đếm này để tạo thành tổng mới):` +
+      `\n  + Tổng số lô hàng cận date cần lưu ý (trong vòng 7 ngày tới): ${totalExpiringWithin7Days} lô duy nhất. Trong đó gồm:` +
+      `\n    * Nhóm khẩn cấp cao (hạn dùng ≤ 3 ngày tới): ${urgentExpiringWithin3Days} lô` +
+      `\n    * Nhóm khẩn cấp trung bình (hạn dùng từ > 3 ngày đến ≤ 7 ngày tới): ${moderateExpiring3To7Days} lô` +
+      `\n  + Lô hàng đã hết hạn (quá hạn sử dụng): ${expiredBatchesCount} lô`
+
+    // Bổ sung chi tiết các lô hàng cận date nếu có dữ liệu danh sách lô
+    if (inventoryData.expiringAndExpiredBatches && inventoryData.expiringAndExpiredBatches.length > 0) {
+      const expiringList = inventoryData.expiringAndExpiredBatches
+        .slice(0, 6)
+        .map((b) => {
+          const daysText =
+            b.expiryAlert.daysRemaining !== null
+              ? `còn ${b.expiryAlert.daysRemaining} ngày`
+              : 'không rõ HSD'
+          const expiryDateText = b.expiryDate
+            ? new Date(b.expiryDate).toLocaleDateString('vi-VN')
+            : 'N/A'
+          const kgAvailable = (b.sellableAvailableGrams / 1000).toLocaleString('vi-VN')
+          return `    * Lô ${b.code} (${b.productName}): HSD ${expiryDateText} (${daysText}) | Tồn bán được: ${kgAvailable} kg`
+        })
+        .join('\n')
+      expiryAlertText += `\n  + Chi tiết các lô hàng sắp hết hạn cần ưu tiên xử lý:\n${expiringList}`
+    }
+
     sections.push(
-      `\n### 4. TÌNH TRẠNG TỒN KHO & QUẢN TRỊ LÔ HÀNG FEFO (F01)` +
+      `\n### 4. TÌNH TRẠNG TỒN KHO & QUẢN TRỊ LÔ HÀNG FEFO (FIRST EXPIRED, FIRST OUT — HẾT HẠN TRƯỚC, XUẤT TRƯỚC)` +
       `\n- Trạng thái quản lý FEFO: ${trackedProductsCount} / ${trackedProductsCount + untrackedProductsCount} sản phẩm đã bật theo dõi tồn kho theo lô.` +
       `\n- Tổng tồn kho vật lý: ${(totalPhysicalStockGrams / 1000).toLocaleString('vi-VN')} kg` +
       `\n- Tổng tồn khả dụng (bán được): ${(totalAvailableStockGrams / 1000).toLocaleString('vi-VN')} kg` +
       `\n- Đang giữ chỗ thanh toán (Reservation 10 phút): ${(totalReservedStockGrams / 1000).toLocaleString('vi-VN')} kg` +
       `\n- Số lô hàng ACTIVE hợp lệ xuất kho FEFO: ${eligibleActiveBatchesCount} lô` +
-      `\n- Cảnh báo rủi ro hạn dùng lô hàng:` +
-      `\n  + Lô hàng sắp hết hạn trong 3 ngày tới: ${expiringWithin3DaysBatchesCount} lô (RẤT NGUY CẤP)` +
-      `\n  + Lô hàng sắp hết hạn trong 7 ngày tới: ${expiringWithin7DaysBatchesCount} lô (CẦN XỬ LÝ SỚM)` +
-      `\n  + Lô hàng đã hết hạn: ${expiredBatchesCount} lô` +
+      expiryAlertText +
       `\n- Số mặt hàng chạm ngưỡng tồn kho thấp (Low stock): ${lowStockProductsCount} mặt hàng`
     )
   }

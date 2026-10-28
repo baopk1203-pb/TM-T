@@ -17,6 +17,7 @@ import {
   verifyGeminiModelAccess,
   queryGemini,
   clearModelVerificationCache,
+  DEFAULT_SYSTEM_INSTRUCTION,
 } from '@/lib/gemini/client'
 import {
   sanitizeCustomerIdentifier,
@@ -188,8 +189,135 @@ describe('F03 — Gemini Executive AI Assistant Suite', () => {
       expect(context).toContain('Sầu riêng Monthong')
       expect(context).toContain('8 / 8 sản phẩm đã bật theo dõi tồn kho')
       expect(context).toContain('1.850 kg')
-      expect(context).toContain('Lô hàng sắp hết hạn trong 3 ngày tới: 1 lô')
+      expect(context).toContain('Tổng số lô hàng cận date cần lưu ý (trong vòng 7 ngày tới): 3 lô duy nhất')
+      expect(context).toContain('Nhóm khẩn cấp cao (hạn dùng ≤ 3 ngày tới): 1 lô')
+      expect(context).toContain('Nhóm khẩn cấp trung bình (hạn dùng từ > 3 ngày đến ≤ 7 ngày tới): 2 lô')
+      expect(context).toContain('FEFO (FIRST EXPIRED, FIRST OUT')
       expect(context).toContain('Khiếu nại khách hàng đang mở: 1 vụ')
+    })
+
+    it('1.5 (Test A - F03-WORK-02) should correctly format nested expiry groups (5 within 7 days, 1 within 3 days) without double counting into 6', () => {
+      const mockInventoryWithNestedAlerts = ({
+        observedAt: new Date().toISOString(),
+        kpis: {
+          totalProductsCount: 8,
+          trackedProductsCount: 8,
+          untrackedProductsCount: 0,
+          totalBatchesCount: 20,
+          eligibleActiveBatchesCount: 16,
+          unverifiedBatchesCount: 3,
+          totalPhysicalStockGrams: 1858000,
+          totalReservedStockGrams: 0,
+          totalAvailableStockGrams: 1850000,
+          totalIneligibleStockGrams: 8000,
+          totalDispatchedStockGrams: 0,
+          expiringWithin3DaysBatchesCount: 1, // Nhóm A (<= 3 ngày)
+          expiringWithin7DaysBatchesCount: 5, // Tổng cả hai nhóm (<= 7 ngày)
+          expiredBatchesCount: 0,
+          batchesWithAnomaliesCount: 0,
+          lowStockProductsCount: 0,
+        },
+        products: [],
+        expiringAndExpiredBatches: [],
+        batchesWithAnomalies: [],
+      } as unknown) as BuildExecutiveContextInput['inventoryData']
+
+      const context = buildExecutiveContext({
+        inventoryData: mockInventoryWithNestedAlerts,
+      })
+
+      // 1. Phải nêu rõ tổng cộng 5 lô duy nhất
+      expect(context).toContain('Tổng số lô hàng cận date cần lưu ý (trong vòng 7 ngày tới): 5 lô duy nhất')
+      // 2. Nhóm khẩn cấp cao: 1 lô
+      expect(context).toContain('Nhóm khẩn cấp cao (hạn dùng ≤ 3 ngày tới): 1 lô')
+      // 3. Nhóm khẩn cấp trung bình: 5 - 1 = 4 lô
+      expect(context).toContain('Nhóm khẩn cấp trung bình (hạn dùng từ > 3 ngày đến ≤ 7 ngày tới): 4 lô')
+      // 4. Có chỉ dẫn tập hợp rõ ràng để AI không cộng dồn
+      expect(context).toContain('QUY TẮC TẬP HỢP: Nhóm ≤3 ngày là tập con lồng trong nhóm ≤7 ngày; KHÔNG ĐƯỢC cộng dồn')
+      // 5. Tuyệt đối không được xuất hiện phép tính tổng cộng 6 lô
+      expect(context).not.toContain('tổng cộng 6 lô')
+      expect(context).not.toContain(': 6 lô')
+    })
+
+    it('1.6 (Test C - Dynamic Data) should dynamically compute non-overlapping expiry groups for variable batch counts', () => {
+      // Thử nghiệm với một bộ dữ liệu hoàn toàn khác: 9 lô <= 7 ngày, trong đó 4 lô <= 3 ngày (nhóm trung bình = 5 lô)
+      const mockDynamicInventory = ({
+        observedAt: new Date().toISOString(),
+        kpis: {
+          totalProductsCount: 10,
+          trackedProductsCount: 10,
+          untrackedProductsCount: 0,
+          totalBatchesCount: 30,
+          eligibleActiveBatchesCount: 25,
+          unverifiedBatchesCount: 0,
+          totalPhysicalStockGrams: 3000000,
+          totalReservedStockGrams: 100000,
+          totalAvailableStockGrams: 2900000,
+          totalIneligibleStockGrams: 0,
+          totalDispatchedStockGrams: 0,
+          expiringWithin3DaysBatchesCount: 4,
+          expiringWithin7DaysBatchesCount: 9,
+          expiredBatchesCount: 2,
+          batchesWithAnomaliesCount: 0,
+          lowStockProductsCount: 2,
+        },
+        products: [],
+        expiringAndExpiredBatches: [],
+        batchesWithAnomalies: [],
+      } as unknown) as BuildExecutiveContextInput['inventoryData']
+
+      const context = buildExecutiveContext({
+        inventoryData: mockDynamicInventory,
+      })
+
+      expect(context).toContain('Tổng số lô hàng cận date cần lưu ý (trong vòng 7 ngày tới): 9 lô duy nhất')
+      expect(context).toContain('Nhóm khẩn cấp cao (hạn dùng ≤ 3 ngày tới): 4 lô')
+      expect(context).toContain('Nhóm khẩn cấp trung bình (hạn dùng từ > 3 ngày đến ≤ 7 ngày tới): 5 lô')
+      expect(context).toContain('Lô hàng đã hết hạn (quá hạn sử dụng): 2 lô')
+      // Không bị cộng sai 4 + 9 = 13 lô
+      expect(context).not.toContain('tổng cộng 13 lô')
+      expect(context).not.toContain(': 13 lô')
+    })
+
+    it('1.7 (Test B - F03-WORK-03) should define FEFO correctly as First Expired First Out and distinguish from FIFO First In First Out in instructions and context', () => {
+      // Kiểm tra trong DEFAULT_SYSTEM_INSTRUCTION
+      expect(DEFAULT_SYSTEM_INSTRUCTION).toContain('First Expired, First Out')
+      expect(DEFAULT_SYSTEM_INSTRUCTION).toContain('Hết hạn trước, Xuất trước')
+      expect(DEFAULT_SYSTEM_INSTRUCTION).toContain('First In, First Out')
+      expect(DEFAULT_SYSTEM_INSTRUCTION).toContain('TUYỆT ĐỐI KHÔNG giải thích FEFO là "nhập trước xuất trước"')
+      expect(DEFAULT_SYSTEM_INSTRUCTION).toContain('căn cứ vào HẠN SỬ DỤNG của lô hàng chứ KHÔNG căn cứ vào ngày nhập kho')
+      expect(DEFAULT_SYSTEM_INSTRUCTION).toContain('LOCKED_QC')
+      expect(DEFAULT_SYSTEM_INSTRUCTION).toContain('UNVERIFIED')
+
+      // Kiểm tra trong Header của context
+      const context = buildExecutiveContext({
+        inventoryData: {
+          observedAt: new Date().toISOString(),
+          kpis: {
+            totalProductsCount: 1,
+            trackedProductsCount: 1,
+            untrackedProductsCount: 0,
+            totalBatchesCount: 1,
+            eligibleActiveBatchesCount: 1,
+            unverifiedBatchesCount: 0,
+            totalPhysicalStockGrams: 10000,
+            totalReservedStockGrams: 0,
+            totalAvailableStockGrams: 10000,
+            totalIneligibleStockGrams: 0,
+            totalDispatchedStockGrams: 0,
+            expiringWithin3DaysBatchesCount: 0,
+            expiringWithin7DaysBatchesCount: 0,
+            expiredBatchesCount: 0,
+            batchesWithAnomaliesCount: 0,
+            lowStockProductsCount: 0,
+          },
+          products: [],
+          expiringAndExpiredBatches: [],
+          batchesWithAnomalies: [],
+        } as unknown as BuildExecutiveContextInput['inventoryData'],
+      })
+
+      expect(context).toContain('FEFO (FIRST EXPIRED, FIRST OUT — HẾT HẠN TRƯỚC, XUẤT TRƯỚC)')
     })
   })
 

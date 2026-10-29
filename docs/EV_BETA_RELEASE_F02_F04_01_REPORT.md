@@ -328,7 +328,8 @@ function Assert-PostDeployMigrationStatus {
 # ==============================================================================
 function Invoke-PrismaCommand {
     param(
-        [string[]]$Arguments
+        [string[]]$Arguments,
+        [string]$WorkingDirectory = $appRoot
     )
 
     $tempOut = [System.IO.Path]::GetTempFileName()
@@ -343,6 +344,7 @@ function Invoke-PrismaCommand {
 
         $p = Start-Process -FilePath $npxPath `
             -ArgumentList $Arguments `
+            -WorkingDirectory $WorkingDirectory `
             -RedirectStandardOutput $tempOut `
             -RedirectStandardError $tempErr `
             -NoNewWindow -Wait -PassThru
@@ -419,9 +421,13 @@ try {
 
     # 5. Chuyen working directory sang $appRoot de chay Prisma CLI (FIX 1)
     Set-Location $appRoot
+    [System.IO.Directory]::SetCurrentDirectory($appRoot)
 
-    # 6. Thiet lap $env:DATABASE_URL trong scope tien trinh hien tai
+    # 6. Thiet lap $env:DATABASE_URL va $env:DIRECT_URL trong scope tien trinh hien tai
     $env:DATABASE_URL = $plainConn
+    $env:DIRECT_URL   = $plainConn
+    [System.Environment]::SetEnvironmentVariable('DATABASE_URL', $plainConn, 'Process')
+    [System.Environment]::SetEnvironmentVariable('DIRECT_URL', $plainConn, 'Process')
 
     # 7. Thuc thi FIX 2: Preflight prisma migrate status
     Write-Host "--- BUOC 3: KIEM TRA PREFLIGHT MIGRATION STATUS (FIX 2) ---" -ForegroundColor Cyan
@@ -480,13 +486,16 @@ catch {
 finally {
     # 10. Khoi phuc working directory ban dau
     Set-Location $prevLocation
+    [System.IO.Directory]::SetCurrentDirectory($prevLocation)
 
     # 11. Xoa sach credentials khoi bien moi truong tien trinh va huy tham chieu
     $env:DATABASE_URL = $null
+    $env:DIRECT_URL   = $null
     [System.Environment]::SetEnvironmentVariable('DATABASE_URL', $null, 'Process')
+    [System.Environment]::SetEnvironmentVariable('DIRECT_URL', $null, 'Process')
     $plainConn = $null
     Write-Host ""
-    Write-Host "[BAO MAT] Da xoa bien moi truong DATABASE_URL khoi tien trinh va huy tham chieu." -ForegroundColor DarkGray
+    Write-Host "[BAO MAT] Da xoa bien moi truong DATABASE_URL va DIRECT_URL khoi tien trinh va huy tham chieu." -ForegroundColor DarkGray
 }
 ```
 

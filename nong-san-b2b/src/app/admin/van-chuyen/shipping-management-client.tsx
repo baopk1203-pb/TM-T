@@ -29,7 +29,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatVND } from '@/lib/money'
-import { formatVietnamDate } from '@/lib/utils'
+import { formatVietnamDate, formatDeliveryTimeSlot } from '@/lib/utils'
 import { toast } from 'sonner'
 import {
   createShippingRate,
@@ -602,13 +602,7 @@ export function ShippingManagementClient({
                             {item.deliveryDate ? formatVietnamDate(item.deliveryDate) : '---'}
                           </span>
                           <span className="text-[11px] text-slate-500">
-                            {item.timeSlot === 'MORNING'
-                              ? 'Sáng (8-12h)'
-                              : item.timeSlot === 'AFTERNOON'
-                              ? 'Chiều (13-17h)'
-                              : item.timeSlot === 'EVENING'
-                              ? 'Tối (17-20h)'
-                              : 'Cả ngày'}
+                            {formatDeliveryTimeSlot(item.timeSlot, 'short')}
                           </span>
                         </td>
 

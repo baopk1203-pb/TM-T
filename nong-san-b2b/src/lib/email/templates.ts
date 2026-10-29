@@ -1,5 +1,6 @@
 import { EmailTemplateResult } from './types'
 import { formatVND } from '@/lib/money'
+import { formatDeliveryTimeSlot } from '@/lib/domain/delivery-date'
 import { OrderStatus, PaymentOption, Resolution, VehicleType } from '@prisma/client'
 
 export interface AddressSnapshotData {
@@ -225,7 +226,7 @@ export function renderOrderPlacedTemplate(data: OrderPlacedEmailData): EmailTemp
     <div class="card">
       <table style="width: 100%; font-size: 13px;">
         <tr><td style="color: #64748b;">Mã đơn hàng:</td><td style="font-weight: bold; text-align: right; font-family: monospace;">${data.order.code}</td></tr>
-        <tr><td style="color: #64748b;">Ngày giao dự kiến:</td><td style="text-align: right; font-weight: 600;">${formatDayVN(data.order.deliveryDate)} (${data.order.timeSlot === 'MORNING' ? 'Buổi sáng' : data.order.timeSlot === 'AFTERNOON' ? 'Buổi chiều' : 'Cả ngày'})</td></tr>
+        <tr><td style="color: #64748b;">Ngày giao dự kiến:</td><td style="text-align: right; font-weight: 600;">${formatDayVN(data.order.deliveryDate)} (${formatDeliveryTimeSlot(data.order.timeSlot)})</td></tr>
         <tr><td style="color: #64748b;">Địa chỉ nhận hàng:</td><td style="text-align: right;">${addressText}</td></tr>
         <tr><td style="color: #64748b;">Hình thức:</td><td style="text-align: right; font-weight: 600;">${isDeposit ? 'Đặt cọc 30%' : 'Thanh toán 100%'}</td></tr>
       </table>
@@ -331,7 +332,7 @@ export function renderOrderShippingTemplate(data: OrderShippingEmailData): Email
         ${shipment?.driverName ? `<tr><td style="color: #64748b;">Tài xế giao hàng:</td><td style="text-align: right; font-weight: bold;">${shipment.driverName}</td></tr>` : ''}
         ${shipment?.driverPhone ? `<tr><td style="color: #64748b;">Số điện thoại tài xế:</td><td style="text-align: right;"><a href="tel:${shipment.driverPhone}" style="color: #059669; font-weight: bold;">${shipment.driverPhone}</a></td></tr>` : ''}
         ${shipment?.licensePlate ? `<tr><td style="color: #64748b;">Biển số xe:</td><td style="text-align: right; font-family: monospace;">${shipment.licensePlate}</td></tr>` : ''}
-        <tr><td style="color: #64748b;">Khung giờ giao:</td><td style="text-align: right;">${data.order.timeSlot === 'MORNING' ? 'Buổi sáng (07:00 - 11:30)' : data.order.timeSlot === 'AFTERNOON' ? 'Buổi chiều (13:30 - 17:30)' : 'Trong ngày'}</td></tr>
+        <tr><td style="color: #64748b;">Khung giờ giao:</td><td style="text-align: right;">${formatDeliveryTimeSlot(data.order.timeSlot)}</td></tr>
       </table>
     </div>
 

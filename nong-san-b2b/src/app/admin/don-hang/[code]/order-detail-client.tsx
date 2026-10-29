@@ -39,7 +39,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatVND } from '@/lib/money'
-import { formatVietnamDate, formatVietnamDateTime } from '@/lib/utils'
+import { formatVietnamDate, formatVietnamDateTime, formatDeliveryTimeSlot } from '@/lib/utils'
 import { getComplaintPhotoUrl } from '@/lib/storage-helpers'
 import { confirmPayment } from '@/actions/admin-order'
 import {
@@ -790,11 +790,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                       : 'Vụ mùa'}
                   </strong>{' '}
                   •{' '}
-                  {order.timeSlot === 'MORNING'
-                    ? 'Buổi sáng (07:00 - 11:30)'
-                    : order.timeSlot === 'AFTERNOON'
-                    ? 'Buổi chiều (13:30 - 17:30)'
-                    : 'Cả ngày'}
+                  {formatDeliveryTimeSlot(order.timeSlot)}
                 </div>
               </div>
 

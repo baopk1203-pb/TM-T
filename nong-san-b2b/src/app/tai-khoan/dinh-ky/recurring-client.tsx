@@ -157,8 +157,8 @@ const WEEKDAY_OPTIONS = [
 ]
 
 const TIME_SLOT_LABELS: Record<TimeSlot, string> = {
-  [TimeSlot.MORNING]: 'Sáng (06:00 - 11:00)',
-  [TimeSlot.AFTERNOON]: 'Chiều (13:00 - 17:00)',
+  [TimeSlot.MORNING]: 'Sáng (07:00 - 11:30)',
+  [TimeSlot.AFTERNOON]: 'Chiều (13:30 - 17:30)',
   [TimeSlot.EVENING]: 'Tối (18:00 - 21:00)',
 }
 

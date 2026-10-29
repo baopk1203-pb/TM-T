@@ -61,6 +61,13 @@ describe('QA05-UI-01: Delivery Slot Single Source of Truth & Harmonization', () 
     expect(formatDeliveryTimeSlot('')).toBe('Cả ngày')
   })
 
+  it('khắc phục triệt để lỗi EVENING bị hiển thị sai thành Cả ngày', () => {
+    // Không một format nào được phép biến EVENING thành Cả ngày
+    expect(formatDeliveryTimeSlot('EVENING')).not.toBe('Cả ngày')
+    expect(formatDeliveryTimeSlot('EVENING', 'full')).toBe('Buổi tối (18:00 - 21:00)')
+    expect(formatDeliveryTimeSlot('EVENING', 'short')).toBe('Tối (18:00 - 21:00)')
+  })
+
   it('bảo đảm tính nhất quán (Harmonization Invariant) giữa Checkout và Customer Order Detail', () => {
     // Kịch bản demo DH-261029-ASRT: Khách chọn MORNING tại Checkout
     const checkoutMorning = DELIVERY_SLOT_MAP.MORNING

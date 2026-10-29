@@ -8,7 +8,7 @@ import {
   DialogContent,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { formatVietnamDate } from '@/lib/utils'
+import { formatVietnamDate, formatDeliveryTimeSlot } from '@/lib/utils'
 
 export interface PackingSlipData {
   orderCode: string
@@ -51,17 +51,7 @@ export function PackingSlipModal({ open, onOpenChange, data }: PackingSlipModalP
   }
 
   const formatSlot = (slot?: string | null) => {
-    if (!slot) return 'Cả ngày'
-    switch (slot) {
-      case 'MORNING':
-        return 'Sáng (08:00 - 12:00)'
-      case 'AFTERNOON':
-        return 'Chiều (13:00 - 17:00)'
-      case 'EVENING':
-        return 'Tối (17:00 - 20:00)'
-      default:
-        return slot
-    }
+    return formatDeliveryTimeSlot(slot, 'short')
   }
 
   return (

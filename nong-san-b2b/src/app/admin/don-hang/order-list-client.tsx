@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { formatVND } from '@/lib/money'
-import { formatVietnamDate } from '@/lib/utils'
+import { formatVietnamDate, formatDeliveryTimeSlot } from '@/lib/utils'
 import { expireOrdersJob } from '@/actions/admin-order'
 import { toast } from 'sonner'
 import { OrderStatus } from '@prisma/client'
@@ -295,11 +295,7 @@ export function OrderListClient({ initialOrders }: OrderListClientProps) {
                               {formatVietnamDate(order.deliveryDate)}
                             </div>
                             <div className="text-[11px] text-slate-500 mt-0.5">
-                              {order.timeSlot === 'MORNING'
-                                ? 'Sáng (07:00 - 11:30)'
-                                : order.timeSlot === 'AFTERNOON'
-                                ? 'Chiều (13:30 - 17:30)'
-                                : 'Cả ngày'}
+                              {formatDeliveryTimeSlot(order.timeSlot, 'short')}
                             </div>
                           </>
                         ) : (

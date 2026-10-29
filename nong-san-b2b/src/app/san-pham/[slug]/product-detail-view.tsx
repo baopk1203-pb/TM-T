@@ -295,13 +295,15 @@ export function ProductDetailView({
               <h3 className="font-heading text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                 <Layers className="w-4 h-4 text-emerald-600" /> Bảng Giá Sỉ Theo Bậc Khối Lượng
               </h3>
-              {userDiscount > 0 ? (
+              {combinedDiscount > 0 ? (
                 <Badge
                   variant="outline"
                   className="bg-emerald-50 text-emerald-800 border-emerald-300 text-xs font-semibold px-2.5 py-0.5 rounded-full"
                 >
                   <Sparkles className="w-3 h-3 text-emerald-600 mr-1" />
-                  Chiết khấu đối tác của bạn: -{userDiscount}%
+                  {membershipDiscount > 0
+                    ? `Ưu đãi kết hợp: -${combinedDiscount}% (${user?.groupName || 'Nhóm'}: -${userDiscount}% • Hạng ${user?.membershipTierName || 'Thành viên'}: -${membershipDiscount}%)`
+                    : `Chiết khấu đối tác của bạn: -${userDiscount}%`}
                 </Badge>
               ) : (
                 <span className="text-xs text-slate-500">
@@ -323,7 +325,9 @@ export function ProductDetailView({
                     </TableHead>
                     {user && (
                       <TableHead className="font-bold text-emerald-800 text-right bg-emerald-50/60 text-xs">
-                        Giá Của Bạn (-{userDiscount}%)
+                        {membershipDiscount > 0
+                          ? `Giá Của Bạn (-${combinedDiscount}%)`
+                          : `Giá Của Bạn (-${userDiscount}%)`}
                       </TableHead>
                     )}
                   </TableRow>

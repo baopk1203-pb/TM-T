@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useCartStore } from '@/lib/cart-store'
 import { formatVND, gramsToKg } from '@/lib/money'
-import { priceCart, ProductPricingData } from '@/lib/domain/pricing'
+import { priceCart, calculateCustomerUnitPrice, ProductPricingData } from '@/lib/domain/pricing'
 import { MembershipTier, calculateCombinedProductDiscount } from '@/lib/domain/membership'
 import {
   evaluateCartItemStockWarning,
@@ -132,8 +132,17 @@ export function ProductOrderBox({
       lines,
       products: [pricingProduct],
       groupDiscountPercent: userDiscount,
+      membershipTier: user?.membershipTier,
+      membershipDiscountPercent: user?.membershipDiscountPercent,
     })
-  }, [quantities, pricingProduct, userDiscount, product.id])
+  }, [
+    quantities,
+    pricingProduct,
+    userDiscount,
+    user?.membershipTier,
+    user?.membershipDiscountPercent,
+    product.id,
+  ])
 
   const summary = quoteResult.productSummaries[0]
   const currentTotalGrams = summary?.totalGrams || 0
@@ -232,9 +241,11 @@ export function ProductOrderBox({
             Giá tự động nhảy theo tổng sản lượng các quy cách cộng lại
           </p>
         </div>
-        {userDiscount > 0 && (
+        {combinedDiscount > 0 && (
           <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-100 font-semibold text-xs">
-            Chiết khấu: -{userDiscount}%
+            {membershipDiscount > 0
+              ? `Chiết khấu: -${combinedDiscount}% (Nhóm: -${userDiscount}% • Hạng ${user?.membershipTierName || 'Thành viên'}: -${membershipDiscount}%)`
+              : `Chiết khấu: -${userDiscount}%`}
           </Badge>
         )}
       </div>
@@ -352,11 +363,7 @@ export function ProductOrderBox({
               Mua thêm <strong>{summary.nextTier.missingGrams / 1000} kg</strong> để nâng lên bậc giá rẻ hơn:{' '}
               <strong className="text-blue-900">
                 {formatVND(
-                  userDiscount > 0
-                    ? Math.round(
-                        (summary.nextTier.pricePerKg * (100 - userDiscount)) / 100
-                      )
-                    : summary.nextTier.pricePerKg
+                  calculateCustomerUnitPrice(summary.nextTier.pricePerKg, combinedDiscount)
                 )}
                 /kg
               </strong>

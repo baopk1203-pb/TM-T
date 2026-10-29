@@ -516,170 +516,320 @@ export function ComplaintListClient({ initialComplaints }: ComplaintListClientPr
         )}
       </div>
 
-      {/* PROPOSAL MODAL (F02) */}
-      {selectedComplaint && (
-        <Dialog
-          open={Boolean(selectedComplaint)}
-          onOpenChange={(open) => !open && setSelectedComplaint(null)}
-        >
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Scale className="w-5 h-5 text-emerald-600" />
-                {selectedComplaint.status === ComplaintStatus.UNDER_REVIEW
-                  ? 'Đề Xuất Phương Án Bồi Thường Cuối Cùng'
-                  : 'Đề Xuất Phương Án Xử Lý Khiếu Nại (48h SLA)'}
-              </DialogTitle>
-              <DialogDescription className="text-xs text-slate-500">
-                Đơn hàng <strong className="font-mono">{selectedComplaint.orderCode}</strong> • Sản phẩm:{' '}
-                {selectedComplaint.productName}
-              </DialogDescription>
-            </DialogHeader>
+      {/* PROPOSAL & DETAIL MODAL (F02) */}
+      {selectedComplaint && (() => {
+        const isActionable =
+          selectedComplaint.status === ComplaintStatus.OPEN ||
+          selectedComplaint.status === ComplaintStatus.UNDER_REVIEW
 
-            <div className="space-y-4 py-2 text-xs">
-              {/* Cảnh báo khi đang phúc tra */}
-              {selectedComplaint.status === ComplaintStatus.UNDER_REVIEW && (
-                <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl space-y-1.5 text-purple-900">
-                  <div className="font-bold flex items-center gap-1.5 text-purple-800">
-                    <AlertCircle className="w-4 h-4 text-purple-600" />
-                    Lưu ý: Đây là đề xuất phương án cuối cùng (vòng phúc tra)
+        const dialogTitle =
+          selectedComplaint.status === ComplaintStatus.UNDER_REVIEW
+            ? 'Đề Xuất Phương Án Bồi Thường Cuối Cùng'
+            : selectedComplaint.status === ComplaintStatus.OPEN
+            ? 'Đề Xuất Phương Án Xử Lý Khiếu Nại (48h SLA)'
+            : selectedComplaint.status === ComplaintStatus.RESOLVED
+            ? 'Chi Tiết Khiếu Nại (Đã Giải Quyết)'
+            : selectedComplaint.status === ComplaintStatus.CUSTOMER_ACCEPTED
+            ? 'Chi Tiết Khiếu Nại (Khách Đã Chấp Nhận Đề Xuất)'
+            : selectedComplaint.status === ComplaintStatus.PROPOSED
+            ? 'Chi Tiết Đề Xuất (Đang Chờ Khách Phản Hồi)'
+            : selectedComplaint.status === ComplaintStatus.WITHDRAWN
+            ? 'Chi Tiết Khiếu Nại (Đã Đóng / Rút)'
+            : 'Chi Tiết Khiếu Nại'
+
+        return (
+          <Dialog
+            open={Boolean(selectedComplaint)}
+            onOpenChange={(open) => !open && setSelectedComplaint(null)}
+          >
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Scale className="w-5 h-5 text-emerald-600" />
+                  {dialogTitle}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  Đơn hàng <strong className="font-mono">{selectedComplaint.orderCode}</strong> • Sản phẩm:{' '}
+                  {selectedComplaint.productName}
+                </DialogDescription>
+              </DialogHeader>
+
+              {!isActionable ? (
+                /* READ-ONLY DETAIL VIEW FOR RESOLVED / CLOSED / PROPOSED / ACCEPTED */
+                <div className="space-y-4 py-2 text-xs">
+                  {/* Status alert banner */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-700">Trạng thái khiếu nại:</span>
+                      <ComplaintBadge status={selectedComplaint.status} />
+                    </div>
+                    {selectedComplaint.refundTxStatus && (
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                        <span className="text-slate-600">Trạng thái hoàn tiền:</span>
+                        <Badge
+                          className={
+                            selectedComplaint.refundTxStatus === 'DONE'
+                              ? 'bg-emerald-600 text-white font-bold'
+                              : 'bg-purple-100 text-purple-800 border-purple-200 font-bold'
+                          }
+                        >
+                          {selectedComplaint.refundTxStatus === 'DONE'
+                            ? 'ĐÃ HOÀN TIỀN'
+                            : 'CHỜ CHUYỂN KHOẢN (PENDING)'}
+                        </Badge>
+                      </div>
+                    )}
                   </div>
-                  <p className="text-[11px] text-purple-700">
-                    Khách hàng chỉ có thể <strong>Chấp nhận</strong> hoặc <strong>Rút khiếu nại</strong>,
-                    không thể yêu cầu phúc tra thêm lần nữa.
-                  </p>
-                  {selectedComplaint.reReviewReason && (
-                    <div className="text-[11px] bg-white p-2 rounded border border-purple-200 font-medium">
-                      Lý do khách phúc tra: {selectedComplaint.reReviewReason}
+
+                  {/* Details grid */}
+                  <div className="space-y-2 bg-slate-50/70 p-3 rounded-xl border border-slate-200">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Khách hàng:</span>
+                      <span className="font-semibold text-slate-800">
+                        {selectedComplaint.user.fullName || selectedComplaint.user.companyName || 'Khách hàng'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Khối lượng khách báo:</span>
+                      <span className="font-mono font-medium text-slate-800">
+                        {(selectedComplaint.reportedGrams / 1000).toLocaleString('vi-VN')} kg
+                      </span>
+                    </div>
+                    {selectedComplaint.verifiedGrams !== null && selectedComplaint.verifiedGrams !== undefined && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Khối lượng xác minh hư hỏng:</span>
+                        <span className="font-mono font-bold text-slate-900">
+                          {(selectedComplaint.verifiedGrams / 1000).toLocaleString('vi-VN')} kg
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Thực giao đơn hàng:</span>
+                      <span className="font-mono text-slate-600">
+                        {(selectedComplaint.itemActualGrams / 1000).toLocaleString('vi-VN')} kg
+                      </span>
+                    </div>
+                    {selectedComplaint.proposalType && (
+                      <div className="flex justify-between pt-1 border-t border-slate-200">
+                        <span className="text-slate-500">Hình thức xử lý:</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedComplaint.proposalType === ComplaintResolutionType.REFUND_MONEY
+                            ? 'Hoàn tiền bồi hoàn (REFUND_MONEY)'
+                            : selectedComplaint.proposalType === ComplaintResolutionType.REJECT_COMPLAINT
+                            ? 'Từ chối bồi thường (REJECT_COMPLAINT)'
+                            : selectedComplaint.proposalType}
+                        </span>
+                      </div>
+                    )}
+                    {((selectedComplaint.proposalAmount !== null &&
+                      selectedComplaint.proposalAmount !== undefined &&
+                      selectedComplaint.proposalAmount > 0) ||
+                      (selectedComplaint.compensation !== null &&
+                        selectedComplaint.compensation !== undefined &&
+                        selectedComplaint.compensation > 0)) && (
+                      <div className="flex justify-between text-emerald-800 font-bold pt-1 border-t border-slate-200">
+                        <span>Số tiền bồi thường:</span>
+                        <span className="font-mono text-sm">
+                          {formatVND(selectedComplaint.proposalAmount || selectedComplaint.compensation || 0)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Description from customer */}
+                  {selectedComplaint.description && (
+                    <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+                      <span className="font-semibold text-slate-700">Mô tả khiếu nại của khách:</span>
+                      <p className="text-slate-600 whitespace-pre-wrap">{selectedComplaint.description}</p>
                     </div>
                   )}
-                </div>
-              )}
 
-              {/* Khối lượng xác minh */}
-              <div>
-                <Label htmlFor="verifiedKg" className="text-xs font-semibold text-slate-700">
-                  Khối lượng hư hỏng xác minh (kg) *
-                </Label>
-                <Input
-                  id="verifiedKg"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={verifiedKg}
-                  onChange={(e) => setVerifiedKg(Number(e.target.value))}
-                  className="mt-1 font-mono font-bold text-sm"
-                />
-                <div className="text-[11px] text-slate-500 mt-1 flex justify-between">
-                  <span>Khách báo: {(selectedComplaint.reportedGrams / 1000).toLocaleString('vi-VN')} kg</span>
-                  <span>Thực giao: {(selectedComplaint.itemActualGrams / 1000).toLocaleString('vi-VN')} kg</span>
-                </div>
-              </div>
+                  {/* Notes from admin / proposal */}
+                  {(selectedComplaint.proposalNotes || selectedComplaint.adminNote) && (
+                    <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+                      <span className="font-semibold text-slate-700">Ghi chú phương án xử lý:</span>
+                      <p className="text-slate-600 whitespace-pre-wrap">
+                        {selectedComplaint.proposalNotes || selectedComplaint.adminNote}
+                      </p>
+                    </div>
+                  )}
 
-              {/* Hướng giải quyết */}
-              <div>
-                <Label className="text-xs font-semibold text-slate-700">Hình thức đề xuất *</Label>
-                <select
-                  value={proposalType}
-                  onChange={(e) =>
-                    setProposalType(e.target.value as ComplaintResolutionType)
-                  }
-                  className="w-full mt-1 h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 font-medium text-xs focus:ring-1 focus:ring-emerald-500"
-                >
-                  <option value={ComplaintResolutionType.REFUND_MONEY}>
-                    Hoàn tiền bồi hoàn (REFUND_MONEY) - Kích hoạt hoàn tiền khi khách đồng ý
-                  </option>
-                  <option value={ComplaintResolutionType.REJECT_COMPLAINT}>
-                    Từ chối khiếu nại (REJECT_COMPLAINT) - Hao hụt trong định mức hoặc không đủ căn cứ
-                  </option>
-                  <option value={ComplaintResolutionType.REPLACE_GOODS} disabled>
-                    Bù hàng chuyến sau (REPLACE_GOODS) - [Chưa hỗ trợ tự động trong Phase 8]
-                  </option>
-                </select>
-              </div>
+                  {/* Re-review reason if any */}
+                  {selectedComplaint.reReviewReason && (
+                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl space-y-1 text-purple-900">
+                      <span className="font-semibold text-purple-800">Lý do khách yêu cầu phúc tra:</span>
+                      <p className="text-purple-700 whitespace-pre-wrap">{selectedComplaint.reReviewReason}</p>
+                    </div>
+                  )}
 
-              {/* Compensation calculation preview */}
-              {proposalType === ComplaintResolutionType.REFUND_MONEY && (
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
-                  <div className="font-semibold text-slate-800">Tính toán bồi hoàn (Mục 3.9):</div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>Hao hụt tự nhiên cho phép (3%):</span>
-                    <span className="font-mono">{compPreview.allowedKg.toFixed(2)} kg</span>
-                  </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>Hao hụt vượt định mức tính tiền:</span>
-                    <span className="font-mono font-bold text-slate-800">
-                      {compPreview.excessKg.toFixed(2)} kg
+                  {/* Informational Read-Only Banner */}
+                  <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-800 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>
+                      Khiếu nại đang ở chế độ xem chi tiết (chỉ đọc). Không thể thay đổi hoặc gửi đề xuất mới khi khiếu nại đã kết thúc hoặc đang chờ phản hồi.
                     </span>
                   </div>
-                  <div className="flex justify-between font-bold pt-1 border-t border-slate-200 text-emerald-800">
-                    <span>Số tiền bồi hoàn gợi ý:</span>
-                    <span className="font-mono text-sm">{formatVND(compPreview.compensation)}</span>
-                  </div>
+                </div>
+              ) : (
+                /* ACTIONABLE PROPOSAL FORM (OPEN / UNDER_REVIEW) */
+                <div className="space-y-4 py-2 text-xs">
+                  {/* Cảnh báo khi đang phúc tra */}
+                  {selectedComplaint.status === ComplaintStatus.UNDER_REVIEW && (
+                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl space-y-1.5 text-purple-900">
+                      <div className="font-bold flex items-center gap-1.5 text-purple-800">
+                        <AlertCircle className="w-4 h-4 text-purple-600" />
+                        Lưu ý: Đây là đề xuất phương án cuối cùng (vòng phúc tra)
+                      </div>
+                      <p className="text-[11px] text-purple-700">
+                        Khách hàng chỉ có thể <strong>Chấp nhận</strong> hoặc <strong>Rút khiếu nại</strong>,
+                        không thể yêu cầu phúc tra thêm lần nữa.
+                      </p>
+                      {selectedComplaint.reReviewReason && (
+                        <div className="text-[11px] bg-white p-2 rounded border border-purple-200 font-medium">
+                          Lý do khách phúc tra: {selectedComplaint.reReviewReason}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-                  <div className="pt-2 border-t border-slate-200">
-                    <Label htmlFor="customAmount" className="text-[11px] font-semibold text-slate-700">
-                      Số tiền bồi hoàn đề xuất (VND) (để trống nếu dùng số tiền gợi ý):
+                  {/* Khối lượng xác minh */}
+                  <div>
+                    <Label htmlFor="verifiedKg" className="text-xs font-semibold text-slate-700">
+                      Khối lượng hư hỏng xác minh (kg) *
                     </Label>
                     <Input
-                      id="customAmount"
+                      id="verifiedKg"
                       type="number"
-                      placeholder={String(compPreview.compensation)}
-                      value={customAmount}
-                      onChange={(e) => setCustomAmount(e.target.value)}
-                      className="mt-1 font-mono font-bold text-xs h-8"
+                      step="0.1"
+                      min="0"
+                      value={verifiedKg}
+                      onChange={(e) => setVerifiedKg(Number(e.target.value))}
+                      className="mt-1 font-mono font-bold text-sm"
                     />
+                    <div className="text-[11px] text-slate-500 mt-1 flex justify-between">
+                      <span>Khách báo: {(selectedComplaint.reportedGrams / 1000).toLocaleString('vi-VN')} kg</span>
+                      <span>Thực giao: {(selectedComplaint.itemActualGrams / 1000).toLocaleString('vi-VN')} kg</span>
+                    </div>
+                  </div>
+
+                  {/* Hướng giải quyết */}
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700">Hình thức đề xuất *</Label>
+                    <select
+                      value={proposalType}
+                      onChange={(e) =>
+                        setProposalType(e.target.value as ComplaintResolutionType)
+                      }
+                      className="w-full mt-1 h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 font-medium text-xs focus:ring-1 focus:ring-emerald-500"
+                    >
+                      <option value={ComplaintResolutionType.REFUND_MONEY}>
+                        Hoàn tiền bồi hoàn (REFUND_MONEY) - Kích hoạt hoàn tiền khi khách đồng ý
+                      </option>
+                      <option value={ComplaintResolutionType.REJECT_COMPLAINT}>
+                        Từ chối khiếu nại (REJECT_COMPLAINT) - Hao hụt trong định mức hoặc không đủ căn cứ
+                      </option>
+                      <option value={ComplaintResolutionType.REPLACE_GOODS} disabled>
+                        Bù hàng chuyến sau (REPLACE_GOODS) - [Chưa hỗ trợ tự động trong Phase 8]
+                      </option>
+                    </select>
+                  </div>
+
+                  {/* Compensation calculation preview */}
+                  {proposalType === ComplaintResolutionType.REFUND_MONEY && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+                      <div className="font-semibold text-slate-800">Tính toán bồi hoàn (Mục 3.9):</div>
+                      <div className="flex justify-between text-slate-600">
+                        <span>Hao hụt tự nhiên cho phép (3%):</span>
+                        <span className="font-mono">{compPreview.allowedKg.toFixed(2)} kg</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span>Hao hụt vượt định mức tính tiền:</span>
+                        <span className="font-mono font-bold text-slate-800">
+                          {compPreview.excessKg.toFixed(2)} kg
+                        </span>
+                      </div>
+                      <div className="flex justify-between font-bold pt-1 border-t border-slate-200 text-emerald-800">
+                        <span>Số tiền bồi hoàn gợi ý:</span>
+                        <span className="font-mono text-sm">{formatVND(compPreview.compensation)}</span>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200">
+                        <Label htmlFor="customAmount" className="text-[11px] font-semibold text-slate-700">
+                          Số tiền bồi hoàn đề xuất (VND) (để trống nếu dùng số tiền gợi ý):
+                        </Label>
+                        <Input
+                          id="customAmount"
+                          type="number"
+                          placeholder={String(compPreview.compensation)}
+                          value={customAmount}
+                          onChange={(e) => setCustomAmount(e.target.value)}
+                          className="mt-1 font-mono font-bold text-xs h-8"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <Label htmlFor="proposalNotes" className="text-xs font-semibold text-slate-700">
+                      Ghi chú / Giải thích đề xuất cho khách
+                    </Label>
+                    <Textarea
+                      id="proposalNotes"
+                      placeholder="Nhập ghi chú giải thích phương án đề xuất cho khách hàng..."
+                      value={proposalNotes}
+                      onChange={(e) => setProposalNotes(e.target.value)}
+                      rows={2}
+                      className="mt-1 text-xs resize-none"
+                    />
+                  </div>
+
+                  {/* SLA Banner */}
+                  <div className="p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-lg flex items-start gap-2 text-[11px] text-amber-900">
+                    <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Quy chế 48 giờ SLA:</strong> Sau khi gửi, khách hàng có 48 giờ để phản hồi
+                      (Chấp nhận / Phúc tra / Rút). Nếu quá 48 giờ không phản hồi, khiếu nại sẽ được tự động
+                      đóng theo quy chế sàn.
+                    </span>
                   </div>
                 </div>
               )}
 
-              <div>
-                <Label htmlFor="proposalNotes" className="text-xs font-semibold text-slate-700">
-                  Ghi chú / Giải thích đề xuất cho khách
-                </Label>
-                <Textarea
-                  id="proposalNotes"
-                  placeholder="Nhập ghi chú giải thích phương án đề xuất cho khách hàng..."
-                  value={proposalNotes}
-                  onChange={(e) => setProposalNotes(e.target.value)}
-                  rows={2}
-                  className="mt-1 text-xs resize-none"
-                />
-              </div>
-
-              {/* SLA Banner */}
-              <div className="p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-lg flex items-start gap-2 text-[11px] text-amber-900">
-                <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <span>
-                  <strong>Quy chế 48 giờ SLA:</strong> Sau khi gửi, khách hàng có 48 giờ để phản hồi
-                  (Chấp nhận / Phúc tra / Rút). Nếu quá 48 giờ không phản hồi, khiếu nại sẽ được tự động
-                  đóng theo quy chế sàn.
-                </span>
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedComplaint(null)}
-                disabled={isPending}
-                className="text-xs"
-              >
-                Hủy bỏ
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleProposalSubmit}
-                disabled={isPending}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5"
-              >
-                {isPending ? 'Đang gửi...' : 'Gửi đề xuất giải quyết'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
+              <DialogFooter>
+                {isActionable ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedComplaint(null)}
+                      disabled={isPending}
+                      className="text-xs"
+                    >
+                      Hủy bỏ
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleProposalSubmit}
+                      disabled={isPending}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5"
+                    >
+                      {isPending ? 'Đang gửi...' : 'Gửi đề xuất giải quyết'}
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => setSelectedComplaint(null)}
+                    className="bg-slate-800 hover:bg-slate-900 text-white font-medium text-xs px-5"
+                  >
+                    Đóng
+                  </Button>
+                )}
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
     </div>
   )
 }

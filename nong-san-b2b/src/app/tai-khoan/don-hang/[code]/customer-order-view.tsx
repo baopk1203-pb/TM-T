@@ -1239,10 +1239,19 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
                       {/* ĐÃ GIẢI QUYẾT (RESOLVED / REJECTED) */}
                       {isResolved && (
                         <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-900">
-                          <div className="font-bold">Đã tất toán & giải quyết hoàn tất</div>
+                          <div className="font-bold">
+                            {order.paymentStatus === 'REFUND_PENDING'
+                              ? 'Đã duyệt phương án bồi hoàn'
+                              : 'Đã tất toán & giải quyết hoàn tất'}
+                          </div>
                           {c.compensation && (
                             <div className="text-xs font-semibold">
                               Khoản bồi hoàn: {formatVND(c.compensation)} ({c.resolution})
+                            </div>
+                          )}
+                          {order.paymentStatus === 'REFUND_PENDING' && (
+                            <div className="text-[11px] text-purple-700 mt-1">
+                              Lệnh hoàn tiền đang được kế toán xử lý chuyển khoản (Chờ hoàn tiền).
                             </div>
                           )}
                         </div>
@@ -1816,7 +1825,7 @@ function ComplaintStatusBadge({ status }: { status: ComplaintStatus }) {
     case 'WITHDRAWN':
       return <Badge className="bg-slate-100 text-slate-800 border-slate-300">Đã rút / Quá hạn</Badge>
     case 'RESOLVED':
-      return <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300">Đã bồi hoàn</Badge>
+      return <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300">Đã giải quyết</Badge>
     case 'REJECTED':
       return <Badge className="bg-rose-100 text-rose-900 border-rose-300">Từ chối</Badge>
     default:

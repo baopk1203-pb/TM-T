@@ -1973,6 +1973,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                   >
                     <option value="MORNING">Buổi sáng (07:00 - 11:30)</option>
                     <option value="AFTERNOON">Buổi chiều (13:30 - 17:30)</option>
+                    <option value="EVENING">Buổi tối (18:00 - 21:00)</option>
                   </select>
                 </div>
               </div>

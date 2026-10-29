@@ -15,6 +15,11 @@ import {
   computeComplaintCompensation,
   derivePaymentStatus,
 } from '@/lib/domain/settlement'
+import {
+  canTransitionComplaint,
+  calculateReviewDeadline,
+  isComplaintProposalExpired,
+} from '@/lib/domain/complaint-state'
 import { releaseOrderInventoryAllocations } from '@/lib/services/inventory-reservation'
 import {
   OrderStatus,
@@ -23,6 +28,7 @@ import {
   TxMethod,
   CancelActor,
   ComplaintStatus,
+  ComplaintResolutionType,
   Resolution,
   Role,
   ShipmentStatus,
@@ -577,10 +583,19 @@ export async function confirmRefundDone(input: {
         },
       })
 
-      // BR-05: Nếu đơn đang ở COMPLAINT, không còn khiếu nại OPEN và không còn refund pending, chuyển về COMPLETED
-      const [remainingOpenComplaints, remainingPendingRefunds] = await Promise.all([
+      // BR-05 / F02: Nếu đơn đang ở COMPLAINT, không còn khiếu nại active (OPEN/PROPOSED/UNDER_REVIEW) và không còn refund pending, chuyển về COMPLETED
+      const [remainingActiveComplaints, remainingPendingRefunds] = await Promise.all([
         tx.complaint.count({
-          where: { orderId: txRecord.orderId, status: ComplaintStatus.OPEN },
+          where: {
+            orderId: txRecord.orderId,
+            status: {
+              in: [
+                ComplaintStatus.OPEN,
+                ComplaintStatus.PROPOSED,
+                ComplaintStatus.UNDER_REVIEW,
+              ],
+            },
+          },
         }),
         tx.paymentTransaction.count({
           where: {
@@ -592,7 +607,7 @@ export async function confirmRefundDone(input: {
         }),
       ])
 
-      if (remainingOpenComplaints === 0 && remainingPendingRefunds === 0) {
+      if (remainingActiveComplaints === 0 && remainingPendingRefunds === 0) {
         await tx.order.update({
           where: { id: txRecord.orderId },
           data: { status: OrderStatus.COMPLETED },
@@ -887,13 +902,35 @@ export async function submitComplaint(input: {
 }
 
 /**
- * Admin giải quyết khiếu nại (Xác minh kg & chọn REFUND / REPLACE / REJECTED) (Mục 3.9 & Test Cases C1-C3)
+ * @deprecated Quy trình giải quyết đơn phương đã bị khóa theo chuẩn F02 Two-Way Complaint.
+ * Không cho phép Admin tự ý giải quyết tạo refund bỏ qua phản hồi 48h của khách hàng.
  */
-export async function resolveComplaint(input: {
+export async function resolveComplaint(_input: {
   complaintId: string
   verifiedGrams: number
   resolution: Resolution | 'REJECTED'
   adminNote?: string
+}): Promise<{ success: boolean; error?: string; message?: string }> {
+  void _input;
+  return {
+    success: false,
+    error:
+      'Quy trình giải quyết đơn phương đã bị khóa. Vui lòng sử dụng chức năng gửi đề xuất bồi thường (proposeComplaintResolution) theo chuẩn F02.',
+  }
+}
+
+/**
+ * Admin đưa ra Đề xuất bồi thường (Lần đầu hoặc Sau phúc tra) (F02: OPEN -> PROPOSED hoặc UNDER_REVIEW -> PROPOSED)
+ * - Tự động thiết lập thời hạn phản hồi 48 giờ (reviewDueAt = proposedAt + 48h)
+ * - Đánh dấu isFinalProposal = true nếu đang trong quy trình phúc tra
+ * - TUYỆT ĐỐI KHÔNG sinh Transaction hoàn tiền ở thời điểm đề xuất (Phòng ngừa thất thoát tài chính)
+ */
+export async function proposeComplaintResolution(input: {
+  complaintId: string
+  proposalType: ComplaintResolutionType
+  proposalAmount?: number
+  verifiedGrams?: number
+  proposalNotes?: string
 }) {
   try {
     const admin = await requireAdmin()
@@ -904,108 +941,134 @@ export async function resolveComplaint(input: {
         order: {
           include: {
             items: true,
-            transactions: true,
           },
         },
       },
     })
 
-    if (!complaint) return { success: false, error: 'Không tìm thấy khiếu nại' }
-
-    const targetItem = complaint.order.items.find((i) => i.id === complaint.orderItemId)
-    if (!targetItem) {
-      return { success: false, error: 'Không tìm thấy sản phẩm khiếu nại' }
+    if (!complaint) {
+      return { success: false, error: 'Không tìm thấy khiếu nại' }
     }
 
-    const actualGrams = targetItem.actualGrams ?? targetItem.orderedGrams
-    let compensation = 0
+    if (
+      complaint.status !== ComplaintStatus.OPEN &&
+      complaint.status !== ComplaintStatus.UNDER_REVIEW
+    ) {
+      return {
+        success: false,
+        error: 'Chỉ có thể đưa ra đề xuất cho khiếu nại đang Mở (OPEN) hoặc đang Phúc tra (UNDER_REVIEW)',
+      }
+    }
 
-    if (input.resolution === Resolution.REFUND) {
-      const compCalc = computeComplaintCompensation({
-        actualGrams,
-        damagedGrams: input.verifiedGrams,
-        unitPricePerKg: targetItem.unitPricePerKg,
-      })
-      compensation = compCalc.compensation
+    if (input.proposalType === ComplaintResolutionType.REPLACE_GOODS) {
+      return {
+        success: false,
+        error:
+          'Hình thức bù hàng chuyến sau (REPLACE_GOODS) chưa được hỗ trợ xử lý tự động trong phiên bản hiện tại (chưa có quy trình giữ tồn kho/tạo đơn bù Phase 8). Vui lòng chọn Hoàn tiền (REFUND_MONEY) hoặc Từ chối khiếu nại (REJECT_COMPLAINT).',
+      }
+    }
+
+    // Đánh dấu đề xuất cuối cùng nếu khiếu nại đang ở vòng phúc tra
+    const isFinalProposal =
+      complaint.status === ComplaintStatus.UNDER_REVIEW || complaint.reReviewCount >= 1
+
+    let proposalAmount = 0
+    if (input.proposalType === ComplaintResolutionType.REFUND_MONEY) {
+      if (input.proposalAmount !== undefined && input.proposalAmount >= 0) {
+        proposalAmount = Math.round(input.proposalAmount)
+      } else if (input.verifiedGrams !== undefined && input.verifiedGrams > 0) {
+        const targetItem = complaint.order.items.find((i) => i.id === complaint.orderItemId)
+        if (!targetItem) {
+          return { success: false, error: 'Không tìm thấy sản phẩm khiếu nại trong đơn hàng' }
+        }
+        const actualGrams = targetItem.actualGrams ?? targetItem.orderedGrams
+        const compCalc = computeComplaintCompensation({
+          actualGrams,
+          damagedGrams: input.verifiedGrams,
+          unitPricePerKg: targetItem.unitPricePerKg,
+        })
+        proposalAmount = compCalc.compensation
+      } else {
+        return {
+          success: false,
+          error: 'Hình thức hoàn tiền yêu cầu cung cấp số tiền bồi thường hoặc khối lượng hao hụt xác nhận hợp lệ',
+        }
+      }
+    }
+
+    const proposedAt = new Date()
+    const reviewDueAt = calculateReviewDeadline(proposedAt)
+
+    const stateCheck = canTransitionComplaint(
+      {
+        status: complaint.status,
+        reReviewCount: complaint.reReviewCount,
+        isFinalProposal: complaint.isFinalProposal,
+        reviewDueAt: complaint.reviewDueAt,
+      },
+      ComplaintStatus.PROPOSED,
+      'ADMIN',
+      {
+        now: proposedAt,
+        proposalType: input.proposalType,
+        proposalAmount,
+        verifiedGrams: input.verifiedGrams,
+      }
+    )
+
+    if (!stateCheck.ok) {
+      return { success: false, error: stateCheck.reason || 'Không thể gửi đề xuất bồi thường' }
     }
 
     await db.$transaction(async (tx) => {
-      // Cập nhật trạng thái Complaint
-      const isRejected = input.resolution === 'REJECTED'
       await tx.complaint.update({
         where: { id: complaint.id },
         data: {
-          status: isRejected ? ComplaintStatus.REJECTED : ComplaintStatus.RESOLVED,
-          resolution: isRejected ? null : (input.resolution as Resolution),
-          verifiedGrams: input.verifiedGrams,
-          compensation: compensation > 0 ? compensation : null,
-          adminNote: input.adminNote?.trim() || null,
-          resolvedAt: new Date(),
+          status: ComplaintStatus.PROPOSED,
+          proposalType: input.proposalType,
+          proposalAmount,
+          proposalNotes: input.proposalNotes?.trim() || null,
+          verifiedGrams: input.verifiedGrams ?? complaint.verifiedGrams,
+          proposedAt,
+          reviewDueAt,
+          isFinalProposal,
         },
       })
 
-      // Nếu có bồi hoàn tiền (REFUND)
-      if (compensation > 0) {
-        await tx.paymentTransaction.create({
-          data: {
-            orderId: complaint.orderId,
-            type: TxType.REFUND,
-            status: TxStatus.PENDING,
-            method: TxMethod.BANK_TRANSFER,
-            amount: compensation,
-            note: `Khoản bồi hoàn khiếu nại hao hụt (${compensation.toLocaleString('vi-VN')} đ cho ${(input.verifiedGrams / 1000).toLocaleString('vi-VN')} kg)`,
-          },
-        })
-      }
-
-      // BR-05: Khiếu nại bị từ chối hoặc bù hàng (không tạo hoàn tiền pending):
-      // Nếu không còn khiếu nại OPEN nào khác trên đơn, đơn được quay lại COMPLETED ngay!
-      if (isRejected || input.resolution === Resolution.REPLACE) {
-        const remainingOpenComplaints = await tx.complaint.count({
-          where: {
-            orderId: complaint.orderId,
-            id: { not: complaint.id },
-            status: ComplaintStatus.OPEN,
-          },
-        })
-
-        if (remainingOpenComplaints === 0) {
-          await tx.order.update({
-            where: { id: complaint.orderId },
-            data: { status: OrderStatus.COMPLETED },
-          })
-        }
-      }
-
-      // Ghi OrderEvent
+      // TUYỆT ĐỐI KHÔNG TẠO REFUND TRANSACTION Ở ĐÂY.
+      // Chỉ ghi nhận OrderEvent phục vụ Audit Log
       await recordOrderEvent(tx, {
         orderId: complaint.orderId,
-        type: 'COMPLAINT_RESOLVED',
+        type: 'COMPLAINT_PROPOSED',
         actorId: admin.id,
-        note: `Admin xử lý khiếu nại: ${
-          isRejected
-            ? `Từ chối khiếu nại (${input.adminNote || 'Không thỏa điều kiện'})`
-            : input.resolution === Resolution.REFUND
-            ? `Chấp nhận bồi hoàn ${compensation.toLocaleString('vi-VN')} đ (Hao hụt xác nhận ${(input.verifiedGrams / 1000).toLocaleString('vi-VN')} kg)`
-            : `Đồng ý bù hàng ${((input.verifiedGrams) / 1000).toLocaleString('vi-VN')} kg ở chuyến sau`
-        }`,
+        note: `Admin gửi ${isFinalProposal ? 'phương án bồi thường cuối cùng' : 'đề xuất bồi thường'}: ${
+          input.proposalType === ComplaintResolutionType.REFUND_MONEY
+            ? `Hoàn tiền ${proposalAmount.toLocaleString('vi-VN')} đ`
+            : input.proposalType === ComplaintResolutionType.REPLACE_GOODS
+            ? 'Bù hàng chuyến sau'
+            : 'Từ chối bồi thường'
+        }. Hạn phản hồi: 48 giờ.`,
         payload: {
           complaintId: complaint.id,
-          resolution: input.resolution,
+          proposalType: input.proposalType,
+          proposalAmount,
           verifiedGrams: input.verifiedGrams,
-          compensation,
+          reviewDueAt: reviewDueAt.toISOString(),
+          isFinalProposal,
         },
       })
     })
 
+    // Gửi email thông báo đề xuất bồi thường cho khách hàng (Fail-safe, Phase 9)
     try {
       await sendOrderNotification({
-        type: 'COMPLAINT_RESOLVED',
+        type: 'COMPLAINT_PROPOSED',
         orderId: complaint.orderId,
         complaintId: complaint.id,
+        isFinalProposal,
       })
-    } catch (err) {
-      console.error('[resolveComplaint] Failed to send complaint resolved notification:', err)
+    } catch (emailErr) {
+      console.error('[proposeComplaintResolution] Gửi email thông báo đề xuất thất bại:', emailErr)
     }
 
     revalidatePath('/admin/khieu-nai')
@@ -1015,13 +1078,426 @@ export async function resolveComplaint(input: {
 
     return {
       success: true,
-      message: `Đã xử lý khiếu nại thành công (${input.resolution}). ${compensation > 0 ? `Lệnh bồi hoàn ${compensation.toLocaleString('vi-VN')} đ đã được tạo.` : ''}`,
+      message: `Đã gửi đề xuất bồi thường thành công. Hạn phản hồi: ${reviewDueAt.toLocaleString('vi-VN')}.`,
+      data: {
+        complaintId: complaint.id,
+        reviewDueAt: reviewDueAt.toISOString(),
+        isFinalProposal,
+      },
     }
   } catch (error) {
-    console.error('Error resolving complaint:', error)
+    console.error('Error proposing complaint resolution:', error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Xử lý khiếu nại thất bại',
+      error: error instanceof Error ? error.message : 'Gửi đề xuất bồi thường thất bại',
+    }
+  }
+}
+
+/**
+ * Khách hàng phản hồi đề xuất bồi thường (F02: PROPOSED -> CUSTOMER_ACCEPTED / UNDER_REVIEW / WITHDRAWN)
+ * - Xác thực quyền sở hữu đơn hàng của người dùng hiện tại
+ * - Kiểm tra nghiêm ngặt thời hạn 48 giờ (reviewDueAt)
+ * - Phúc tra tối đa 1 lần duy nhất (reReviewCount = 0 -> 1) có khóa chống xung đột đồng thời
+ * - BẢO VỆ TÀI CHÍNH BATCH B1: Khóa an toàn persistent finalization (hoàn tiền / tất toán / rút)
+ */
+export async function respondToComplaintProposal(input: {
+  complaintId: string
+  decision: 'ACCEPT' | 'REQUEST_REVIEW' | 'WITHDRAW'
+  reason?: string
+}) {
+  try {
+    const session = await getServerAuthSession()
+    if (!session?.user) {
+      return { success: false, error: 'Vui lòng đăng nhập để phản hồi đề xuất' }
+    }
+
+    const complaint = await db.complaint.findUnique({
+      where: { id: input.complaintId },
+      include: {
+        order: true,
+      },
+    })
+
+    if (!complaint) {
+      return { success: false, error: 'Không tìm thấy khiếu nại' }
+    }
+
+    // Xác thực quyền sở hữu: chỉ chủ đơn hàng hoặc Admin mới có quyền phản hồi
+    if (complaint.order.userId !== session.user.id && session.user.role !== Role.ADMIN) {
+      return { success: false, error: 'Bạn không có quyền phản hồi khiếu nại của đơn hàng này' }
+    }
+
+    if (complaint.status !== ComplaintStatus.PROPOSED) {
+      return {
+        success: false,
+        error: `Khiếu nại đang ở trạng thái ${complaint.status}, không thể phản hồi đề xuất`,
+      }
+    }
+
+    const now = new Date()
+
+    // Kiểm tra thời hạn 48 giờ
+    if (isComplaintProposalExpired(complaint.reviewDueAt, now)) {
+      return {
+        success: false,
+        error: 'Thời hạn phản hồi 48 giờ cho đề xuất này đã kết thúc',
+      }
+    }
+
+    // 1. Khách hàng yêu cầu Phúc tra (UNDER_REVIEW)
+    if (input.decision === 'REQUEST_REVIEW') {
+      const stateCheck = canTransitionComplaint(
+        {
+          status: complaint.status,
+          reReviewCount: complaint.reReviewCount,
+          isFinalProposal: complaint.isFinalProposal,
+          reviewDueAt: complaint.reviewDueAt,
+        },
+        ComplaintStatus.UNDER_REVIEW,
+        'CUSTOMER',
+        {
+          now,
+          reason: input.reason,
+        }
+      )
+
+      if (!stateCheck.ok) {
+        return { success: false, error: stateCheck.reason || 'Không thể yêu cầu phúc tra' }
+      }
+
+      await db.$transaction(async (tx) => {
+        // Khóa điều kiện an toàn chống race condition (chỉ cập nhật nếu reReviewCount vẫn là 0)
+        const updateRes = await tx.complaint.updateMany({
+          where: {
+            id: complaint.id,
+            status: ComplaintStatus.PROPOSED,
+            reReviewCount: 0,
+            isFinalProposal: false,
+          },
+          data: {
+            status: ComplaintStatus.UNDER_REVIEW,
+            reReviewCount: 1,
+            reReviewReason: input.reason!.trim(),
+            reReviewedAt: now,
+          },
+        })
+
+        if (updateRes.count === 0) {
+          throw new Error(
+            'Yêu cầu phúc tra thất bại: khiếu nại đã được xử lý hoặc đã vượt quá số lần phúc tra cho phép'
+          )
+        }
+
+        await recordOrderEvent(tx, {
+          orderId: complaint.orderId,
+          type: 'COMPLAINT_RE_REVIEW_REQUESTED',
+          actorId: session.user.id,
+          note: `Khách hàng yêu cầu phúc tra khiếu nại: ${input.reason!.trim()}`,
+          payload: {
+            complaintId: complaint.id,
+            reReviewCount: 1,
+            reason: input.reason!.trim(),
+            requestedAt: now.toISOString(),
+          },
+        })
+      })
+
+      revalidatePath(`/tai-khoan/don-hang/${complaint.order.code}`)
+      revalidatePath('/admin/khieu-nai')
+      revalidatePath(`/admin/don-hang/${complaint.order.code}`)
+
+      return {
+        success: true,
+        message: 'Đã gửi yêu cầu phúc tra tới Ban Quản Trị thành công',
+      }
+    }
+
+    // 2. Khách hàng Đồng ý (ACCEPT) — HOÀN THIỆN TẤT TOÁN TÀI CHÍNH BATCH B2
+    if (input.decision === 'ACCEPT') {
+      const stateCheck = canTransitionComplaint(
+        {
+          status: complaint.status,
+          reReviewCount: complaint.reReviewCount,
+          isFinalProposal: complaint.isFinalProposal,
+          reviewDueAt: complaint.reviewDueAt,
+        },
+        ComplaintStatus.CUSTOMER_ACCEPTED,
+        'CUSTOMER',
+        { now }
+      )
+
+      if (!stateCheck.ok) {
+        return { success: false, error: stateCheck.reason || 'Không thể chấp thuận đề xuất' }
+      }
+
+      let createdRefundId: string | null = null
+
+      await db.$transaction(async (tx) => {
+        // Khóa điều kiện an toàn: Đảm bảo khiếu nại vẫn là PROPOSED và còn trong hạn 48h
+        const updateRes = await tx.complaint.updateMany({
+          where: {
+            id: complaint.id,
+            status: ComplaintStatus.PROPOSED,
+            reviewDueAt: { gt: now },
+          },
+          data: {
+            status: ComplaintStatus.CUSTOMER_ACCEPTED,
+            customerAcceptedAt: now,
+            resolvedAt: now,
+            resolution:
+              complaint.proposalType === ComplaintResolutionType.REFUND_MONEY
+                ? Resolution.REFUND
+                : complaint.proposalType === ComplaintResolutionType.REPLACE_GOODS
+                ? Resolution.REPLACE
+                : null,
+            compensation: complaint.proposalAmount ?? 0,
+          },
+        })
+
+        if (updateRes.count === 0) {
+          throw new Error(
+            'Chấp thuận đề xuất thất bại: thời hạn 48 giờ đã kết thúc hoặc trạng thái khiếu nại đã thay đổi'
+          )
+        }
+
+        // Nếu phương án là hoàn tiền (REFUND_MONEY) và có số tiền bồi thường > 0:
+        if (
+          complaint.proposalType === ComplaintResolutionType.REFUND_MONEY &&
+          complaint.proposalAmount &&
+          complaint.proposalAmount > 0
+        ) {
+          // Idempotency: Kiểm tra xem đã có bản ghi REFUND nào gắn với khiếu nại này chưa
+          const existingRefund = await tx.paymentTransaction.findFirst({
+            where: {
+              orderId: complaint.orderId,
+              type: TxType.REFUND,
+              reference: `COMPLAINT_${complaint.id}`,
+            },
+          })
+
+          if (!existingRefund) {
+            const newTx = await tx.paymentTransaction.create({
+              data: {
+                orderId: complaint.orderId,
+                type: TxType.REFUND,
+                status: TxStatus.PENDING,
+                method: TxMethod.BANK_TRANSFER,
+                amount: complaint.proposalAmount,
+                reference: `COMPLAINT_${complaint.id}`,
+                note: `Khoản bồi hoàn khiếu nại (${complaint.proposalAmount.toLocaleString('vi-VN')} đ) được khách chấp thuận`,
+              },
+            })
+            createdRefundId = newTx.id
+          } else {
+            createdRefundId = existingRefund.id
+          }
+
+          // CHÚ Ý AN TOÀN TÀI CHÍNH PH9-00:
+          // Vì có giao dịch hoàn tiền PENDING, đơn hàng KHÔNG chuyển sang COMPLETED ở đây!
+          // Doanh thu đơn hàng tiếp tục bị đóng băng cho tới khi Admin thực hiện chuyển khoản và xác nhận confirmRefundDone().
+        } else {
+          // Đối với REPLACE_GOODS hoặc REJECT_COMPLAINT: Không tạo transaction hoàn tiền
+          // Kiểm tra xem đơn hàng còn khiếu nại active nào khác hoặc refund pending nào không
+          const [remainingActiveComplaints, remainingPendingRefunds] = await Promise.all([
+            tx.complaint.count({
+              where: {
+                orderId: complaint.orderId,
+                id: { not: complaint.id },
+                status: {
+                  in: [
+                    ComplaintStatus.OPEN,
+                    ComplaintStatus.PROPOSED,
+                    ComplaintStatus.UNDER_REVIEW,
+                  ],
+                },
+              },
+            }),
+            tx.paymentTransaction.count({
+              where: {
+                orderId: complaint.orderId,
+                type: TxType.REFUND,
+                status: TxStatus.PENDING,
+              },
+            }),
+          ])
+
+          if (remainingActiveComplaints === 0 && remainingPendingRefunds === 0) {
+            await tx.order.update({
+              where: { id: complaint.orderId },
+              data: { status: OrderStatus.COMPLETED },
+            })
+          }
+        }
+
+        // Ghi Audit Event
+        await recordOrderEvent(tx, {
+          orderId: complaint.orderId,
+          type: 'COMPLAINT_ACCEPTED',
+          actorId: session.user.id,
+          note: `Khách hàng đã đồng ý với đề xuất bồi thường (${
+            complaint.proposalType === ComplaintResolutionType.REFUND_MONEY
+              ? `Hoàn tiền ${(complaint.proposalAmount || 0).toLocaleString('vi-VN')} đ`
+              : complaint.proposalType === ComplaintResolutionType.REPLACE_GOODS
+              ? 'Bù hàng chuyến sau'
+              : 'Từ chối bồi thường'
+          })`,
+          payload: {
+            complaintId: complaint.id,
+            proposalType: complaint.proposalType,
+            proposalAmount: complaint.proposalAmount,
+            refundTransactionId: createdRefundId,
+            acceptedAt: now.toISOString(),
+          },
+        })
+      })
+
+      revalidatePath(`/tai-khoan/don-hang/${complaint.order.code}`)
+      revalidatePath('/admin/khieu-nai')
+      revalidatePath(`/admin/don-hang/${complaint.order.code}`)
+
+      return {
+        success: true,
+        message: 'Đã chấp thuận đề xuất bồi thường thành công',
+        data: {
+          complaintId: complaint.id,
+          status: ComplaintStatus.CUSTOMER_ACCEPTED,
+          refundTransactionId: createdRefundId,
+        },
+      }
+    }
+
+    // 3. Khách hàng Rút khiếu nại (WITHDRAW) — HOÀN THIỆN BATCH B2
+    if (input.decision === 'WITHDRAW') {
+      const stateCheck = canTransitionComplaint(
+        {
+          status: complaint.status,
+          reReviewCount: complaint.reReviewCount,
+          isFinalProposal: complaint.isFinalProposal,
+          reviewDueAt: complaint.reviewDueAt,
+        },
+        ComplaintStatus.WITHDRAWN,
+        'CUSTOMER',
+        { now }
+      )
+
+      if (!stateCheck.ok) {
+        return { success: false, error: stateCheck.reason || 'Không thể rút khiếu nại' }
+      }
+
+      await db.$transaction(async (tx) => {
+        const updateRes = await tx.complaint.updateMany({
+          where: {
+            id: complaint.id,
+            status: {
+              in: [
+                ComplaintStatus.PROPOSED,
+                ComplaintStatus.OPEN,
+                ComplaintStatus.UNDER_REVIEW,
+              ],
+            },
+          },
+          data: {
+            status: ComplaintStatus.WITHDRAWN,
+            compensation: 0,
+            resolution: null,
+          },
+        })
+
+        if (updateRes.count === 0) {
+          throw new Error('Rút khiếu nại thất bại: khiếu nại đã được xử lý hoặc trạng thái đã thay đổi')
+        }
+
+        // Kiểm tra xem đơn hàng còn khiếu nại active nào khác hoặc refund pending nào không
+        const [remainingActiveComplaints, remainingPendingRefunds] = await Promise.all([
+          tx.complaint.count({
+            where: {
+              orderId: complaint.orderId,
+              id: { not: complaint.id },
+              status: {
+                in: [
+                  ComplaintStatus.OPEN,
+                  ComplaintStatus.PROPOSED,
+                  ComplaintStatus.UNDER_REVIEW,
+                ],
+              },
+            },
+          }),
+          tx.paymentTransaction.count({
+            where: {
+              orderId: complaint.orderId,
+              type: TxType.REFUND,
+              status: TxStatus.PENDING,
+            },
+          }),
+        ])
+
+        if (remainingActiveComplaints === 0 && remainingPendingRefunds === 0) {
+          await tx.order.update({
+            where: { id: complaint.orderId },
+            data: { status: OrderStatus.COMPLETED },
+          })
+        }
+
+        // Ghi Audit Event
+        await recordOrderEvent(tx, {
+          orderId: complaint.orderId,
+          type: 'COMPLAINT_WITHDRAWN',
+          actorId: session.user.id,
+          note: 'Khách hàng đã tự nguyện rút khiếu nại. Khoản bồi thường: 0 đ.',
+          payload: {
+            complaintId: complaint.id,
+            withdrawnAt: now.toISOString(),
+          },
+        })
+      })
+
+      revalidatePath(`/tai-khoan/don-hang/${complaint.order.code}`)
+      revalidatePath('/admin/khieu-nai')
+      revalidatePath(`/admin/don-hang/${complaint.order.code}`)
+
+      return {
+        success: true,
+        message: 'Đã rút khiếu nại thành công',
+        data: {
+          complaintId: complaint.id,
+          status: ComplaintStatus.WITHDRAWN,
+        },
+      }
+    }
+
+    return { success: false, error: 'Lựa chọn phản hồi không hợp lệ' }
+  } catch (error) {
+    console.error('Error responding to complaint proposal:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Phản hồi đề xuất thất bại',
+    }
+  }
+}
+
+
+/**
+ * Server Action tự động rút toàn bộ khiếu nại quá thời hạn 48 giờ.
+ * Có thể kích hoạt từ Admin giao diện hoặc Background Cron Job.
+ */
+export async function autoWithdrawExpiredComplaints(targetTime?: Date) {
+  try {
+    const { processExpiredComplaintProposals } = await import('@/lib/services/complaint-sla')
+    const result = await processExpiredComplaintProposals(targetTime ?? new Date())
+    revalidatePath('/admin/khieu-nai')
+    return {
+      success: true,
+      processedCount: result.processedCount,
+      complaintIds: result.complaintIds,
+    }
+  } catch (error) {
+    console.error('Error auto-withdrawing expired complaints:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Tự động rút khiếu nại thất bại',
+      processedCount: 0,
+      complaintIds: [],
     }
   }
 }

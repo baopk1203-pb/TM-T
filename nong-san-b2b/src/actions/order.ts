@@ -3,6 +3,7 @@
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireUser } from '@/lib/auth'
+import { MembershipTier, resolveEffectiveMembershipTier } from '@/lib/domain/membership'
 import {
   priceCart,
   ProductPricingData,
@@ -123,6 +124,13 @@ export async function calculateShippingQuoteAction(input: CalculateShippingQuote
       }
     }
 
+    const userForShipping = (await db.user.findUnique({
+      where: { id: sessionUser.id },
+    })) as unknown as { role?: string; membershipTier?: MembershipTier | null } | null
+    const effectiveTier = resolveEffectiveMembershipTier(
+      userForShipping as unknown as { role?: string; membershipTier?: MembershipTier | null }
+    )
+
     const shippingCalculator = createDynamicShippingCalculator()
     const quote = await shippingCalculator.quote({
       totalGrams,
@@ -133,6 +141,7 @@ export async function calculateShippingQuoteAction(input: CalculateShippingQuote
       addressText: `${address.line}, ${address.ward}, ${address.district}, ${address.province}`,
       district: address.district,
       province: address.province,
+      membershipTier: effectiveTier,
     })
 
     return {
@@ -159,7 +168,7 @@ export async function calculateShippingQuoteAction(input: CalculateShippingQuote
  * 7. Kiểm tra năng lực cung ứng theo tuần (checkCapacity)
  * 8. Tính phí vận chuyển (zeroShippingCalculator ở Phase 4)
  * 9. Tính số tiền cọc (computeDepositAmount)
- * 10. Sinh mã đơn DH-YYMMDD-XXXX không trùng, paymentDueAt = now + 24h
+ * 10. Sinh mã đơn DH-YYMMDD-XXXX không trùng, paymentDueAt = now + 10 phút (EV-IMP-01C)
  * 11. Ghi OrderEvent ORDER_CREATED
  */
 export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
@@ -182,6 +191,9 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
           throw new Error('Không tìm thấy thông tin tài khoản người dùng')
         }
 
+        const effectiveTier = resolveEffectiveMembershipTier(
+          user as unknown as { role?: string; membershipTier?: MembershipTier | null }
+        )
         const groupDiscountPercent = user.group?.discountPercent ?? 0
 
         // 3. Kiểm tra địa chỉ giao hàng
@@ -290,6 +302,7 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
           lines: validated.lines,
           products: pricingProducts,
           groupDiscountPercent,
+          membershipTier: effectiveTier,
         })
 
         if (!quote.isValid || quote.errors.length > 0) {
@@ -405,6 +418,7 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
           addressText: `${address.line}, ${address.ward}, ${address.district}, ${address.province}`,
           district: address.district,
           province: address.province,
+          membershipTier: effectiveTier,
         })
 
         if (!shippingQuote.allowed) {
@@ -414,6 +428,8 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
           )
         }
 
+        const baseShippingFee = shippingQuote.baseShippingFee ?? shippingQuote.fee
+        const shippingDiscountAmount = shippingQuote.membershipShippingDiscount ?? 0
         const shippingFee = shippingQuote.fee
         const subtotal = quote.subtotal
         const total = subtotal + shippingFee
@@ -493,6 +509,11 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
             depositAmount,
             paymentDueAt,
             customerNote: validated.customerNote || null,
+            membershipTierSnapshot: effectiveTier,
+            membershipDiscountPercent: quote.membershipDiscountPercent,
+            combinedDiscountPercent: quote.combinedDiscountPercent,
+            baseShippingFee,
+            shippingDiscountAmount,
             items: {
               create: orderItemCreateInputs,
             },
@@ -524,13 +545,26 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
           now,
         })
 
-        // 13. Ghi vết sự kiện ORDER_CREATED
+        // 13. Ghi vết sự kiện ORDER_CREATED kèm financial snapshot
         await recordOrderEvent(tx, {
           orderId: order.id,
           type: 'ORDER_CREATED',
           toStatus: OrderStatus.PENDING_CONFIRMATION,
           actorId: user.id,
           note: `Khách hàng ${user.fullName} đặt hàng thành công qua website`,
+          payload: {
+            membershipSnapshot: {
+              membershipTier: effectiveTier,
+              membershipDiscountPercent: quote.membershipDiscountPercent,
+              groupDiscountPercent,
+              combinedDiscountPercent: quote.combinedDiscountPercent,
+              baseShippingFee,
+              shippingDiscountAmount,
+              finalShippingFee: shippingFee,
+              subtotal,
+              total,
+            },
+          },
         })
 
         return {

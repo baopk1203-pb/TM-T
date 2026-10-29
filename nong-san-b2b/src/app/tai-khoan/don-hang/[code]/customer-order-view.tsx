@@ -20,6 +20,9 @@ import {
   Sparkles,
   Truck,
   Phone,
+  Clock,
+  RotateCcw,
+  FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -37,7 +40,7 @@ import {
 } from '@/components/ui/dialog'
 import { formatVND } from '@/lib/money'
 import { formatVietnamDate, formatVietnamDateTime } from '@/lib/utils'
-import { cancelOrder, submitComplaint } from '@/actions/order-lifecycle'
+import { cancelOrder, submitComplaint, respondToComplaintProposal } from '@/actions/order-lifecycle'
 import { confirmRecurringDraft, createRecurringFromOrder } from '@/actions/recurring'
 import { customerDecidePreorder } from '@/actions/preorder'
 import { checkPriceBand } from '@/lib/domain/preorder'
@@ -131,6 +134,17 @@ export interface CustomerOrderData {
     resolution: string | null
     compensation: number | null
     createdAt: string
+    proposalType?: string | null
+    proposalAmount?: number | null
+    proposalNotes?: string | null
+    proposedAt?: string | null
+    reviewDueAt?: string | null
+    customerAcceptedAt?: string | null
+    reReviewCount?: number
+    reReviewReason?: string | null
+    reReviewedAt?: string | null
+    isFinalProposal?: boolean
+    autoClosedAt?: string | null
   }[]
   paidAmount: number
   remainingAmount: number
@@ -156,6 +170,101 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
   // Dialogs
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
+
+  // F02 Two-way complaint response state
+  const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null)
+  const [acceptDialogOpen, setAcceptDialogOpen] = useState(false)
+  const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false)
+  const [appealDialogOpen, setAppealDialogOpen] = useState(false)
+  const [appealReason, setAppealReason] = useState('')
+
+  const handleOpenAcceptDialog = (complaintId: string) => {
+    setSelectedComplaintId(complaintId)
+    setAcceptDialogOpen(true)
+  }
+
+  const handleOpenWithdrawDialog = (complaintId: string) => {
+    setSelectedComplaintId(complaintId)
+    setWithdrawDialogOpen(true)
+  }
+
+  const handleOpenAppealDialog = (complaintId: string) => {
+    setSelectedComplaintId(complaintId)
+    setAppealReason('')
+    setAppealDialogOpen(true)
+  }
+
+  const handleConfirmAccept = () => {
+    if (!selectedComplaintId) return
+    startTransition(async () => {
+      try {
+        const res = await respondToComplaintProposal({
+          complaintId: selectedComplaintId,
+          decision: 'ACCEPT',
+        })
+        if (res.success) {
+          toast.success(res.message || 'Đã chấp nhận đề xuất giải quyết')
+          setAcceptDialogOpen(false)
+          setSelectedComplaintId(null)
+          router.refresh()
+        } else {
+          toast.error(res.error || 'Có lỗi xảy ra khi chấp nhận đề xuất')
+        }
+      } catch {
+        toast.error('Lỗi khi chấp nhận đề xuất')
+      }
+    })
+  }
+
+  const handleConfirmWithdraw = () => {
+    if (!selectedComplaintId) return
+    startTransition(async () => {
+      try {
+        const res = await respondToComplaintProposal({
+          complaintId: selectedComplaintId,
+          decision: 'WITHDRAW',
+        })
+        if (res.success) {
+          toast.success(res.message || 'Đã rút khiếu nại thành công')
+          setWithdrawDialogOpen(false)
+          setSelectedComplaintId(null)
+          router.refresh()
+        } else {
+          toast.error(res.error || 'Có lỗi xảy ra khi rút khiếu nại')
+        }
+      } catch {
+        toast.error('Lỗi khi rút khiếu nại')
+      }
+    })
+  }
+
+  const handleConfirmAppeal = () => {
+    if (!selectedComplaintId) return
+    if (!appealReason.trim() || appealReason.trim().length < 10) {
+      toast.error('Vui lòng nêu rõ lý do phúc tra chi tiết (tối thiểu 10 ký tự)')
+      return
+    }
+    startTransition(async () => {
+      try {
+        const res = await respondToComplaintProposal({
+          complaintId: selectedComplaintId,
+          decision: 'REQUEST_REVIEW',
+          reason: appealReason.trim(),
+        })
+        if (res.success) {
+          toast.success(res.message || 'Đã gửi yêu cầu phúc tra thành công')
+          setAppealDialogOpen(false)
+          setSelectedComplaintId(null)
+          setAppealReason('')
+          router.refresh()
+        } else {
+          toast.error(res.error || 'Có lỗi xảy ra khi gửi yêu cầu phúc tra')
+        }
+      } catch {
+        toast.error('Lỗi khi gửi yêu cầu phúc tra')
+      }
+    })
+  }
 
   const [complaintDialogOpen, setComplaintDialogOpen] = useState(false)
   const [selectedItemId, setSelectedItemId] = useState(order.items[0]?.id || '')
@@ -931,7 +1040,7 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
             </div>
           </Card>
 
-          {/* Complaints filed by customer */}
+          {/* Complaints filed by customer (F02 Two-Way Workflow) */}
           {order.complaints.length > 0 && (
             <Card className="border-rose-200 bg-rose-50/20 shadow-sm">
               <CardHeader className="pb-3 border-b border-rose-100">
@@ -940,34 +1049,213 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
                   Khiếu nại của bạn ({order.complaints.length})
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-4 space-y-3 text-xs">
-                {order.complaints.map((c) => (
-                  <div key={c.id} className="p-3 bg-white rounded-xl border border-rose-200 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-800">
-                        Báo hao hụt: {(c.reportedGrams / 1000).toLocaleString('vi-VN')} kg
-                      </span>
-                      <Badge
-                        variant="outline"
-                        className={
-                          c.status === 'RESOLVED'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                            : c.status === 'REJECTED'
-                            ? 'bg-rose-50 text-rose-700 border-rose-300'
-                            : 'bg-amber-50 text-amber-800 border-amber-300'
-                        }
-                      >
-                        {c.status === 'RESOLVED' ? 'ĐÃ BỒI HOÀN' : c.status === 'REJECTED' ? 'TỪ CHỐI' : 'CHỜ XỬ LÝ'}
-                      </Badge>
-                    </div>
-                    <p className="text-slate-600">{c.description}</p>
-                    {c.compensation && (
-                      <div className="text-emerald-800 font-bold text-xs pt-1">
-                        Khoản bồi hoàn: {formatVND(c.compensation)} ({c.resolution})
+              <CardContent className="p-4 space-y-4 text-xs">
+                {order.complaints.map((c) => {
+                  const isProposed = c.status === 'PROPOSED'
+                  const isUnderReview = c.status === 'UNDER_REVIEW'
+                  const isAccepted = c.status === 'CUSTOMER_ACCEPTED'
+                  const isWithdrawn = c.status === 'WITHDRAWN'
+                  const isResolved = c.status === 'RESOLVED'
+                  const isRejected = c.status === 'REJECTED'
+                  const canAppeal = !c.isFinalProposal && (c.reReviewCount ?? 0) === 0
+
+                  return (
+                    <div
+                      key={c.id}
+                      className="p-4 bg-white rounded-xl border border-rose-200 shadow-xs space-y-3"
+                    >
+                      {/* Tiêu đề & Trạng thái */}
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <div>
+                          <span className="font-bold text-slate-800 text-sm">
+                            Hao hụt báo cáo: {(c.reportedGrams / 1000).toLocaleString('vi-VN')} kg
+                          </span>
+                          {c.verifiedGrams && (
+                            <span className="text-slate-500 ml-2">
+                              (Xác minh: {(c.verifiedGrams / 1000).toLocaleString('vi-VN')} kg)
+                            </span>
+                          )}
+                        </div>
+                        <ComplaintStatusBadge status={c.status} />
                       </div>
-                    )}
-                  </div>
-                ))}
+
+                      {/* Nội dung khiếu nại của khách */}
+                      <div className="bg-slate-50 p-2.5 rounded-lg text-slate-700">
+                        <span className="font-semibold text-slate-900">Mô tả của bạn: </span>
+                        {c.description}
+                      </div>
+
+                      {/* KHUNG ĐỀ XUẤT TỪ ADMIN (Khi ở trạng thái PROPOSED) */}
+                      {isProposed && (
+                        <div
+                          className={`p-3.5 rounded-xl border ${
+                            c.isFinalProposal
+                              ? 'bg-rose-50/50 border-rose-300'
+                              : 'bg-sky-50/60 border-sky-200'
+                          } space-y-2.5`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="font-bold text-xs flex items-center gap-1.5 text-slate-900">
+                              <FileText className="w-4 h-4 text-sky-600" />
+                              {c.isFinalProposal
+                                ? '⚠️ ĐỀ XUẤT CUỐI CÙNG TỪ ADMIN (SAU PHÚC TRA)'
+                                : '📋 PHƯƠNG ÁN BỒI THƯỜNG TỪ ADMIN'}
+                            </div>
+                            {c.reviewDueAt && <ProposalCountdown reviewDueAt={c.reviewDueAt} />}
+                          </div>
+
+                          <div className="text-xs space-y-1 text-slate-800">
+                            <div>
+                              <strong>Hình thức: </strong>
+                              {c.proposalType === 'REFUND_MONEY'
+                                ? 'Hoàn tiền bồi thường'
+                                : c.proposalType === 'REPLACE_GOODS'
+                                ? 'Bù hàng chuyến sau'
+                                : 'Từ chối bồi thường'}
+                            </div>
+
+                            {c.proposalType === 'REFUND_MONEY' && c.proposalAmount !== undefined && (
+                              <div className="text-emerald-700 font-bold text-sm">
+                                Số tiền bồi thường: {formatVND(c.proposalAmount || 0)}
+                              </div>
+                            )}
+
+                            {c.proposalNotes && (
+                              <div className="text-slate-600 bg-white/80 p-2 rounded border border-slate-200 mt-1">
+                                <strong>Ghi chú của Admin: </strong>
+                                {c.proposalNotes}
+                              </div>
+                            )}
+
+                            {c.reviewDueAt && (
+                              <div className="text-[11px] text-slate-500 pt-1">
+                                Hạn chót phản hồi: {formatVietnamDateTime(c.reviewDueAt)} (48 giờ)
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action Buttons for Customer */}
+                          <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs h-8"
+                              onClick={() => handleOpenAcceptDialog(c.id)}
+                              disabled={isPending}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                              Chấp nhận đề xuất
+                            </Button>
+
+                            {canAppeal ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="border-amber-300 text-amber-800 hover:bg-amber-50 font-semibold text-xs h-8"
+                                onClick={() => handleOpenAppealDialog(c.id)}
+                                disabled={isPending}
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                                Yêu cầu phúc tra (1 lần)
+                              </Button>
+                            ) : (
+                              <span className="text-[11px] text-slate-500 italic">
+                                (Đã qua 1 lần phúc tra tối đa)
+                              </span>
+                            )}
+
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="text-rose-600 hover:bg-rose-50 text-xs h-8 ml-auto"
+                              onClick={() => handleOpenWithdrawDialog(c.id)}
+                              disabled={isPending}
+                            >
+                              <XCircle className="w-3.5 h-3.5 mr-1" />
+                              Rút khiếu nại
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ĐANG PHÚC TRA (UNDER_REVIEW) */}
+                      {isUnderReview && (
+                        <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 text-purple-900 space-y-1.5">
+                          <div className="font-bold flex items-center gap-1.5">
+                            <RotateCcw className="w-4 h-4 text-purple-600" />
+                            Đang trong quá trình phúc tra lại (Vòng cuối)
+                          </div>
+                          {c.reReviewReason && (
+                            <div className="text-xs text-purple-800 bg-white/70 p-2 rounded border border-purple-200">
+                              <strong>Lý do phúc tra của bạn: </strong>
+                              {c.reReviewReason}
+                            </div>
+                          )}
+                          <p className="text-[11px] text-purple-700">
+                            Ban quản trị đang thẩm tra lại chứng từ và sẽ gửi lại phương án xử lý cuối cùng.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* ĐÃ CHẤP NHẬN (CUSTOMER_ACCEPTED) */}
+                      {isAccepted && (
+                        <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-900 space-y-1">
+                          <div className="font-bold flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            Bạn đã chấp nhận đề xuất giải quyết
+                          </div>
+                          {c.proposalType === 'REFUND_MONEY' && c.proposalAmount && (
+                            <div className="text-xs">
+                              Số tiền bồi thường phê duyệt: <strong>{formatVND(c.proposalAmount)}</strong> (Lệnh hoàn tiền đang được kế toán xử lý ủy nhiệm chi).
+                            </div>
+                          )}
+                          {c.customerAcceptedAt && (
+                            <div className="text-[11px] text-emerald-700">
+                              Thời điểm chấp nhận: {formatVietnamDateTime(c.customerAcceptedAt)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ĐÃ RÚT / QUÁ HẠN (WITHDRAWN) */}
+                      {isWithdrawn && (
+                        <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 text-slate-700 space-y-1">
+                          <div className="font-bold flex items-center gap-1.5 text-slate-800">
+                            <XCircle className="w-4 h-4 text-slate-500" />
+                            Khiếu nại đã đóng
+                          </div>
+                          <p className="text-xs">
+                            {c.autoClosedAt
+                              ? `Hệ thống tự động đóng khiếu nại vào lúc ${formatVietnamDateTime(
+                                  c.autoClosedAt
+                                )} do quá thời hạn phản hồi 48 giờ.`
+                              : 'Bạn đã chủ động rút khiếu nại này.'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* ĐÃ GIẢI QUYẾT (RESOLVED / REJECTED) */}
+                      {isResolved && (
+                        <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-900">
+                          <div className="font-bold">Đã tất toán & giải quyết hoàn tất</div>
+                          {c.compensation && (
+                            <div className="text-xs font-semibold">
+                              Khoản bồi hoàn: {formatVND(c.compensation)} ({c.resolution})
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {isRejected && (
+                        <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 text-rose-800 text-xs">
+                          <strong>Khiếu nại bị từ chối bồi thường.</strong>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </CardContent>
             </Card>
           )}
@@ -1304,6 +1592,128 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* F02 MODALS: ACCEPT, APPEAL, WITHDRAW */}
+      {/* Modal Chấp nhận đề xuất */}
+      <Dialog open={acceptDialogOpen} onOpenChange={setAcceptDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              Chấp nhận đề xuất bồi thường
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600 pt-1">
+              Bạn có chắc chắn đồng ý với phương án bồi thường do Ban quản trị đề xuất?
+              Sau khi chấp thuận, lệnh hoàn tiền/tất toán sẽ được kích hoạt tự động theo quy định.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setAcceptDialogOpen(false)}
+              disabled={isPending}
+              className="text-xs"
+            >
+              Xem lại
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleConfirmAccept}
+              disabled={isPending}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+            >
+              {isPending ? 'Đang xử lý...' : 'Đồng ý & Chấp nhận'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Yêu cầu phúc tra (REQUEST_REVIEW) */}
+      <Dialog open={appealDialogOpen} onOpenChange={setAppealDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <RotateCcw className="w-5 h-5 text-amber-600" />
+              Yêu cầu phúc tra khiếu nại (Tối đa 1 lần)
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600 pt-1">
+              Vui lòng nêu rõ lý do bạn không đồng ý với đề xuất hiện tại. Ban quản trị sẽ thẩm tra lại
+              và đưa ra phương án cuối cùng (không thể phúc tra thêm).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-2">
+            <Label className="text-xs font-semibold text-slate-700">Lý do yêu cầu phúc tra *</Label>
+            <Textarea
+              rows={4}
+              placeholder="Ví dụ: Hình ảnh chụp cho thấy tỷ lệ dập úng vượt quá 30% thùng, đề xuất hoàn 10% là chưa thỏa đáng..."
+              value={appealReason}
+              onChange={(e) => setAppealReason(e.target.value)}
+              className="text-xs resize-none"
+            />
+            <p className="text-[11px] text-slate-500">Tối thiểu 10 ký tự.</p>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setAppealDialogOpen(false)}
+              disabled={isPending}
+              className="text-xs"
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleConfirmAppeal}
+              disabled={isPending}
+              className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold"
+            >
+              {isPending ? 'Đang gửi...' : 'Gửi yêu cầu phúc tra'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Rút khiếu nại (WITHDRAW) */}
+      <Dialog open={withdrawDialogOpen} onOpenChange={setWithdrawDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <XCircle className="w-5 h-5 text-rose-600" />
+              Xác nhận rút khiếu nại
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600 pt-1">
+              Bạn có chắc chắn muốn rút khiếu nại này? Khiếu nại sau khi rút sẽ đóng vĩnh viễn và không thể mở lại.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setWithdrawDialogOpen(false)}
+              disabled={isPending}
+              className="text-xs"
+            >
+              Không rút
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={handleConfirmWithdraw}
+              disabled={isPending}
+              className="text-xs font-bold"
+            >
+              {isPending ? 'Đang rút...' : 'Xác nhận rút khiếu nại'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -1346,6 +1756,69 @@ function CustomerPaymentBadge({ status }: { status: string }) {
     case 'PARTIALLY_REFUNDED':
     case 'REFUNDED':
       return <Badge className="bg-slate-100 text-slate-800 border-slate-300">Đã hoàn tiền</Badge>
+    default:
+      return <Badge variant="outline">{status}</Badge>
+  }
+}
+
+
+function ProposalCountdown({ reviewDueAt }: { reviewDueAt: string }) {
+  const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; expired: boolean } | null>(null)
+
+  useEffect(() => {
+    const calculate = () => {
+      const due = new Date(reviewDueAt).getTime()
+      const now = Date.now()
+      const diff = due - now
+      if (diff <= 0) {
+        setTimeLeft({ hours: 0, minutes: 0, expired: true })
+      } else {
+        const hours = Math.floor(diff / (1000 * 60 * 60))
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+        setTimeLeft({ hours, minutes, expired: false })
+      }
+    }
+
+    calculate()
+    const timer = setInterval(calculate, 60000)
+    return () => clearInterval(timer)
+  }, [reviewDueAt])
+
+  if (!timeLeft) return null
+
+  if (timeLeft.expired) {
+    return (
+      <span className="text-rose-600 font-semibold flex items-center gap-1 text-[11px] bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+        <Clock className="w-3.5 h-3.5 text-rose-500" />
+        Đã quá hạn 48h
+      </span>
+    )
+  }
+
+  return (
+    <span className="text-amber-800 font-medium flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-[11px]">
+      <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+      Còn lại: {timeLeft.hours}h {timeLeft.minutes}m
+    </span>
+  )
+}
+
+function ComplaintStatusBadge({ status }: { status: ComplaintStatus }) {
+  switch (status) {
+    case 'OPEN':
+      return <Badge className="bg-amber-100 text-amber-900 border-amber-300">Chờ xử lý</Badge>
+    case 'PROPOSED':
+      return <Badge className="bg-sky-100 text-sky-900 border-sky-300">Admin đã gửi đề xuất</Badge>
+    case 'UNDER_REVIEW':
+      return <Badge className="bg-purple-100 text-purple-900 border-purple-300">Đang phúc tra (Lần 2)</Badge>
+    case 'CUSTOMER_ACCEPTED':
+      return <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300">Đã chấp nhận đề xuất</Badge>
+    case 'WITHDRAWN':
+      return <Badge className="bg-slate-100 text-slate-800 border-slate-300">Đã rút / Quá hạn</Badge>
+    case 'RESOLVED':
+      return <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300">Đã bồi hoàn</Badge>
+    case 'REJECTED':
+      return <Badge className="bg-rose-100 text-rose-900 border-rose-300">Từ chối</Badge>
     default:
       return <Badge variant="outline">{status}</Badge>
   }

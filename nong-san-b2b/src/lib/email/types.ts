@@ -5,17 +5,19 @@ export type NotificationEventType =
   | 'ORDER_COMPLETED'
   | 'COMPLAINT_OPENED'
   | 'COMPLAINT_RESOLVED'
+  | 'COMPLAINT_PROPOSED'
   | 'REFUND_CONFIRMED'
 
 /**
- * Danh sách các sự kiện email được kích hoạt theo chính sách tối ưu hóa Phase 9 (DEV-TASK-47)
+ * Danh sách các sự kiện email được kích hoạt theo chính sách tối ưu hóa Phase 9 (DEV-TASK-47 & F02)
  * - TẮT: E01 (ORDER_PLACED), E03 (ORDER_SHIPPING), E05 (COMPLAINT_OPENED)
- * - BẬT: E02 (PAYMENT_CONFIRMED), E04 (ORDER_COMPLETED), E06 (COMPLAINT_RESOLVED), REFUND_CONFIRMED
+ * - BẬT: E02 (PAYMENT_CONFIRMED), E04 (ORDER_COMPLETED), E06 (COMPLAINT_RESOLVED), COMPLAINT_PROPOSED, REFUND_CONFIRMED
  */
 export const ACTIVE_NOTIFICATION_EVENTS = [
   'PAYMENT_CONFIRMED',
   'ORDER_COMPLETED',
   'COMPLAINT_RESOLVED',
+  'COMPLAINT_PROPOSED',
   'REFUND_CONFIRMED',
 ] as const
 
@@ -37,6 +39,7 @@ export interface OrderNotificationInput {
   transactionId?: string
   complaintId?: string
   shipmentId?: string
+  isFinalProposal?: boolean
 }
 
 export interface SendEmailPayload {

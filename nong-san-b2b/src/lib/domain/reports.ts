@@ -4,6 +4,7 @@ import {
   PaymentOption,
   CancelActor,
   ComplaintStatus,
+  ComplaintResolutionType,
   Resolution,
   TxType,
   TxStatus,
@@ -203,7 +204,7 @@ export function isOrderEligibleForRevenue(order: {
   }
 
   // BR-04: Đang có khiếu nại chưa giải quyết -> loại khỏi doanh thu đủ điều kiện
-  if (order.complaints && order.complaints.some((c) => c.status === ComplaintStatus.OPEN)) {
+  if (order.complaints && order.complaints.some((c) => c.status === ComplaintStatus.OPEN || c.status === ComplaintStatus.PROPOSED || c.status === ComplaintStatus.UNDER_REVIEW)) {
     return false
   }
 
@@ -220,6 +221,7 @@ export function getOrderEligibleRevenue(order: {
     id?: string
     status: ComplaintStatus | string
     resolution?: Resolution | string | null
+    proposalType?: ComplaintResolutionType | string | null
     compensation?: number | null
   }>
 }): number {
@@ -230,8 +232,8 @@ export function getOrderEligibleRevenue(order: {
   if (order.complaints) {
     for (const c of order.complaints) {
       if (
-        c.status === ComplaintStatus.RESOLVED &&
-        c.resolution === Resolution.REFUND &&
+        (c.status === ComplaintStatus.RESOLVED || c.status === ComplaintStatus.CUSTOMER_ACCEPTED) &&
+        (c.resolution === Resolution.REFUND || c.proposalType === ComplaintResolutionType.REFUND_MONEY) &&
         c.compensation &&
         c.compensation > 0
       ) {

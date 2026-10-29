@@ -2,6 +2,7 @@
 
 import { db } from '@/lib/db'
 import { getServerAuthSession } from '@/lib/auth'
+import { MembershipTier, resolveEffectiveMembershipTier } from '@/lib/domain/membership'
 import {
   priceCart,
   CartLineItemInput,
@@ -37,6 +38,9 @@ export interface QuoteCartResponse {
   groupName: string
   purchasedSampleProductIds: string[]
   productMetadata: Record<string, ExtendedProductInfo>
+  membershipTier?: MembershipTier | null
+  membershipDiscountPercent?: number
+  combinedDiscountPercent?: number
 }
 
 /**
@@ -54,6 +58,7 @@ export async function quoteCart(
   let userDiscountPercent = 0
   let groupName = 'Khách vãng lai'
   let purchasedSampleProductIds: string[] = []
+  let membershipTier: MembershipTier | null = null
 
   if (session?.user?.id) {
     // Đọc thông tin nhóm mới nhất từ DB
@@ -66,6 +71,7 @@ export async function quoteCart(
       userDiscountPercent = user.group.discountPercent
       groupName = user.group.name
     }
+    membershipTier = resolveEffectiveMembershipTier(user as unknown as { role?: string; membershipTier?: MembershipTier | null })
 
     // Đọc các sản phẩm mà khách hàng này đã từng mua gói mẫu (không tính đơn CANCELLED)
     const sampleItems = await db.orderItem.findMany({
@@ -96,6 +102,7 @@ export async function quoteCart(
       lines: [],
       products: [],
       groupDiscountPercent: userDiscountPercent,
+      membershipTier,
     })
     return {
       quote: emptyQuote,
@@ -103,6 +110,9 @@ export async function quoteCart(
       groupName,
       purchasedSampleProductIds,
       productMetadata: {},
+      membershipTier,
+      membershipDiscountPercent: emptyQuote.membershipDiscountPercent,
+      combinedDiscountPercent: emptyQuote.combinedDiscountPercent,
     }
   }
 
@@ -176,6 +186,7 @@ export async function quoteCart(
     lines,
     products: pricingProducts,
     groupDiscountPercent: userDiscountPercent,
+    membershipTier,
   })
 
   // Đối chiếu tổng khối lượng đặt mỗi sản phẩm trong giỏ với tồn kho khả dụng (Mục 9.3 & 9.4)
@@ -230,6 +241,9 @@ export async function quoteCart(
     groupName,
     purchasedSampleProductIds,
     productMetadata,
+    membershipTier,
+    membershipDiscountPercent: quote.membershipDiscountPercent,
+    combinedDiscountPercent: quote.combinedDiscountPercent,
   }
 }
 

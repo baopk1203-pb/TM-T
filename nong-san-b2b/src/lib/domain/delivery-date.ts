@@ -124,3 +124,58 @@ export function formatVietnamDateTime(
     ...options,
   })
 }
+
+export type DeliveryTimeSlot = 'MORNING' | 'AFTERNOON' | 'EVENING'
+
+export interface DeliverySlotOption {
+  slot: DeliveryTimeSlot
+  label: string
+  timeRange: string
+  fullLabel: string
+}
+
+export const DELIVERY_TIME_SLOTS: readonly DeliverySlotOption[] = [
+  {
+    slot: 'MORNING',
+    label: 'Sáng',
+    timeRange: '07:00 - 11:30',
+    fullLabel: 'Buổi sáng (07:00 - 11:30)',
+  },
+  {
+    slot: 'AFTERNOON',
+    label: 'Chiều',
+    timeRange: '13:30 - 17:30',
+    fullLabel: 'Buổi chiều (13:30 - 17:30)',
+  },
+  {
+    slot: 'EVENING',
+    label: 'Tối',
+    timeRange: '18:00 - 21:00',
+    fullLabel: 'Buổi tối (18:00 - 21:00)',
+  },
+] as const
+
+export const DELIVERY_SLOT_MAP: Record<DeliveryTimeSlot, DeliverySlotOption> = {
+  MORNING: DELIVERY_TIME_SLOTS[0],
+  AFTERNOON: DELIVERY_TIME_SLOTS[1],
+  EVENING: DELIVERY_TIME_SLOTS[2],
+}
+
+/**
+ * Format nhãn hiển thị khung giờ giao hàng chuẩn hóa
+ * @param slot Mã khung giờ ('MORNING' | 'AFTERNOON' | 'EVENING' | null | undefined)
+ * @param style 'full' | 'short' (default: 'full')
+ *  - 'full': 'Buổi sáng (07:00 - 11:30)', 'Buổi chiều (13:30 - 17:30)', 'Buổi tối (18:00 - 21:00)'
+ *  - 'short': 'Sáng (07:00 - 11:30)', 'Chiều (13:30 - 17:30)', 'Tối (18:00 - 21:00)'
+ */
+export function formatDeliveryTimeSlot(
+  slot: string | null | undefined,
+  style: 'full' | 'short' = 'full'
+): string {
+  if (!slot) return 'Cả ngày'
+  const found = DELIVERY_SLOT_MAP[slot as DeliveryTimeSlot]
+  if (!found) return 'Cả ngày'
+  return style === 'short'
+    ? `${found.label} (${found.timeRange})`
+    : found.fullLabel
+}

@@ -39,7 +39,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatVND } from '@/lib/money'
-import { formatVietnamDate, formatVietnamDateTime } from '@/lib/utils'
+import { formatVietnamDate, formatVietnamDateTime, formatDeliveryTimeSlot } from '@/lib/utils'
 import { cancelOrder, submitComplaint, respondToComplaintProposal } from '@/actions/order-lifecycle'
 import { confirmRecurringDraft, createRecurringFromOrder } from '@/actions/recurring'
 import { customerDecidePreorder } from '@/actions/preorder'
@@ -887,11 +887,7 @@ export function CustomerOrderView({ order }: CustomerOrderViewProps) {
                   </strong>
                 </span>
                 <span>
-                  {order.timeSlot === 'MORNING'
-                    ? 'Buổi sáng (07:00 - 11:30)'
-                    : order.timeSlot === 'AFTERNOON'
-                    ? 'Buổi chiều (13:30 - 17:30)'
-                    : 'Cả ngày'}
+                  {formatDeliveryTimeSlot(order.timeSlot)}
                 </span>
               </div>
             </CardContent>

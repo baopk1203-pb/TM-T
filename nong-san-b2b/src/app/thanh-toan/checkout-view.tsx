@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useCartStore } from '@/lib/cart-store'
 import { formatVND } from '@/lib/money'
+import { DELIVERY_TIME_SLOTS } from '@/lib/utils'
 import { getCheckoutDiscountNotice, getCartDiscountDisplay, calculateCartSavings } from '@/lib/cart-summary'
 import { MEMBERSHIP_TIER_CONFIG } from '@/lib/domain/membership'
 import { quoteCart, QuoteCartResponse } from '@/actions/cart'
@@ -458,15 +459,11 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
                   Khung giờ giao hàng:
                 </Label>
                 <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { slot: TimeSlot.MORNING, label: 'Sáng', sub: '6h – 11h' },
-                    { slot: TimeSlot.AFTERNOON, label: 'Chiều', sub: '13h – 17h' },
-                    { slot: TimeSlot.EVENING, label: 'Tối', sub: '18h – 21h' },
-                  ].map(({ slot, label, sub }) => (
+                  {DELIVERY_TIME_SLOTS.map(({ slot, label, timeRange }) => (
                     <button
                       key={slot}
                       type="button"
-                      onClick={() => setTimeSlot(slot)}
+                      onClick={() => setTimeSlot(slot as TimeSlot)}
                       className={`p-2.5 rounded-2xl border text-center transition-all ${
                         timeSlot === slot
                           ? 'border-emerald-600 bg-emerald-50/60 text-emerald-950 font-bold shadow-xs ring-1 ring-emerald-500/20'
@@ -474,7 +471,7 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
                       }`}
                     >
                       <div className="text-xs font-bold">{label}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">{sub}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">{timeRange}</div>
                     </button>
                   ))}
                 </div>

@@ -18,12 +18,17 @@
 | Thuộc tính | Giá trị |
 |---|---|
 | **Task ID** | `EV-BETA-DEMO-ORDER-02` |
-| **Worktree** | `D:\TDTU\wt_f02_f04_integration` |
-| **Hotfix Branch** | `fix/qa05-delivery-slot-hotfix` |
-| **Base Commit (origin/beta)** | `7ede4cfcdacb8ba6c72dea6c7568063fe244e990` |
-| **Release Branch** | `beta` (Fast-forward merge từ `fix/qa05-delivery-slot-hotfix`) |
+| **Repository Chính** | `D:\TDTU\TMĐT Website` (`D:\TMĐT Website`) |
+| **Worktree Cô Lập** | `D:\TDTU\wt_f02_f04_integration` |
+| **Branch Phát triển** | `fix/qa05-delivery-slot-hotfix` |
+| **Branch Phát hành** | `beta` (Fast-forward merge) |
 | **Target Remote** | `origin/beta` |
-| **Beta URL** | https://nong-san-b2b-git-beta-baopk.vercel.app |
+| **Base Commit SHA** | `7ede4cfcdacb8ba6c72dea6c7568063fe244e990` |
+| **Release Commit SHA** | `aa31f7ceb777ad84324e118f9884ab5ce485352d` |
+| **Vercel Deployment ID** | `dpl_9zCxVVAekBMkh4tFoZzeDiyUndoe` |
+| **Deployment URL** | https://nong-san-b2b-k48j61hcf-baopk.vercel.app |
+| **Canonical Beta URL** | https://nong-san-b2b-git-beta-baopk.vercel.app |
+| **Deployment Status** | `● Ready` (Build duration: 1m 8s) |
 | **Đơn hàng Demo mục tiêu** | `DH-261029-ASRT` |
 | **Branch `main`** | **STRICTLY UNTOUCHED** (Không checkout, không merge, không push) |
 
@@ -33,7 +38,7 @@
 
 - **Decision ID:** `EV-PO-DELIVERY-SLOT-DECISION-01`
 - **Trạng thái:** `PO APPROVED — FINAL POLICY`
-- **Chính sách khung giờ giao hàng chuẩn:**
+- **Chính sách khung giờ giao hàng chuẩn toàn hệ thống:**
 
 | Enum (Database) | Tên tiếng Việt | Khung giờ chuẩn | Ý nghĩa nghiệp vụ |
 |---|---|---|---|
@@ -102,7 +107,7 @@ Hai công cụ đã được Security Hardening toàn diện:
    - SSL mode bắt buộc: Phải có tham số `sslmode=require`, `sslmode=verify-ca` hoặc `sslmode=verify-full`.
    - Chặn tham số query redirect nguy hiểm (`host=`, `options=`).
 2. **B2. Credential Protection:**
-   - Tiếp tục dùng `Read-Host -AsSecureString` che ký tự nhập.
+   - Nhận connection string qua `Read-Host -AsSecureString` che giấu ký tự.
    - Không truyền credentials qua command-line arguments.
    - Không in credentials ra màn hình, file log, hoặc file báo cáo.
    - Lọc bỏ mật khẩu trong thông báo lỗi (`sanitized = msg.replace(/:[^/@]+@/, ':***@')`).
@@ -207,35 +212,69 @@ npm run build
 
 ---
 
-## VIII. TASK F — GIT PREFLIGHT & RELEASE DEPLOYMENT
+## VIII. TASK F — GIT PREFLIGHT & CHANGED FILES
 
-### 1. Kết quả kiểm tra Git Preflight
 - **Clean Working Tree:** Verified.
 - **Fetch `origin/beta`:** Verified (`7ede4cfcdacb8ba6c72dea6c7568063fe244e990`).
-- **Git Lineage:** `origin/beta` là direct ancestor của branch `fix/qa05-delivery-slot-hotfix`.
+- **Git Lineage:** Linear ancestry verified.
 - **Prisma Schema Diff:** **0 changes**.
 - **Migration Artifacts:** **0 new migrations**.
-- **Merge Mode:** Fast-Forward (Bảo toàn 100% lịch sử Git, không tạo merge commit dư thừa).
-
-### 2. Chi tiết các commit được phát hành lên `beta`:
-- `d9d7a54`: `fix(ui): unify delivery slot definitions between checkout and order detail (QA05-UI-01)`
-- `b3f52f4`: `tools(db): add secure read-only order verification script and safety tests (EV-BETA-DEMO-ORDER-01)`
-- `301c4cb`: `docs(demo): record controlled demo order verification and delivery slot hotfix report (EV-BETA-DEMO-ORDER-01)`
-- `4e0c1c5`: `fix(ui): harmonize delivery slots across admin, recurring, packing slip and emails (QA05-UI-01)`
-- `b73afa6`: `docs(demo): update final reconciliation and harmonized delivery slots report (EV-BETA-DEMO-ORDER-01)`
-- `4a427c9`: `feat(security): harden neon db verification tool and complete admin delivery slot options (EV-BETA-DEMO-ORDER-02)`
+- **Merge Mode:** Fast-Forward (`7ede4cf` -> `aa31f7c`).
+- **Danh sách file thay đổi:**
+  ```text
+  docs/EV_BETA_DEMO_ORDER_01_REPORT.md
+  docs/EV_BETA_DEMO_ORDER_02_REPORT.md
+  nong-san-b2b/scripts/secure-beta-verify-order.ps1
+  nong-san-b2b/scripts/secure-beta-verify-order.ts
+  nong-san-b2b/src/app/admin/dinh-ky/admin-recurring-client.tsx
+  nong-san-b2b/src/app/admin/don-hang/[code]/order-detail-client.tsx
+  nong-san-b2b/src/app/admin/don-hang/order-list-client.tsx
+  nong-san-b2b/src/app/admin/van-chuyen/shipping-management-client.tsx
+  nong-san-b2b/src/app/tai-khoan/dinh-ky/recurring-client.tsx
+  nong-san-b2b/src/app/tai-khoan/don-hang/[code]/customer-order-view.tsx
+  nong-san-b2b/src/app/tai-khoan/page.tsx
+  nong-san-b2b/src/app/thanh-toan/checkout-view.tsx
+  nong-san-b2b/src/components/admin/packing-slip-modal.tsx
+  nong-san-b2b/src/lib/domain/delivery-date.ts
+  nong-san-b2b/src/lib/email/templates.ts
+  nong-san-b2b/src/lib/utils.ts
+  nong-san-b2b/tests/unit/qa05-delivery-slot.test.ts
+  nong-san-b2b/tests/unit/secure-beta-verify-order.test.ps1
+  ```
 
 ---
 
-## IX. TASK G — THỰC THI TRIỂN KHAI VERCEL BETA
+## IX. TASK G — KẾT QUẢ TRIỂN KHAI VERCEL BETA
 
-Sau khi hoàn tất toàn bộ Task A–F, DEV 1 thực hiện fast-forward merge sang nhánh `beta` và push lên `origin/beta`.
-- **Release Commit SHA:** Sẽ được cập nhật sau lệnh push.
-- **Vercel Deployment Status:** Sẽ được cập nhật theo kết quả Vercel CLI.
+- **Branch:** `beta`
+- **Release SHA:** `aa31f7ceb777ad84324e118f9884ab5ce485352d`
+- **Push Status:** `Everything up-to-date` / `7ede4cf..aa31f7c beta -> beta`
+- **Vercel Deployment ID:** `dpl_9zCxVVAekBMkh4tFoZzeDiyUndoe`
+- **Deployment Status:** `● Ready`
+- **Build Duration:** 1m 8s
+- **Canonical Alias:** https://nong-san-b2b-git-beta-baopk.vercel.app
+- **Direct Preview URL:** https://nong-san-b2b-k48j61hcf-baopk.vercel.app
 
 ---
 
-## X. GIỚI HẠN BẮT BUỘC (DATABASE SAFETY)
+## X. TASK H — THÔNG TIN BÀN GIAO BROWSER QA (CHATGPT WORK)
+
+Bàn giao ChatGPT Work kiểm tra Focused Browser Smoke (Single Pass):
+1. **Trang Checkout (`/thanh-toan`):**
+   - Kiểm tra các nút khung giờ giao hiển thị đúng nhãn: `Sáng (07:00 - 11:30)`, `Chiều (13:30 - 17:30)`, `Tối (18:00 - 21:00)`.
+2. **Trang Chi tiết đơn hàng của khách (`/tai-khoan/don-hang/DH-261029-ASRT`):**
+   - Khung giờ giao hiển thị nhất quán: `Buổi sáng (07:00 - 11:30)`.
+3. **Trang Quản trị đơn hàng (`/admin/don-hang/DH-261029-ASRT`):**
+   - Khung giờ giao hiển thị: `Buổi sáng (07:00 - 11:30)`.
+   - Select box gán ngày thu hoạch có đủ 3 khung giờ (`Buổi sáng`, `Buổi chiều`, `Buổi tối`).
+4. **Trang Danh sách đơn hàng Admin (`/admin/don-hang`):**
+   - Cột Khung giờ hiển thị: `Sáng (07:00 - 11:30)`.
+5. **Đơn hàng demo `DH-261029-ASRT`:**
+   - Các thông số tài chính (3.720.000 đ tiền hàng, 466.000 đ cước gốc, giảm cước 23.300 đ, tổng 4.162.700 đ, cọc 1.249.000 đ) giữ nguyên vẹn.
+
+---
+
+## XI. GIỚI HẠN BẮT BUỘC (DATABASE SAFETY)
 
 - DEV 1 tuân thủ nghiêm ngặt: **CHƯA chạy `secure-beta-verify-order.ps1` hoặc script TypeScript trên Neon Live**.
 - Không truy cập credentials Production.
@@ -245,14 +284,15 @@ Sau khi hoàn tất toàn bộ Task A–F, DEV 1 thực hiện fast-forward merg
 
 ---
 
-## XI. PHÁN QUYẾT CUỐI CÙNG (FINAL VERDICT)
+## XII. PHÁN QUYẾT CUỐI CÙNG (FINAL VERDICT)
 
 ```
 ================================================================================
 DELIVERY SLOT HOTFIX     : DEPLOYED / BROWSER QA PENDING
 DB VERIFICATION TOOL     : SECURITY HARDENED / LIVE EXECUTION PENDING
 EV BETA DEMO ORDER       : DB EVIDENCE PENDING
-RELEASE SHA              : [Pending push execution]
-TARGET BETA URL          : https://nong-san-b2b-git-beta-baopk.vercel.app
+RELEASE SHA              : aa31f7ceb777ad84324e118f9884ab5ce485352d
+DEPLOYMENT ID            : dpl_9zCxVVAekBMkh4tFoZzeDiyUndoe
+CANONICAL BETA URL       : https://nong-san-b2b-git-beta-baopk.vercel.app
 ================================================================================
 ```

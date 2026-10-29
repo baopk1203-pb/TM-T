@@ -24,11 +24,12 @@
 | **Branch Phát hành** | `beta` (Fast-forward merge) |
 | **Target Remote** | `origin/beta` |
 | **Base Commit SHA** | `7ede4cfcdacb8ba6c72dea6c7568063fe244e990` |
-| **Release Commit SHA** | `aa31f7ceb777ad84324e118f9884ab5ce485352d` |
-| **Vercel Deployment ID** | `dpl_9zCxVVAekBMkh4tFoZzeDiyUndoe` |
-| **Deployment URL** | https://nong-san-b2b-k48j61hcf-baopk.vercel.app |
+| **Code Hotfix SHA** | `aa31f7ceb777ad84324e118f9884ab5ce485352d` |
+| **Full Release SHA** | `e8ebc1328ebbc19f9fe6cbfa97ef87ca8681335b` |
+| **Vercel Deployment ID** | `dpl_AZBoM1JeyzzXiLKwG2wNw4XCDFYB` |
+| **Deployment URL** | https://nong-san-b2b-1xlbwuduz-baopk.vercel.app |
 | **Canonical Beta URL** | https://nong-san-b2b-git-beta-baopk.vercel.app |
-| **Deployment Status** | `● Ready` (Build duration: 1m 8s) |
+| **Deployment Status** | `● Ready` (Build duration: 39s) |
 | **Đơn hàng Demo mục tiêu** | `DH-261029-ASRT` |
 | **Branch `main`** | **STRICTLY UNTOUCHED** (Không checkout, không merge, không push) |
 
@@ -219,7 +220,7 @@ npm run build
 - **Git Lineage:** Linear ancestry verified.
 - **Prisma Schema Diff:** **0 changes**.
 - **Migration Artifacts:** **0 new migrations**.
-- **Merge Mode:** Fast-Forward (`7ede4cf` -> `aa31f7c`).
+- **Merge Mode:** Fast-Forward (`7ede4cf` -> `e8ebc13`).
 - **Danh sách file thay đổi:**
   ```text
   docs/EV_BETA_DEMO_ORDER_01_REPORT.md
@@ -247,13 +248,12 @@ npm run build
 ## IX. TASK G — KẾT QUẢ TRIỂN KHAI VERCEL BETA
 
 - **Branch:** `beta`
-- **Release SHA:** `aa31f7ceb777ad84324e118f9884ab5ce485352d`
-- **Push Status:** `Everything up-to-date` / `7ede4cf..aa31f7c beta -> beta`
-- **Vercel Deployment ID:** `dpl_9zCxVVAekBMkh4tFoZzeDiyUndoe`
+- **Release SHA:** `e8ebc1328ebbc19f9fe6cbfa97ef87ca8681335b`
+- **Vercel Deployment ID:** `dpl_AZBoM1JeyzzXiLKwG2wNw4XCDFYB`
 - **Deployment Status:** `● Ready`
-- **Build Duration:** 1m 8s
+- **Build Duration:** 39s
 - **Canonical Alias:** https://nong-san-b2b-git-beta-baopk.vercel.app
-- **Direct Preview URL:** https://nong-san-b2b-k48j61hcf-baopk.vercel.app
+- **Direct Preview URL:** https://nong-san-b2b-1xlbwuduz-baopk.vercel.app
 
 ---
 
@@ -291,8 +291,8 @@ Bàn giao ChatGPT Work kiểm tra Focused Browser Smoke (Single Pass):
 DELIVERY SLOT HOTFIX     : DEPLOYED / BROWSER QA PENDING
 DB VERIFICATION TOOL     : SECURITY HARDENED / LIVE EXECUTION PENDING
 EV BETA DEMO ORDER       : DB EVIDENCE PENDING
-RELEASE SHA              : aa31f7ceb777ad84324e118f9884ab5ce485352d
-DEPLOYMENT ID            : dpl_9zCxVVAekBMkh4tFoZzeDiyUndoe
+RELEASE SHA              : e8ebc1328ebbc19f9fe6cbfa97ef87ca8681335b
+DEPLOYMENT ID            : dpl_AZBoM1JeyzzXiLKwG2wNw4XCDFYB
 CANONICAL BETA URL       : https://nong-san-b2b-git-beta-baopk.vercel.app
 ================================================================================
 ```

@@ -175,4 +175,65 @@ describe('WEB-UX-SAMPLE: Cart & Checkout Discount Text Verification', () => {
       expect(noticeMixed).toContain('không áp dụng chiết khấu đối tác')
     })
   })
+
+  describe('CC-01: Membership & Combined Discount Display Verification', () => {
+    it('12. CC-01: Hiển thị đúng chiết khấu kết hợp 7% (Nhóm 5% + Hạng Đồng 2%)', () => {
+      const result = getCartDiscountDisplay({
+        userDiscount: 5,
+        regularLineCount: 2,
+        sampleLineCount: 0,
+        membershipDiscount: 2,
+        combinedDiscount: 7,
+        membershipTierName: 'Đồng',
+      })
+
+      expect(result.label).toBe('Ưu đãi đối tác & thành viên:')
+      expect(result.text).toBe('Đã trừ 7%')
+      expect(result.subtext).toBe('Nhóm đối tác: -5% • Hạng Đồng: -2% (tối đa 10%)')
+    })
+
+    it('13. CC-01 Giỏ hỗn hợp: Hiển thị phạm vi cho hàng sỉ và chi tiết breakdown nhóm + hạng', () => {
+      const result = getCartDiscountDisplay({
+        userDiscount: 5,
+        regularLineCount: 1,
+        sampleLineCount: 1,
+        actualSavings: 50000,
+        membershipDiscount: 2,
+        combinedDiscount: 7,
+        membershipTierName: 'Đồng',
+      })
+
+      expect(result.label).toBe('Ưu đãi đối tác & thành viên:')
+      expect(result.text).toBe('Đã trừ 7% cho hàng sỉ')
+      expect(result.subtext).toContain('Nhóm đối tác: -5% • Hạng Đồng: -2%')
+      expect(result.subtext).toContain('Không áp dụng cho hàng mẫu')
+    })
+
+    it('14. CC-01 Checkout notice: Hiển thị rõ ràng % kết hợp và breakdown nhóm + hạng', () => {
+      const notice = getCheckoutDiscountNotice({
+        userDiscount: 5,
+        regularLineCount: 2,
+        sampleLineCount: 0,
+        membershipDiscount: 2,
+        combinedDiscount: 7,
+        membershipTierName: 'Đồng',
+      })
+
+      expect(notice).toBe(' • Ưu đãi kết hợp 7% (Nhóm: -5%, Hạng Đồng: -2%) đã được áp dụng tự động')
+    })
+
+    it('15. CC-01 Checkout notice giỏ hỗn hợp: Nêu rõ chỉ áp dụng cho hàng sỉ', () => {
+      const notice = getCheckoutDiscountNotice({
+        userDiscount: 5,
+        regularLineCount: 1,
+        sampleLineCount: 1,
+        actualSavings: 50000,
+        membershipDiscount: 2,
+        combinedDiscount: 7,
+        membershipTierName: 'Đồng',
+      })
+
+      expect(notice).toBe(' • Ưu đãi kết hợp 7% (Nhóm: -5%, Hạng Đồng: -2%) chỉ áp dụng cho hàng sỉ')
+    })
+  })
 })

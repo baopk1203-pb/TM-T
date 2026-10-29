@@ -2,6 +2,7 @@
  * Cart Summary & Discount Display Utility (WEB-UX-SAMPLE)
  * Định dạng nhãn và thông tin chiết khấu giỏ hàng chuẩn xác theo cơ cấu sản phẩm (mẫu thử vs hàng sỉ)
  * và số tiền chiết khấu thực tế đã áp dụng trong báo giá (quote).
+ * Hỗ trợ hiển thị phân rã chiết khấu nhóm đối tác và hạng thành viên F04 (CC-01).
  */
 
 export interface CartDiscountDisplay {
@@ -15,6 +16,9 @@ export interface CartDiscountDisplayInput {
   regularLineCount: number
   sampleLineCount: number
   actualSavings?: number
+  membershipDiscount?: number
+  combinedDiscount?: number
+  membershipTierName?: string
 }
 
 export interface CheckoutDiscountNoticeInput {
@@ -22,6 +26,9 @@ export interface CheckoutDiscountNoticeInput {
   regularLineCount: number
   sampleLineCount: number
   actualSavings?: number
+  membershipDiscount?: number
+  combinedDiscount?: number
+  membershipTierName?: string
 }
 
 /**
@@ -54,23 +61,36 @@ export function calculateCartSavings(quote?: {
 /**
  * Xác định nội dung hiển thị chiết khấu đối tác cho giỏ hàng
  * - Giỏ rỗng: 0% (không nhầm là giỏ chỉ có hàng mẫu)
- * - userDiscount <= 0: 0%
+ * - userDiscount <= 0 và membershipDiscount <= 0: 0%
  * - Giỏ chỉ có hàng mẫu: 0% kèm giải thích "Không áp dụng cho hàng mẫu"
  * - Khi actualSavings được cung cấp và bằng 0 (quote không thực tế giảm giá): 0% kèm giải thích rõ ràng
  * - Giỏ hỗn hợp (cả sỉ và mẫu) có chiết khấu: thông báo rõ phạm vi "Đã trừ X% cho hàng sỉ" kèm "Không áp dụng cho hàng mẫu"
  * - Giỏ chỉ có hàng sỉ: "Đã trừ X%"
+ * - Khi có chiết khấu thành viên (F04 CC-01): hiển thị chiết khấu kết hợp và phân rã nhóm đối tác + hạng thành viên.
  */
 export function getCartDiscountDisplay({
   userDiscount,
   regularLineCount,
   sampleLineCount,
   actualSavings,
+  membershipDiscount,
+  combinedDiscount,
+  membershipTierName,
 }: CartDiscountDisplayInput): CartDiscountDisplay {
+  const hasMembership = typeof membershipDiscount === 'number' && membershipDiscount > 0
+  const effectiveDiscount = hasMembership
+    ? (combinedDiscount ?? Math.min(10, userDiscount + membershipDiscount))
+    : userDiscount
+
+  const label = hasMembership
+    ? 'Ưu đãi đối tác & thành viên:'
+    : 'Chiết khấu nhóm đối tác:'
+
   const isEmpty = regularLineCount === 0 && sampleLineCount === 0
 
-  if (isEmpty || userDiscount <= 0) {
+  if (isEmpty || effectiveDiscount <= 0) {
     return {
-      label: 'Chiết khấu nhóm đối tác:',
+      label,
       text: '0%',
     }
   }
@@ -80,7 +100,7 @@ export function getCartDiscountDisplay({
 
   if (hasOnlySamples) {
     return {
-      label: 'Chiết khấu nhóm đối tác:',
+      label,
       text: '0%',
       subtext: 'Không áp dụng cho hàng mẫu',
     }
@@ -89,32 +109,41 @@ export function getCartDiscountDisplay({
   // Nếu đã truyền actualSavings và thực tế không giảm được đồng nào
   if (actualSavings !== undefined && actualSavings <= 0) {
     return {
-      label: 'Chiết khấu nhóm đối tác:',
+      label,
       text: '0%',
       subtext: hasMixed ? 'Không áp dụng cho hàng mẫu' : 'Chưa áp dụng giảm giá',
     }
   }
 
+  const breakdownNote = hasMembership
+    ? `Nhóm đối tác: -${userDiscount}% • Hạng ${membershipTierName || 'Thành viên'}: -${membershipDiscount}% (tối đa 10%)`
+    : undefined
+
   if (hasMixed) {
     if (actualSavings !== undefined && actualSavings > 0) {
       return {
-        label: 'Chiết khấu nhóm đối tác:',
-        text: `Đã trừ ${userDiscount}% cho hàng sỉ`,
-        subtext: 'Không áp dụng cho hàng mẫu',
+        label,
+        text: `Đã trừ ${effectiveDiscount}% cho hàng sỉ`,
+        subtext: hasMembership
+          ? `${breakdownNote} • Không áp dụng cho hàng mẫu`
+          : 'Không áp dụng cho hàng mẫu',
       }
     }
 
     return {
-      label: 'Chiết khấu nhóm đối tác:',
-      text: `Đã trừ ${userDiscount}%`,
-      subtext: 'Chỉ áp dụng cho hàng sỉ',
+      label,
+      text: `Đã trừ ${effectiveDiscount}%`,
+      subtext: hasMembership
+        ? `${breakdownNote} • Chỉ áp dụng cho hàng sỉ`
+        : 'Chỉ áp dụng cho hàng sỉ',
     }
   }
 
   // Giỏ chỉ có hàng sỉ
   return {
-    label: 'Chiết khấu nhóm đối tác:',
-    text: `Đã trừ ${userDiscount}%`,
+    label,
+    text: `Đã trừ ${effectiveDiscount}%`,
+    subtext: breakdownNote,
   }
 }
 
@@ -126,26 +155,46 @@ export function getCheckoutDiscountNotice({
   regularLineCount,
   sampleLineCount,
   actualSavings,
+  membershipDiscount,
+  combinedDiscount,
+  membershipTierName,
 }: CheckoutDiscountNoticeInput): string {
-  if (userDiscount <= 0) return ''
+  const hasMembership = typeof membershipDiscount === 'number' && membershipDiscount > 0
+  const effectiveDiscount = hasMembership
+    ? (combinedDiscount ?? Math.min(10, userDiscount + membershipDiscount))
+    : userDiscount
+
+  if (effectiveDiscount <= 0) return ''
 
   const hasOnlySamples = sampleLineCount > 0 && regularLineCount === 0
   const hasMixed = sampleLineCount > 0 && regularLineCount > 0
 
   if (hasOnlySamples) {
-    return ' • Đơn hàng mẫu không áp dụng chiết khấu đối tác'
+    return hasMembership
+      ? ' • Đơn hàng mẫu không áp dụng ưu đãi đối tác & thành viên'
+      : ' • Đơn hàng mẫu không áp dụng chiết khấu đối tác'
   }
 
   if (actualSavings !== undefined && actualSavings <= 0) {
     if (hasMixed) {
-      return ' • Đơn hàng mẫu không áp dụng chiết khấu đối tác'
+      return hasMembership
+        ? ' • Đơn hàng mẫu không áp dụng ưu đãi đối tác & thành viên'
+        : ' • Đơn hàng mẫu không áp dụng chiết khấu đối tác'
     }
     return ''
   }
 
+  const breakdown = hasMembership
+    ? ` (Nhóm: -${userDiscount}%, Hạng ${membershipTierName || 'Thành viên'}: -${membershipDiscount}%)`
+    : ` (${userDiscount}%)`
+
   if (hasMixed) {
-    return ` • Chiết khấu đối tác (${userDiscount}%) chỉ áp dụng cho hàng sỉ`
+    return hasMembership
+      ? ` • Ưu đãi kết hợp ${effectiveDiscount}%${breakdown} chỉ áp dụng cho hàng sỉ`
+      : ` • Chiết khấu đối tác (${userDiscount}%) chỉ áp dụng cho hàng sỉ`
   }
 
-  return ` • Chiết khấu đối tác (${userDiscount}%) đã được áp dụng tự động`
+  return hasMembership
+    ? ` • Ưu đãi kết hợp ${effectiveDiscount}%${breakdown} đã được áp dụng tự động`
+    : ` • Chiết khấu đối tác (${userDiscount}%) đã được áp dụng tự động`
 }

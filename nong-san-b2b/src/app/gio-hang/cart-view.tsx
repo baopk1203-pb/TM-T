@@ -26,6 +26,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useCartStore, CartItem } from '@/lib/cart-store'
 import { formatVND } from '@/lib/money'
 import { getCartDiscountDisplay, calculateCartSavings } from '@/lib/cart-summary'
+import { MEMBERSHIP_TIER_CONFIG } from '@/lib/domain/membership'
 import { quoteCart, QuoteCartResponse } from '@/actions/cart'
 import { toast } from 'sonner'
 
@@ -223,6 +224,11 @@ export function CartView() {
   const metadata = quoteData?.productMetadata || {}
   const userDiscount = quoteData?.userDiscountPercent || 0
   const groupName = quoteData?.groupName || 'Khách vãng lai'
+  const membershipTier = quoteData?.membershipTier
+  const membershipBenefits = membershipTier ? MEMBERSHIP_TIER_CONFIG[membershipTier] : null
+  const membershipDiscount = quoteData?.quote?.membershipDiscountPercent ?? quoteData?.membershipDiscountPercent ?? 0
+  const combinedDiscount = quoteData?.quote?.combinedDiscountPercent ?? quoteData?.combinedDiscountPercent ?? 0
+  const effectiveDiscount = combinedDiscount > 0 ? combinedDiscount : userDiscount
 
   // Đối chiếu tính tươi mới của báo giá: Báo giá chỉ hợp lệ khi khớp chính xác giỏ hàng hiện hành
   const isQuoteFresh = isQuoteInSyncWithItems(items, quoteData)
@@ -474,9 +480,9 @@ export function CartView() {
                         Mua thêm <strong>{summary.nextTier.missingGrams / 1000} kg</strong> để nâng lên bậc giá ưu đãi hơn:{' '}
                         <strong>
                           {formatVND(
-                            userDiscount > 0
+                            effectiveDiscount > 0
                               ? Math.round(
-                                  (summary.nextTier.pricePerKg * (100 - userDiscount)) / 100
+                                  (summary.nextTier.pricePerKg * (100 - effectiveDiscount)) / 100
                                 )
                               : summary.nextTier.pricePerKg
                           )}
@@ -696,6 +702,9 @@ export function CartView() {
                     regularLineCount: regularLines.length,
                     sampleLineCount: sampleLines.length,
                     actualSavings,
+                    membershipDiscount,
+                    combinedDiscount,
+                    membershipTierName: membershipBenefits?.name,
                   })
                   return (
                     <div className="space-y-0.5">

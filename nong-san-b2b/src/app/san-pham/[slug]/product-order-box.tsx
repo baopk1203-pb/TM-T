@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { useCartStore } from '@/lib/cart-store'
 import { formatVND, gramsToKg } from '@/lib/money'
 import { priceCart, ProductPricingData } from '@/lib/domain/pricing'
+import { MembershipTier, calculateCombinedProductDiscount } from '@/lib/domain/membership'
 import {
   evaluateCartItemStockWarning,
   type PublicStockView,
@@ -49,6 +50,10 @@ interface ProductOrderBoxProps {
     discountPercent: number
     role: string
     groupName?: string
+    membershipTier?: MembershipTier | null
+    membershipTierName?: string
+    membershipDiscountPercent?: number
+    combinedDiscountPercent?: number
   } | null
   hasPurchasedSample: boolean
 }
@@ -62,6 +67,10 @@ export function ProductOrderBox({
   const addItem = useCartStore((state) => state.addItem)
   const items = useCartStore((state) => state.items)
   const userDiscount = user?.discountPercent || 0
+  const membershipDiscount = user?.membershipDiscountPercent || 0
+  const combinedDiscount =
+    user?.combinedDiscountPercent ??
+    calculateCombinedProductDiscount(userDiscount, membershipDiscount)
 
   // Tách quy cách thường và mẫu
   const regularPackagings = useMemo(

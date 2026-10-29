@@ -26,7 +26,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useCartStore } from '@/lib/cart-store'
 import { formatVND } from '@/lib/money'
-import { getCheckoutDiscountNotice, calculateCartSavings } from '@/lib/cart-summary'
+import { getCheckoutDiscountNotice, getCartDiscountDisplay, calculateCartSavings } from '@/lib/cart-summary'
+import { MEMBERSHIP_TIER_CONFIG } from '@/lib/domain/membership'
 import { quoteCart, QuoteCartResponse } from '@/actions/cart'
 import { placeOrder, calculateShippingQuoteAction } from '@/actions/order'
 import { computeDepositAmount } from '@/lib/domain/settlement'
@@ -207,6 +208,12 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
 
   const quote = quoteData?.quote
   const subtotal = quote?.subtotal || 0
+  const membershipTier = quoteData?.membershipTier
+  const membershipBenefits = membershipTier ? MEMBERSHIP_TIER_CONFIG[membershipTier] : null
+  const membershipName = membershipBenefits?.name
+  const shippingDiscountPercent = membershipBenefits?.shippingDiscountPercent ?? 0
+  const membershipProductDiscount = quoteData?.quote?.membershipDiscountPercent ?? quoteData?.membershipDiscountPercent ?? 0
+  const combinedProductDiscount = quoteData?.quote?.combinedDiscountPercent ?? quoteData?.combinedDiscountPercent ?? 0
   const shippingFee = shippingQuote?.allowed ? shippingQuote.fee : 0
   const total = subtotal + shippingFee
   const depositAmount = computeDepositAmount(total)
@@ -326,6 +333,9 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
               regularLineCount: quoteData?.quote.lines.length || 0,
               sampleLineCount: quoteData?.quote.sampleLines.length || 0,
               actualSavings: calculateCartSavings(quoteData?.quote),
+              membershipDiscount: membershipProductDiscount,
+              combinedDiscount: combinedProductDiscount,
+              membershipTierName: membershipName,
             })}
           </p>
         </div>
@@ -610,9 +620,25 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
                   </div>
                   <div>
                     <span className="block text-[11px] text-slate-400">Phí vận chuyển:</span>
-                    <strong className="text-emerald-700 text-base font-extrabold">
-                      {formatVND(shippingQuote.fee)}
-                    </strong>
+                    {shippingQuote.membershipShippingDiscount && shippingQuote.membershipShippingDiscount > 0 ? (
+                      <div>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-xs text-slate-400 line-through">
+                            {formatVND(shippingQuote.baseShippingFee ?? (shippingQuote.fee + shippingQuote.membershipShippingDiscount))}
+                          </span>
+                          <strong className="text-emerald-700 text-base font-extrabold">
+                            {formatVND(shippingQuote.fee)}
+                          </strong>
+                        </div>
+                        <span className="text-[10px] text-emerald-700 font-semibold block">
+                          Ưu đãi {membershipName ? `hạng ${membershipName}` : 'Membership'} (-{shippingDiscountPercent}%): -{formatVND(shippingQuote.membershipShippingDiscount)}
+                        </span>
+                      </div>
+                    ) : (
+                      <strong className="text-emerald-700 text-base font-extrabold">
+                        {formatVND(shippingQuote.fee)}
+                      </strong>
+                    )}
                   </div>
                 </div>
 
@@ -779,25 +805,75 @@ export function CheckoutView({ addresses, userName }: CheckoutViewProps) {
                   <span className="font-bold text-slate-900 text-sm">{formatVND(subtotal)}</span>
                 </div>
 
-                <div className="flex justify-between text-slate-600">
-                  <span>Phí vận chuyển ({vehicleType === 'COLD' ? 'Xe lạnh' : 'Xe tiêu chuẩn'}):</span>
-                  {isCalculatingShipping ? (
-                    <span className="font-medium text-slate-400 flex items-center gap-1">
-                      <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" /> Đang tính...
-                    </span>
-                  ) : isShippingValid ? (
-                    <div className="text-right">
-                      <span className="font-bold text-emerald-700 text-sm">
-                        {formatVND(shippingFee)}
-                      </span>
-                      <span className="block text-[10px] text-slate-400">
-                        {shippingQuote?.distanceKm} km {shippingQuote?.isEstimated ? '(Ước tính)' : ''}
-                      </span>
+                {(() => {
+                  const actualSavings = calculateCartSavings(quote)
+                  const discountDisplay = getCartDiscountDisplay({
+                    userDiscount: quoteData?.userDiscountPercent || 0,
+                    regularLineCount: quote?.lines?.length || 0,
+                    sampleLineCount: quote?.sampleLines?.length || 0,
+                    actualSavings,
+                    membershipDiscount: membershipProductDiscount,
+                    combinedDiscount: combinedProductDiscount,
+                    membershipTierName: membershipName,
+                  })
+                  if (!actualSavings && (!quoteData?.userDiscountPercent && !membershipProductDiscount)) {
+                    return null
+                  }
+                  return (
+                    <div className="space-y-0.5">
+                      <div className="flex justify-between text-slate-600">
+                        <span>{discountDisplay.label}</span>
+                        <span className="font-medium text-emerald-700">
+                          {discountDisplay.text}
+                        </span>
+                      </div>
+                      {discountDisplay.subtext && (
+                        <div className="text-[11px] text-amber-700 italic text-right">
+                          {discountDisplay.subtext}
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <span className="font-semibold text-rose-600 text-xs">
-                      Chưa tính được phí
-                    </span>
+                  )
+                })()}
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Phí vận chuyển ({vehicleType === 'COLD' ? 'Xe lạnh' : 'Xe tiêu chuẩn'}):</span>
+                    {isCalculatingShipping ? (
+                      <span className="font-medium text-slate-400 flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" /> Đang tính...
+                      </span>
+                    ) : isShippingValid ? (
+                      <div className="text-right">
+                        {shippingQuote?.membershipShippingDiscount && shippingQuote.membershipShippingDiscount > 0 ? (
+                          <div>
+                            <span className="text-[11px] text-slate-400 line-through block">
+                              {formatVND(shippingQuote.baseShippingFee ?? (shippingQuote.fee + shippingQuote.membershipShippingDiscount))}
+                            </span>
+                            <span className="font-bold text-emerald-700 text-sm">
+                              {formatVND(shippingFee)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="font-bold text-emerald-700 text-sm">
+                            {formatVND(shippingFee)}
+                          </span>
+                        )}
+                        <span className="block text-[10px] text-slate-400">
+                          {shippingQuote?.distanceKm} km {shippingQuote?.isEstimated ? '(Ước tính)' : ''}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="font-semibold text-rose-600 text-xs">
+                        Chưa tính được phí
+                      </span>
+                    )}
+                  </div>
+                  {isShippingValid && shippingQuote?.membershipShippingDiscount && shippingQuote.membershipShippingDiscount > 0 && (
+                    <div className="flex justify-between text-[11px] text-emerald-700 bg-emerald-50/80 px-2 py-1 rounded-md border border-emerald-200/60">
+                      <span>Ưu đãi ship ({membershipName ? `Hạng ${membershipName}` : 'Membership'} -{shippingDiscountPercent}%):</span>
+                      <span className="font-semibold">-{formatVND(shippingQuote.membershipShippingDiscount)}</span>
+                    </div>
                   )}
                 </div>
 

@@ -33,6 +33,7 @@ import {
 import { formatVND, gramsToKg } from '@/lib/money'
 import { formatActiveCertificatesSummary, filterActiveCertificates } from '@/lib/certificate'
 import { calculateCustomerUnitPrice } from '@/lib/domain/pricing'
+import { MembershipTier, calculateCombinedProductDiscount } from '@/lib/domain/membership'
 import { ProductOrderBox } from './product-order-box'
 import { PreorderBox } from './preorder-box'
 import type { PublicStockView } from '@/lib/domain/inventory-view'
@@ -86,6 +87,10 @@ interface ProductDetailProps {
     discountPercent: number
     role: string
     groupName?: string
+    membershipTier?: MembershipTier | null
+    membershipTierName?: string
+    membershipDiscountPercent?: number
+    combinedDiscountPercent?: number
   } | null
   hasPurchasedSample?: boolean
 }
@@ -98,6 +103,10 @@ export function ProductDetailView({
   const [activeImage, setActiveImage] = useState(product.images[0] || '')
   const [nowTimestamp] = useState(() => Date.now())
   const userDiscount = user?.discountPercent || 0
+  const membershipDiscount = user?.membershipDiscountPercent || 0
+  const combinedDiscount =
+    user?.combinedDiscountPercent ??
+    calculateCombinedProductDiscount(userDiscount, membershipDiscount)
 
   // Sắp xếp các bậc giá theo kg tăng dần
   const sortedTiers = [...product.priceTiers].sort((a, b) => a.minGrams - b.minGrams)
@@ -325,7 +334,7 @@ export function ProductDetailView({
                     const nextTier = sortedTiers[idx + 1]
                     const maxKg = nextTier ? gramsToKg(nextTier.minGrams) - 1 : null
                     const rangeLabel = maxKg ? `${minKg} – ${maxKg} kg` : `≥ ${minKg} kg`
-                    const userUnitPrice = calculateCustomerUnitPrice(tier.pricePerKg, userDiscount)
+                    const userUnitPrice = calculateCustomerUnitPrice(tier.pricePerKg, combinedDiscount)
 
                     return (
                       <TableRow key={tier.id || idx} className="hover:bg-slate-50/60">

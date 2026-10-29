@@ -20,7 +20,7 @@ import {
   calculateReviewDeadline,
   isComplaintProposalExpired,
 } from '@/lib/domain/complaint-state'
-import { releaseOrderInventoryAllocations } from '@/lib/services/inventory-reservation'
+import { releaseOrderInventoryAllocations, dispatchOrderInventoryAllocations } from '@/lib/services/inventory-reservation'
 import {
   OrderStatus,
   TxType,
@@ -459,6 +459,15 @@ export async function settleActualWeights(input: {
         })
       }
 
+      // Quyết toán xuất kho và triệt tiêu reservation trên Sổ Cái FEFO (DISPATCH_OUT)
+      await dispatchOrderInventoryAllocations(tx, {
+        orderId: order.id,
+        orderCode: order.code,
+        actorId: admin.id,
+        lines: input.lines,
+        reason: 'Chốt khối lượng thực tế & Hoàn thành đơn hàng',
+      })
+
       // Cập nhật order sang COMPLETED ngay lập tức theo chuẩn BR-01
       await tx.order.update({
         where: { id: order.id },
@@ -707,6 +716,14 @@ export async function completeOrder(input: { orderId: string }) {
     }
 
     await db.$transaction(async (tx) => {
+      // Quyết toán xuất kho và triệt tiêu reservation trên Sổ Cái FEFO nếu chưa thực xuất
+      await dispatchOrderInventoryAllocations(tx, {
+        orderId: order.id,
+        orderCode: order.code,
+        actorId: admin.id,
+        reason: 'Đóng đơn hàng hoàn tất toàn diện (COMPLETED)',
+      })
+
       await tx.order.update({
         where: { id: order.id },
         data: { status: OrderStatus.COMPLETED },

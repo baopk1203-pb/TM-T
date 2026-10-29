@@ -57,7 +57,7 @@ describe('QA05-UI-01: Delivery Slot Single Source of Truth & Harmonization', () 
   it('an toàn khi slot là null, undefined hoặc mã lạ (fallback Cả ngày)', () => {
     expect(formatDeliveryTimeSlot(null)).toBe('Cả ngày')
     expect(formatDeliveryTimeSlot(undefined)).toBe('Cả ngày')
-    expect(formatDeliveryTimeSlot('INVALID_SLOT' as any)).toBe('Cả ngày')
+    expect(formatDeliveryTimeSlot('INVALID_SLOT' as unknown as string)).toBe('Cả ngày')
     expect(formatDeliveryTimeSlot('')).toBe('Cả ngày')
   })
 

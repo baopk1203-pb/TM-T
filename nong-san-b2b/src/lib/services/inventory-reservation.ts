@@ -15,6 +15,7 @@ import {
   BatchCandidate,
   BatchStatus as DomainBatchStatus,
   calculateReleaseAllocation,
+  calculateUnreleasedAllocationGrams,
   calculateStockFromLedger,
   gramsToKg,
   InventoryLedgerType as DomainLedgerType,
@@ -230,6 +231,212 @@ export async function confirmOrderInventoryAllocations(
   })
 
   return { confirmedCount: res.count }
+}
+
+export interface DispatchOrderInventoryParams {
+  orderId: string
+  orderCode?: string | null
+  actorId?: string | null
+  lines?: { orderItemId: string; actualGrams?: number }[]
+  reason?: string
+  now?: Date
+}
+
+export interface DispatchOrderInventoryResult {
+  dispatchedCount: number
+  totalDispatchedGrams: number
+  releasedCount: number
+  totalReleasedGrams: number
+}
+
+/**
+ * Xuất kho và quyết toán tồn kho đơn hàng (DISPATCH_OUT).
+ * - Cập nhật OrderItemBatchAllocation: status = DISPATCHED, dispatchedGrams = ...
+ * - Tạo bản ghi Sổ Cái InventoryLedger với type = DISPATCH_OUT.
+ * - Triệt tiêu RESERVATION_HOLD tương ứng trong công thức:
+ *     PhysicalStock = IMPORT - DISPATCH_OUT - SHRINKAGE_LOSS + QC_ADJUSTMENT
+ *     ReservedStock = RESERVATION_HOLD - RESERVATION_RELEASE - DISPATCH_OUT
+ * - Bảo đảm Idempotency (chống Double-Dispatch) qua:
+ *     1. Lọc chỉ lấy các phân bổ có status đang active (HOLD_PENDING, ALLOCATED_CONFIRMED, PARTIALLY_DISPATCHED).
+ *     2. Kiểm tra unreleasedGrams > 0.
+ *     3. Unique idempotencyKey trên InventoryLedger ("LEDGER:DISPATCH:" + alloc.id).
+ * - Nếu khối lượng thực tế (actualGrams) nhỏ hơn khối lượng đặt hàng, phần chênh lệch chưa xuất
+ *   sẽ được giải phóng an toàn (RESERVATION_RELEASE) để trả lại tồn bán được.
+ */
+export async function dispatchOrderInventoryAllocations(
+  tx: ReservationTxClient,
+  params: DispatchOrderInventoryParams
+): Promise<DispatchOrderInventoryResult> {
+  const now = params.now ?? new Date()
+
+  const allocationDelegate = (
+    tx as unknown as {
+      orderItemBatchAllocation?: Prisma.OrderItemBatchAllocationDelegate
+    }
+  ).orderItemBatchAllocation
+
+  const ledgerDelegate = (
+    tx as unknown as {
+      inventoryLedger?: Prisma.InventoryLedgerDelegate
+    }
+  ).inventoryLedger
+
+  if (!allocationDelegate?.findMany) {
+    return { dispatchedCount: 0, totalDispatchedGrams: 0, releasedCount: 0, totalReleasedGrams: 0 }
+  }
+
+  const activeAllocations = await allocationDelegate.findMany({
+    where: {
+      orderItem: { orderId: params.orderId },
+      status: {
+        in: [
+          AllocationStatus.HOLD_PENDING,
+          AllocationStatus.ALLOCATED_CONFIRMED,
+          AllocationStatus.PARTIALLY_DISPATCHED,
+        ],
+      },
+    },
+    orderBy: { id: 'asc' },
+  })
+
+  if (!activeAllocations || activeAllocations.length === 0) {
+    return { dispatchedCount: 0, totalDispatchedGrams: 0, releasedCount: 0, totalReleasedGrams: 0 }
+  }
+
+  let dispatchedCount = 0
+  let totalDispatchedGrams = 0
+  let releasedCount = 0
+  let totalReleasedGrams = 0
+
+  // Nhóm phân bổ theo orderItemId để hỗ trợ phân phối actualGrams nếu có nhiều lô trên 1 dòng
+  const itemRemainingActualMap = new Map<string, number>()
+  if (params.lines && params.lines.length > 0) {
+    for (const line of params.lines) {
+      if (typeof line.actualGrams === 'number' && Number.isFinite(line.actualGrams)) {
+        itemRemainingActualMap.set(line.orderItemId, Math.max(0, line.actualGrams))
+      }
+    }
+  }
+
+  for (const alloc of activeAllocations) {
+    try {
+      await tx.$queryRaw`SELECT id FROM "OrderItemBatchAllocation" WHERE id = ${alloc.id} FOR UPDATE`
+    } catch {
+      // Bỏ qua nếu môi trường test / mock không hỗ trợ raw query
+    }
+
+    const currentUnreleased = calculateUnreleasedAllocationGrams({
+      allocatedGrams: alloc.allocatedGrams,
+      dispatchedGrams: alloc.dispatchedGrams,
+      releasedGrams: alloc.releasedGrams,
+      status: alloc.status,
+    })
+
+    if (currentUnreleased <= 0) {
+      continue
+    }
+
+    let toDispatch = currentUnreleased
+    let toRelease = 0
+
+    if (itemRemainingActualMap.has(alloc.orderItemId)) {
+      const remainingActual = itemRemainingActualMap.get(alloc.orderItemId)!
+      if (remainingActual >= currentUnreleased) {
+        toDispatch = currentUnreleased
+        toRelease = 0
+        itemRemainingActualMap.set(alloc.orderItemId, remainingActual - currentUnreleased)
+      } else {
+        toDispatch = remainingActual
+        toRelease = currentUnreleased - remainingActual
+        itemRemainingActualMap.set(alloc.orderItemId, 0)
+      }
+    }
+
+    const newDispatchedGrams = alloc.dispatchedGrams + toDispatch
+    const newReleasedGrams = alloc.releasedGrams + toRelease
+    const isFullySettled = (alloc.allocatedGrams - newDispatchedGrams - newReleasedGrams) <= 0
+    const newStatus: AllocationStatus = isFullySettled
+      ? AllocationStatus.DISPATCHED
+      : AllocationStatus.PARTIALLY_DISPATCHED
+
+    let didUpdate = false
+    if (typeof allocationDelegate.update === 'function') {
+      await allocationDelegate.update({
+        where: { id: alloc.id },
+        data: {
+          dispatchedGrams: newDispatchedGrams,
+          releasedGrams: newReleasedGrams,
+          status: newStatus,
+          holdExpiresAt: null,
+          releasedAt: toRelease > 0 ? now : alloc.releasedAt,
+        },
+      })
+      didUpdate = true
+    } else if (typeof allocationDelegate.updateMany === 'function') {
+      const updateRes = await allocationDelegate.updateMany({
+        where: {
+          id: alloc.id,
+          status: alloc.status,
+          dispatchedGrams: alloc.dispatchedGrams,
+        },
+        data: {
+          dispatchedGrams: newDispatchedGrams,
+          releasedGrams: newReleasedGrams,
+          status: newStatus,
+          holdExpiresAt: null,
+          releasedAt: toRelease > 0 ? now : alloc.releasedAt,
+        },
+      })
+      didUpdate = updateRes.count > 0
+    }
+
+    if (!didUpdate) {
+      continue
+    }
+
+    if (toDispatch > 0 && typeof ledgerDelegate?.create === 'function') {
+      await ledgerDelegate.create({
+        data: {
+          batchId: alloc.batchId,
+          orderId: params.orderId,
+          orderItemId: alloc.orderItemId,
+          type: InventoryLedgerType.DISPATCH_OUT,
+          quantityGrams: toDispatch,
+          idempotencyKey: `LEDGER:DISPATCH:${alloc.id}`,
+          referenceCode: params.orderCode ?? null,
+          actorId: params.actorId ?? null,
+          notes: params.reason ?? `Xuất kho hoàn tất giao hàng theo đơn ${params.orderCode ?? params.orderId}`,
+        },
+      })
+      dispatchedCount++
+      totalDispatchedGrams += toDispatch
+    }
+
+    if (toRelease > 0 && typeof ledgerDelegate?.create === 'function') {
+      await ledgerDelegate.create({
+        data: {
+          batchId: alloc.batchId,
+          orderId: params.orderId,
+          orderItemId: alloc.orderItemId,
+          type: InventoryLedgerType.RESERVATION_RELEASE,
+          quantityGrams: toRelease,
+          idempotencyKey: `LEDGER:RELEASE_SHORTFALL:${alloc.id}`,
+          referenceCode: params.orderCode ?? null,
+          actorId: params.actorId ?? null,
+          notes: `Giải phóng chênh lệch thiếu hụt khi giao thực tế (${toRelease}g)`,
+        },
+      })
+      releasedCount++
+      totalReleasedGrams += toRelease
+    }
+  }
+
+  return {
+    dispatchedCount,
+    totalDispatchedGrams,
+    releasedCount,
+    totalReleasedGrams,
+  }
 }
 
 /**

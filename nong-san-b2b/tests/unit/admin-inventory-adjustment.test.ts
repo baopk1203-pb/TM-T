@@ -5,8 +5,14 @@
  * ============================================================================
  */
 
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { BatchStatus } from '@prisma/client'
+
+// Hoisted mock để tránh lỗi thiếu secret khi import module UI
+vi.mock('@/lib/auth-config', () => ({
+  getAuthSecret: () => 'test-secret-key-123456789',
+}))
+
 import {
   isInventoryAdjustmentEnabled,
   isInventoryWriteEnabled,

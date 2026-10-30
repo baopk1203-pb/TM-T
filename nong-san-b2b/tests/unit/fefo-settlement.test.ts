@@ -316,4 +316,46 @@ describe('EV-F01-FEFO-SETTLEMENT: Inventory Settlement Regression Test Suite', (
     expect(invariants.valid).toBe(true)
     expect(invariants.violations).toHaveLength(0)
   })
+
+  // =========================================================================
+  // TEST 8: Concurrency Protection — Hai tiến trình đồng thời không double dispatch
+  // =========================================================================
+  it('8. Concurrency Protection — Hai tiến trình quyết toán đồng thời không tạo double dispatch', async () => {
+    // Chạy song song 2 transaction quyết toán trên cùng đơn hàng
+    const [res1, res2] = await Promise.all([
+      dispatchOrderInventoryAllocations(mockTx as unknown as Parameters<typeof dispatchOrderInventoryAllocations>[0], {
+        orderId: 'ord-dh-261030-fzdn',
+        orderCode: 'DH-261030-FZDN',
+        actorId: 'admin-1',
+        lines: [{ orderItemId: 'item-bo034', actualGrams: 50000 }],
+      }),
+      dispatchOrderInventoryAllocations(mockTx as unknown as Parameters<typeof dispatchOrderInventoryAllocations>[0], {
+        orderId: 'ord-dh-261030-fzdn',
+        orderCode: 'DH-261030-FZDN',
+        actorId: 'admin-2',
+        lines: [{ orderItemId: 'item-bo034', actualGrams: 50000 }],
+      }),
+    ])
+
+    // Tổng số lượng xuất kho qua 2 tiến trình đúng bằng 50 kg
+    const totalDispatchedAcrossThreads = res1.totalDispatchedGrams + res2.totalDispatchedGrams
+    expect(totalDispatchedAcrossThreads).toBe(50000)
+
+    // Đúng 1 tiến trình xử lý thành công xuất 50 kg, tiến trình kia nhận 0 kg (do đã DISPATCHED hoặc id duplicate)
+    expect(
+      (res1.dispatchedCount === 1 && res2.dispatchedCount === 0) ||
+      (res1.dispatchedCount === 0 && res2.dispatchedCount === 1)
+    ).toBe(true)
+
+    // Trên Sổ Cái chỉ có đúng 1 bản ghi DISPATCH_OUT
+    const dispatchEntries = mockLedgers.filter((l) => l.type === InventoryLedgerType.DISPATCH_OUT)
+    expect(dispatchEntries).toHaveLength(1)
+    expect(dispatchEntries[0].quantityGrams).toBe(50000)
+
+    // Tồn kho nhất quán
+    const stock = calculateStockFromLedger(mockLedgers)
+    expect(stock.physicalStockGrams).toBe(108000)
+    expect(stock.reservedGrams).toBe(0)
+    expect(stock.availableGrams).toBe(108000)
+  })
 })

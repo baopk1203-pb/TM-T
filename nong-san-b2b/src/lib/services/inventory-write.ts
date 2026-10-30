@@ -366,6 +366,19 @@ export async function adjustStockInTx(
     where: { idempotencyKey: data.idempotencyKey },
   })
   if (existingLedger) {
+    // Payload mismatch protection: Không cho phép tái sử dụng cùng key với payload khác
+    const expectedLedgerType = data.type as InventoryLedgerType
+    const isMatch =
+      existingLedger.batchId === data.batchId &&
+      existingLedger.type === expectedLedgerType &&
+      existingLedger.quantityGrams === data.quantityGrams
+
+    if (!isMatch) {
+      throw new Error(
+        `Lỗi Idempotency: Khóa "${data.idempotencyKey}" đã tồn tại nhưng có dữ liệu khác với giao dịch ban đầu (Payload mismatch). Không thể tái sử dụng khóa idempotency cho giao dịch khác.`
+      )
+    }
+
     // Idempotent retry: trả về kết quả đã ghi nhận
     return {
       ledgerEntry: {

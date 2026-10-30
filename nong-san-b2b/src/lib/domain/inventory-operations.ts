@@ -380,7 +380,11 @@ export function validateStockAdjustment(
   const idempotencyKey =
     typeof input.idempotencyKey === 'string' && input.idempotencyKey.trim()
       ? input.idempotencyKey.trim()
-      : `ADJUST:${batchId}:${input.type}:${Date.now()}`
+      : `ADJUST:${batchId}:${input.type}:${
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+        }`
 
   return {
     isValid: true,

@@ -113,6 +113,19 @@ export async function adminAdjustStock(
       }
     }
 
+    if (
+      !input.idempotencyKey ||
+      typeof input.idempotencyKey !== 'string' ||
+      input.idempotencyKey.trim().length < 8
+    ) {
+      return {
+        success: false,
+        error:
+          'Yêu cầu cung cấp khóa chống trùng lặp (idempotencyKey) hợp lệ với độ dài tối thiểu 8 ký tự khi điều chỉnh tồn kho.',
+        code: 'INVALID_IDEMPOTENCY_KEY',
+      }
+    }
+
     const result = await db.$transaction(async (tx) => {
       return await adjustStockInTx(tx, {
         ...input,

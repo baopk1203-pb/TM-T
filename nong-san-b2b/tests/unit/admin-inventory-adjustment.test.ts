@@ -19,7 +19,10 @@ import {
   calculateStockAdjustmentImpact,
   validateStockAdjustment,
 } from '@/lib/domain/inventory-operations'
-import { evaluateBatchAdjustActionState } from '@/app/admin/lo-hang/batch-management'
+import {
+  evaluateBatchAdjustActionState,
+  generateAdjustmentIdempotencyKey,
+} from '@/app/admin/lo-hang/batch-management'
 import type { BatchStockSummary } from '@/lib/domain/inventory'
 
 describe('EV-F01-ADMIN-INVENTORY-ADJUSTMENT-01 — Unit Tests', () => {
@@ -265,6 +268,94 @@ describe('EV-F01-ADMIN-INVENTORY-ADJUSTMENT-01 — Unit Tests', () => {
       })
       expect(qrZeroState.canOpen).toBe(false)
       expect(qrZeroState.disabledReason).toContain('0 kg')
+    })
+  })
+
+  // ==========================================================================
+  // 5. IDEMPOTENCY KEY GENERATION & ENFORCEMENT
+  // ==========================================================================
+  describe('5. Idempotency Key Generation & Validation', () => {
+    it('IDEMP-01: generateAdjustmentIdempotencyKey sinh khóa duy nhất, ngẫu nhiên chứa batchId', () => {
+      const batchId = 'batch-uuid-12345'
+      const key1 = generateAdjustmentIdempotencyKey(batchId)
+      const key2 = generateAdjustmentIdempotencyKey(batchId)
+
+      expect(key1).toMatch(/^ADJUST:batch-uuid-12345:/)
+      expect(key2).toMatch(/^ADJUST:batch-uuid-12345:/)
+      expect(key1).not.toBe(key2)
+      expect(key1.length).toBeGreaterThanOrEqual(20)
+    })
+
+    it('IDEMP-02: validateStockAdjustment bảo toàn idempotencyKey do caller truyền vào', () => {
+      const mockSummary: BatchStockSummary = {
+        physicalStockGrams: 50000,
+        reservedGrams: 10000,
+        availableGrams: 40000,
+        dispatchedGrams: 0,
+        shrinkageGrams: 0,
+        importGrams: 50000,
+        rawPhysicalStockGrams: 50000,
+        rawReservedGrams: 10000,
+        rawAvailableGrams: 40000,
+        hasDeficit: false,
+        warnings: [],
+      }
+
+      const customKey = 'CUSTOM-KEY-UUID-99999'
+      const res = validateStockAdjustment(
+        {
+          batchId: 'batch-test-01',
+          type: 'QC_ADJUSTMENT_ADD',
+          quantityKg: 2,
+          reason: 'Bổ sung kiểm kê định kỳ',
+          idempotencyKey: customKey,
+        },
+        mockSummary
+      )
+
+      expect(res.isValid).toBe(true)
+      expect(res.data?.idempotencyKey).toBe(customKey)
+    })
+
+    it('IDEMP-03: validateStockAdjustment fallback sang khóa ngẫu nhiên duy nhất nếu không truyền key', () => {
+      const mockSummary: BatchStockSummary = {
+        physicalStockGrams: 50000,
+        reservedGrams: 10000,
+        availableGrams: 40000,
+        dispatchedGrams: 0,
+        shrinkageGrams: 0,
+        importGrams: 50000,
+        rawPhysicalStockGrams: 50000,
+        rawReservedGrams: 10000,
+        rawAvailableGrams: 40000,
+        hasDeficit: false,
+        warnings: [],
+      }
+
+      const res1 = validateStockAdjustment(
+        {
+          batchId: 'batch-test-01',
+          type: 'QC_ADJUSTMENT_ADD',
+          quantityKg: 1,
+          reason: 'Bổ sung kiểm kê định kỳ',
+        },
+        mockSummary
+      )
+
+      const res2 = validateStockAdjustment(
+        {
+          batchId: 'batch-test-01',
+          type: 'QC_ADJUSTMENT_ADD',
+          quantityKg: 1,
+          reason: 'Bổ sung kiểm kê định kỳ',
+        },
+        mockSummary
+      )
+
+      expect(res1.isValid).toBe(true)
+      expect(res2.isValid).toBe(true)
+      expect(res1.data?.idempotencyKey).toMatch(/^ADJUST:batch-test-01:QC_ADJUSTMENT_ADD:/)
+      expect(res1.data?.idempotencyKey).not.toBe(res2.data?.idempotencyKey)
     })
   })
 })

@@ -167,6 +167,19 @@ export function evaluateBatchAdjustActionState(batch: {
   }
 }
 
+/**
+ * Sinh khóa Idempotency Key duy nhất, không thể dự đoán cho thao tác điều chỉnh tồn kho.
+ * Sử dụng Web Crypto API (crypto.randomUUID) khi khả dụng.
+ */
+export function generateAdjustmentIdempotencyKey(batchId: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `ADJUST:${batchId}:${crypto.randomUUID()}`
+  }
+  const randomSuffix =
+    Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+  return `ADJUST:${batchId}:${Date.now()}-${randomSuffix}`
+}
+
 export function BatchManagement({
   inventoryViews,
   products,
@@ -213,7 +226,8 @@ export function BatchManagement({
   const [adjustKg, setAdjustKg] = useState('10')
   const [adjustReason, setAdjustReason] = useState('')
   const [adjustRefCode, setAdjustRefCode] = useState('')
-    const [adjustLoading, setAdjustLoading] = useState(false)
+  const [adjustIdempotencyKey, setAdjustIdempotencyKey] = useState('')
+  const [adjustLoading, setAdjustLoading] = useState(false)
   const [adjustError, setAdjustError] = useState<string | null>(null)
 
   // Module D: Status & FEFO Modal
@@ -286,7 +300,8 @@ export function BatchManagement({
     setAdjustKg(defaultKg)
     setAdjustReason('')
     setAdjustRefCode('')
-        setAdjustError(null)
+    setAdjustError(null)
+    setAdjustIdempotencyKey(generateAdjustmentIdempotencyKey(view.batch.id))
   }
 
   // Handle Stock Receipt (Module A)
@@ -349,6 +364,13 @@ export function BatchManagement({
     setAdjustLoading(true)
     setAdjustError(null)
 
+    // Đảm bảo luôn có idempotencyKey ổn định trước lần gửi đầu tiên và giữ nguyên khi retry
+    let key = adjustIdempotencyKey
+    if (!key) {
+      key = generateAdjustmentIdempotencyKey(adjustModalBatch.batch.id)
+      setAdjustIdempotencyKey(key)
+    }
+
     try {
       const res = await adminAdjustStock({
         batchId: adjustModalBatch.batch.id,
@@ -356,18 +378,23 @@ export function BatchManagement({
         quantityKg: Number(adjustKg),
         reason: adjustReason,
         referenceCode: adjustRefCode.trim() || null,
-              })
+        idempotencyKey: key,
+      })
 
       setAdjustLoading(false)
       if (!res.success) {
+        // Lỗi: GIỮ NGUYÊN adjustIdempotencyKey trong state để hỗ trợ retry chính xác
         setAdjustError(res.error || 'Lỗi khi điều chỉnh tồn kho')
       } else {
+        // Thành công: Xóa modal và giải phóng key cho thao tác tiếp theo
         setSuccessMsg(res.message || 'Đã điều chỉnh tồn kho thành công')
         setAdjustModalBatch(null)
+        setAdjustIdempotencyKey('')
         router.refresh()
       }
     } catch (err: unknown) {
       setAdjustLoading(false)
+      // Lỗi mạng hoặc ngoại lệ không xác định: Giữ nguyên key để retry thao tác
       setAdjustError(err instanceof Error ? err.message : 'Lỗi hệ thống khi điều chỉnh tồn kho')
     }
   }
@@ -1076,7 +1103,10 @@ export function BatchManagement({
               </div>
               <button
                 type="button"
-                onClick={() => setAdjustModalBatch(null)}
+                onClick={() => {
+                  setAdjustModalBatch(null)
+                  setAdjustIdempotencyKey('')
+                }}
                 className="p-1 rounded-full text-white/80 hover:text-white hover:bg-white/10"
               >
                 <X className="w-5 h-5" />
@@ -1116,7 +1146,13 @@ export function BatchManagement({
                 <Label>Loại điều chỉnh tồn *</Label>
                 <select
                   value={adjustType}
-                  onChange={(e) => setAdjustType(e.target.value as StockAdjustmentType)}
+                  onChange={(e) => {
+                    const newType = e.target.value as StockAdjustmentType
+                    setAdjustType(newType)
+                    if (adjustModalBatch) {
+                      setAdjustIdempotencyKey(generateAdjustmentIdempotencyKey(adjustModalBatch.batch.id))
+                    }
+                  }}
                   className="w-full h-9 px-3 rounded-md border border-slate-300 bg-white text-xs"
                 >
                   <option value="SHRINKAGE_LOSS">Hao hụt tự nhiên / Hư hỏng kho lạnh (SHRINKAGE_LOSS, Giảm tồn)</option>
@@ -1132,7 +1168,12 @@ export function BatchManagement({
                   min={0.1}
                   step="0.1"
                   value={adjustKg}
-                  onChange={(e) => setAdjustKg(e.target.value)}
+                  onChange={(e) => {
+                    setAdjustKg(e.target.value)
+                    if (adjustModalBatch) {
+                      setAdjustIdempotencyKey(generateAdjustmentIdempotencyKey(adjustModalBatch.batch.id))
+                    }
+                  }}
                   required
                   className="bg-white"
                 />
@@ -1195,7 +1236,14 @@ export function BatchManagement({
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <Button type="button" variant="outline" onClick={() => setAdjustModalBatch(null)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setAdjustModalBatch(null)
+                    setAdjustIdempotencyKey('')
+                  }}
+                >
                   Hủy
                 </Button>
                 <Button

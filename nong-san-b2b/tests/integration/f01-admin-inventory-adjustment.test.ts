@@ -403,6 +403,108 @@ describe('EV-F01-ADMIN-INVENTORY-ADJUSTMENT-01 — PostgreSQL Targeted Suite', (
     expect(countAfterSecond).toBe(countAfterFirst)
   })
 
+  it('6b. Bắt buộc cung cấp idempotencyKey hợp lệ (>= 8 ký tự), từ chối request thiếu key', async () => {
+    // 1. Không truyền idempotencyKey
+    const resNoKey = await adminAdjustStock({
+      batchId: testBatchId,
+      type: 'QC_ADJUSTMENT_ADD',
+      quantityKg: 1,
+      reason: 'Thiếu key hoàn toàn',
+    })
+    expect(resNoKey.success).toBe(false)
+    expect(resNoKey.code).toBe('INVALID_IDEMPOTENCY_KEY')
+
+    // 2. Key rỗng hoặc quá ngắn (< 8 ký tự)
+    const resShortKey = await adminAdjustStock({
+      batchId: testBatchId,
+      type: 'QC_ADJUSTMENT_ADD',
+      quantityKg: 1,
+      reason: 'Key quá ngắn',
+      idempotencyKey: 'SHORT',
+    })
+    expect(resShortKey.success).toBe(false)
+    expect(resShortKey.code).toBe('INVALID_IDEMPOTENCY_KEY')
+  })
+
+  it('6c. Chặn tái sử dụng idempotencyKey với payload khác (Payload Mismatch Protection)', async () => {
+    const mismatchKey = 'IDEMP:MISMATCH:TEST:001'
+
+    // Lần 1: Thực hiện điều chỉnh giảm 1 kg SHRINKAGE_LOSS
+    const resInitial = await adminAdjustStock({
+      batchId: testBatchId,
+      type: 'SHRINKAGE_LOSS',
+      quantityKg: 1,
+      reason: 'Hao hụt ban đầu hợp lệ',
+      idempotencyKey: mismatchKey,
+    })
+    expect(resInitial.success).toBe(true)
+
+    // Lần 2: Cố tình gửi lại đúng key mismatchKey nhưng đổi quantity thành 5 kg
+    const resDifferentQty = await adminAdjustStock({
+      batchId: testBatchId,
+      type: 'SHRINKAGE_LOSS',
+      quantityKg: 5,
+      reason: 'Thử đổi khối lượng cùng key',
+      idempotencyKey: mismatchKey,
+    })
+    expect(resDifferentQty.success).toBe(false)
+    expect(resDifferentQty.error).toContain('Payload mismatch')
+
+    // Lần 3: Cố tình gửi lại đúng key mismatchKey nhưng đổi type thành QC_ADJUSTMENT_ADD
+    const resDifferentType = await adminAdjustStock({
+      batchId: testBatchId,
+      type: 'QC_ADJUSTMENT_ADD',
+      quantityKg: 1,
+      reason: 'Thử đổi loại giao dịch cùng key',
+      idempotencyKey: mismatchKey,
+    })
+    expect(resDifferentType.success).toBe(false)
+    expect(resDifferentType.error).toContain('Payload mismatch')
+  })
+
+  it('6d. Retry thao tác khi request đầu đã commit nhưng phản hồi bị mất không tạo ledger mới', async () => {
+    const retryKey = 'IDEMP:RETRY:SIMULATION:001'
+    const initialLedgerCount = await prisma.inventoryLedger.count({
+      where: { batchId: testBatchId },
+    })
+
+    // Request 1: Gửi thành công đến server và đã commit vào DB
+    const res1 = await adminAdjustStock({
+      batchId: testBatchId,
+      type: 'QC_ADJUSTMENT_ADD',
+      quantityKg: 2,
+      reason: 'Bổ sung kiểm kê thực tế',
+      idempotencyKey: retryKey,
+    })
+    expect(res1.success).toBe(true)
+    const ledgerAfter1 = await prisma.inventoryLedger.count({
+      where: { batchId: testBatchId },
+    })
+    expect(ledgerAfter1).toBe(initialLedgerCount + 1)
+
+    // Giả lập client bị rớt mạng / mất response, client retry gửi lại đúng retryKey
+    const resRetry = await adminAdjustStock({
+      batchId: testBatchId,
+      type: 'QC_ADJUSTMENT_ADD',
+      quantityKg: 2,
+      reason: 'Bổ sung kiểm kê thực tế',
+      idempotencyKey: retryKey,
+    })
+    expect(resRetry.success).toBe(true)
+    expect(resRetry.data).toBeDefined()
+
+    // Kiểm tra số lượng Ledger: Tuyệt đối KHÔNG tạo thêm Ledger thứ hai
+    const ledgerAfterRetry = await prisma.inventoryLedger.count({
+      where: { batchId: testBatchId },
+    })
+    expect(ledgerAfterRetry).toBe(ledgerAfter1)
+
+    // Khối lượng tồn kho không bị cộng dồn lần 2
+    const data = resRetry.data as { ledgerEntry: { id: string } }
+    const firstData = res1.data as { ledgerEntry: { id: string } }
+    expect(data.ledgerEntry.id).toBe(firstData.ledgerEntry.id)
+  })
+
   // ==========================================================================
   // CASE 7: NON-ADMIN AUTHORIZATION
   // ==========================================================================
@@ -546,6 +648,7 @@ describe('EV-F01-ADMIN-INVENTORY-ADJUSTMENT-01 — PostgreSQL Targeted Suite', (
       type: 'QC_ADJUSTMENT_SUB',
       quantityKg: 20,
       reason: 'Giảm vượt mức khả dụng đang giữ chỗ',
+      idempotencyKey: 'IDEMP:TEST:EXCEED:001',
     })
 
     expect(resExceed.success).toBe(false)
@@ -557,6 +660,7 @@ describe('EV-F01-ADMIN-INVENTORY-ADJUSTMENT-01 — PostgreSQL Targeted Suite', (
       type: 'SHRINKAGE_LOSS',
       quantityKg: 200,
       reason: 'Hủy toàn bộ vượt tồn',
+      idempotencyKey: 'IDEMP:TEST:NEGATIVE:001',
     })
     expect(resNegative.success).toBe(false)
     expect(resNegative.error).toContain('làm âm kho vật lý')
@@ -695,6 +799,7 @@ describe('EV-F01-ADMIN-INVENTORY-ADJUSTMENT-01 — PostgreSQL Targeted Suite', (
         type: 'QC_ADJUSTMENT_ADD',
         quantityKg: 10,
         reason: 'Cố tình điều chỉnh sản phẩm không theo dõi kho',
+        idempotencyKey: 'IDEMP:TEST:UNTRACKED:001',
       })
 
       expect(res.success).toBe(false)
@@ -719,6 +824,7 @@ describe('EV-F01-ADMIN-INVENTORY-ADJUSTMENT-01 — PostgreSQL Targeted Suite', (
         type: 'QC_ADJUSTMENT_ADD',
         quantityKg: 5,
         reason: 'Cố tình điều chỉnh lô đã cạn',
+        idempotencyKey: 'IDEMP:TEST:DEPLETED:001',
       })
 
       expect(res.success).toBe(false)
@@ -743,6 +849,7 @@ describe('EV-F01-ADMIN-INVENTORY-ADJUSTMENT-01 — PostgreSQL Targeted Suite', (
         type: 'QC_ADJUSTMENT_ADD',
         quantityKg: 5,
         reason: 'Cố tình điều chỉnh lô QR',
+        idempotencyKey: 'IDEMP:TEST:QRONLY:001',
       })
 
       expect(res.success).toBe(false)

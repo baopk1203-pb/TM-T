@@ -4,7 +4,10 @@ import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { BatchStatus } from '@prisma/client'
-import { isInventoryWriteEnabled } from '@/lib/domain/inventory-operations'
+import {
+  isInventoryWriteEnabled,
+  isInventoryAdjustmentEnabled,
+} from '@/lib/domain/inventory-operations'
 import {
   receiveStockInTx,
   adjustStockInTx,
@@ -101,11 +104,11 @@ export async function adminAdjustStock(
   try {
     const admin = await requireAdmin()
 
-    if (!isInventoryWriteEnabled()) {
+    if (!isInventoryAdjustmentEnabled()) {
       return {
         success: false,
         error:
-          'Chức năng ghi kho Admin hiện đang bị khóa trên môi trường này theo chính sách an toàn (Fail-closed).',
+          'Chức năng điều chỉnh tồn kho Admin hiện đang bị khóa trên môi trường này theo chính sách an toàn (Fail-closed).',
         code: 'FEATURE_DISABLED',
       }
     }

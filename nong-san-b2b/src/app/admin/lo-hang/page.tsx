@@ -1,7 +1,10 @@
 import { requireAdmin } from '@/lib/auth'
 import { getAdminBatchesInventoryView } from '@/lib/services/inventory-read'
 import { db } from '@/lib/db'
-import { isInventoryWriteEnabled } from '@/lib/domain/inventory-operations'
+import {
+  isInventoryWriteEnabled,
+  isInventoryAdjustmentEnabled,
+} from '@/lib/domain/inventory-operations'
 import { BatchManagement } from './batch-management'
 
 export const dynamic = 'force-dynamic'
@@ -33,12 +36,14 @@ export default async function AdminBatchesPage({ searchParams }: AdminBatchesPag
   ])
 
   const writeEnabled = isInventoryWriteEnabled()
+  const adjustmentEnabled = isInventoryAdjustmentEnabled()
 
   return (
     <BatchManagement
       inventoryViews={inventoryViews}
       products={products}
       writeEnabled={writeEnabled}
+      adjustmentEnabled={adjustmentEnabled}
       initialProductIdFilter={resolvedSearchParams.productId || 'ALL'}
       initialSearchQuery={resolvedSearchParams.batchCode || ''}
     />

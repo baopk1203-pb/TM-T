@@ -33,6 +33,7 @@ import {
 import {
   buildBatchStatusAuditKey,
   isInventoryWriteEnabled,
+  isInventoryAdjustmentEnabled,
   validateBatchStatusTransition,
   validateStockAdjustment,
   validateStockReceipt,
@@ -99,6 +100,17 @@ function assertInventoryWriteAllowed(): void {
   if (!isInventoryWriteEnabled()) {
     throw new Error(
       'FEATURE_DISABLED: Chức năng ghi kho Admin hiện đang bị khóa trên môi trường này theo chính sách bảo vệ an toàn (Fail-closed).'
+    )
+  }
+}
+/**
+ * Kiểm tra cờ an toàn điều chỉnh tồn kho Fail-closed phía server.
+ * Chấp nhận khi ENABLE_ADMIN_INVENTORY_ADJUSTMENTS=true hoặc ENABLE_ADMIN_INVENTORY_WRITES=true.
+ */
+function assertInventoryAdjustmentAllowed(): void {
+  if (!isInventoryAdjustmentEnabled()) {
+    throw new Error(
+      'FEATURE_DISABLED: Chức năng điều chỉnh tồn kho Admin hiện đang bị khóa trên môi trường này theo chính sách bảo vệ an toàn (Fail-closed).'
     )
   }
 }
@@ -277,7 +289,7 @@ export async function adjustStockInTx(
   tx: InventoryTxClient,
   params: StockAdjustmentInput & { actorId: string }
 ): Promise<AdjustStockResult> {
-  assertInventoryWriteAllowed()
+  assertInventoryAdjustmentAllowed()
 
   // 1. Khóa bi quan dòng Batch để tránh cập nhật đồng thời
   try {
@@ -289,6 +301,13 @@ export async function adjustStockInTx(
   const batch = await tx.batch.findUnique({
     where: { id: params.batchId },
     include: {
+      product: {
+        select: {
+          id: true,
+          name: true,
+          inventoryTrackingEnabled: true,
+        },
+      },
       ledgerEntries: true,
       allocations: {
         where: {
@@ -306,6 +325,25 @@ export async function adjustStockInTx(
 
   if (!batch) {
     throw new Error(`Không tìm thấy lô hàng với mã: ${params.batchId}`)
+  }
+
+  // Kiểm tra phòng thủ tầng sâu phía server (Defense-in-depth)
+  if (batch.product && !batch.product.inventoryTrackingEnabled) {
+    throw new Error(
+      `Sản phẩm "${batch.product.name}" chưa bật tính năng quản lý tồn kho (inventoryTrackingEnabled = false), không thể điều chỉnh tồn kho lô hàng`
+    )
+  }
+
+  if (batch.status === BatchStatus.DEPLETED) {
+    throw new Error(
+      `Lô hàng ${batch.code} đã ở trạng thái cạn tồn (DEPLETED), không thể điều chỉnh tồn kho`
+    )
+  }
+
+  if (batch.ledgerEntries.length === 0 && batch.quantityGrams === 0) {
+    throw new Error(
+      `Lô hàng ${batch.code} là lô lịch sử chỉ phục vụ truy xuất QR, chưa có bút toán nhập kho để điều chỉnh`
+    )
   }
 
   // 2. Tính toán số dư hiện tại từ Sổ cái

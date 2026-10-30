@@ -44,6 +44,21 @@ export function isInventoryWriteEnabled(envValue?: string): boolean {
   const flag = envValue !== undefined ? envValue : process.env.ENABLE_ADMIN_INVENTORY_WRITES
   return flag === 'true'
 }
+/**
+ * Kiểm tra cờ tính năng Điều chỉnh tồn kho Admin (Fail-closed).
+ * Cho phép thực hiện điều chỉnh tồn kho FEFO khi:
+ * 1. Cờ tổng ENABLE_ADMIN_INVENTORY_WRITES === 'true' (toàn bộ quyền ghi kho Admin được mở), HOẶC
+ * 2. Cờ chuyên biệt ENABLE_ADMIN_INVENTORY_ADJUSTMENTS === 'true' (mở riêng cho môi trường Demo/Beta).
+ * Mặc định trả về alse (Fail-closed).
+ */
+export function isInventoryAdjustmentEnabled(envValue?: string): boolean {
+  if (isInventoryWriteEnabled(envValue)) {
+    return true
+  }
+  const flag =
+    envValue !== undefined ? envValue : process.env.ENABLE_ADMIN_INVENTORY_ADJUSTMENTS
+  return flag === 'true'
+}
 
 // ============================================================================
 // 2. MODULE A — STOCK RECEIPT / NHẬP KHO

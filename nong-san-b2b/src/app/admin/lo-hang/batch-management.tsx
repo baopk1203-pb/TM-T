@@ -60,6 +60,7 @@ interface BatchManagementProps {
   inventoryViews: AdminBatchDetailView[]
   products: ProductOption[]
   writeEnabled?: boolean
+  adjustmentEnabled?: boolean
   initialProductIdFilter?: string
   initialSearchQuery?: string
 }
@@ -170,9 +171,11 @@ export function BatchManagement({
   inventoryViews,
   products,
   writeEnabled = false,
+  adjustmentEnabled = false,
   initialProductIdFilter = 'ALL',
   initialSearchQuery = '',
 }: BatchManagementProps) {
+  const effectiveAdjustmentEnabled = adjustmentEnabled || writeEnabled
   const router = useRouter()
   const [isRefreshing, startRefreshTransition] = useTransition()
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -210,7 +213,7 @@ export function BatchManagement({
   const [adjustKg, setAdjustKg] = useState('10')
   const [adjustReason, setAdjustReason] = useState('')
   const [adjustRefCode, setAdjustRefCode] = useState('')
-  const [adjustLoading, setAdjustLoading] = useState(false)
+    const [adjustLoading, setAdjustLoading] = useState(false)
   const [adjustError, setAdjustError] = useState<string | null>(null)
 
   // Module D: Status & FEFO Modal
@@ -283,7 +286,7 @@ export function BatchManagement({
     setAdjustKg(defaultKg)
     setAdjustReason('')
     setAdjustRefCode('')
-    setAdjustError(null)
+        setAdjustError(null)
   }
 
   // Handle Stock Receipt (Module A)
@@ -353,7 +356,7 @@ export function BatchManagement({
         quantityKg: Number(adjustKg),
         reason: adjustReason,
         referenceCode: adjustRefCode.trim() || null,
-      })
+              })
 
       setAdjustLoading(false)
       if (!res.success) {
@@ -470,17 +473,40 @@ export function BatchManagement({
 
       {/* Feature Flag Fail-Closed Warning Banner */}
       {!writeEnabled && (
-        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 shadow-xs">
-          <Lock className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+        <div
+          className={`p-4 rounded-xl border flex items-start gap-3 shadow-xs ${
+            effectiveAdjustmentEnabled
+              ? 'bg-blue-50/80 border-blue-200 text-blue-900'
+              : 'bg-amber-50 border border-amber-200 text-amber-900'
+          }`}
+        >
+          {effectiveAdjustmentEnabled ? (
+            <Scale className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+          ) : (
+            <Lock className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+          )}
           <div className="space-y-1">
-            <div className="font-bold text-sm flex items-center gap-2">
-              Chế độ Chỉ Đọc (Khóa ghi kho an toàn — Fail-Closed)
-              <Badge variant="outline" className="text-[10px] bg-amber-100 text-amber-800 border-amber-300">
-                ENABLE_ADMIN_INVENTORY_WRITES = false
+            <div className="font-bold text-sm flex items-center gap-2 flex-wrap">
+              {effectiveAdjustmentEnabled
+                ? 'Chế độ Demo có kiểm soát: Đã kích hoạt Điều chỉnh tồn kho FEFO'
+                : 'Chế độ Chỉ Đọc (Khóa ghi kho an toàn — Fail-Closed)'}
+              <Badge
+                variant="outline"
+                className={`text-[10px] ${
+                  effectiveAdjustmentEnabled
+                    ? 'bg-blue-100 text-blue-800 border-blue-300'
+                    : 'bg-amber-100 text-amber-800 border-amber-300'
+                }`}
+              >
+                {effectiveAdjustmentEnabled
+                  ? 'ENABLE_ADMIN_INVENTORY_ADJUSTMENTS = true'
+                  : 'ENABLE_ADMIN_INVENTORY_WRITES = false'}
               </Badge>
             </div>
-            <p className="text-xs text-amber-800 leading-relaxed">
-              Các chức năng ghi kho Admin (Nhập kho, Điều chỉnh tồn, Cập nhật trạng thái) hiện đang được bảo vệ ở trạng thái khóa trên môi trường Beta theo chính sách an toàn. Bảng điều khiển và Sổ cái đang hoạt động ở chế độ đọc dữ liệu chuẩn xác.
+            <p className="text-xs leading-relaxed">
+              {effectiveAdjustmentEnabled
+                ? 'Tính năng Điều chỉnh tồn kho (Hao hụt, Kiểm kê tăng/giảm) đã được mở cho Admin demo. Các tính năng Nhập kho mới và Đổi trạng thái lô vẫn được khóa an toàn (Fail-closed).'
+                : 'Các chức năng ghi kho Admin (Nhập kho, Điều chỉnh tồn, Cập nhật trạng thái) hiện đang được bảo vệ ở trạng thái khóa trên môi trường Beta theo chính sách an toàn. Bảng điều khiển và Sổ cái đang hoạt động ở chế độ đọc dữ liệu chuẩn xác.'}
             </p>
           </div>
         </div>
@@ -1174,10 +1200,10 @@ export function BatchManagement({
                 </Button>
                 <Button
                   type="submit"
-                  disabled={adjustLoading || !writeEnabled}
+                  disabled={adjustLoading || !effectiveAdjustmentEnabled}
                   className="bg-amber-600 hover:bg-amber-700 text-white"
                 >
-                  {adjustLoading ? 'Đang ghi Sổ cái...' : writeEnabled ? 'Xác nhận điều chỉnh' : 'Khóa ghi kho'}
+                  {adjustLoading ? 'Đang ghi Sổ cái...' : effectiveAdjustmentEnabled ? 'Xác nhận điều chỉnh' : 'Khóa ghi kho'}
                 </Button>
               </div>
             </form>

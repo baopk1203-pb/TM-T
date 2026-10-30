@@ -102,18 +102,6 @@ export function NotificationListClient({ initialLogs }: NotificationListClientPr
         </div>
       </div>
 
-      {/* Banner chính sách Email mới (DEV-TASK-47) */}
-      <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 text-xs sm:text-sm text-emerald-900 flex items-start gap-3">
-        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-        <div className="leading-relaxed">
-          <span className="font-semibold">Chính sách thông báo Email hiện tại (DEV-TASK-47):</span>{' '}
-          Hệ thống chỉ gửi Email cho <strong>Xác nhận thanh toán (E02)</strong>,{' '}
-          <strong>Giao hàng hoàn tất (E04 - cảnh báo khiếu nại 24h)</strong>,{' '}
-          <strong>Giải quyết khiếu nại (E06)</strong> và <strong>Xác nhận hoàn tiền (REFUND_CONFIRMED)</strong>.{' '}
-          Các sự kiện Đặt hàng (E01), Vận chuyển (E03) và Mở khiếu nại (E05) đã tắt có chủ đích để tinh gọn tần suất gửi thư.
-        </div>
-      </div>
-
       {/* Thẻ thống kê */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
         <Card className="rounded-3xl bg-white border-slate-200/90 shadow-card p-5">

@@ -11,7 +11,6 @@ import {
   QrCode,
   Boxes,
   History,
-  CalendarRange,
   Users,
   Percent,
   AlertCircle,
@@ -36,7 +35,17 @@ export interface AdminNavItem {
   group: string
 }
 
-export const ADMIN_NAV_GROUPS = [
+export interface AdminNavGroup {
+  title: string
+  items: Array<{
+    label: string
+    href: string
+    icon: React.ComponentType<{ className?: string }>
+    badge?: string
+  }>
+}
+
+export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     title: 'Tổng quan & Bán hàng',
     items: [
@@ -50,10 +59,9 @@ export const ADMIN_NAV_GROUPS = [
     items: [
       { label: 'Sản phẩm & Giá bậc', href: '/admin/san-pham', icon: Apple },
       { label: 'Nhà vườn & Chứng nhận', href: '/admin/nha-vuon', icon: Warehouse },
-      { label: 'Quản lý tồn kho FEFO', href: '/admin/ton-kho', icon: Boxes, badge: 'F01D' },
+      { label: 'Quản lý tồn kho FEFO', href: '/admin/ton-kho', icon: Boxes },
       { label: 'Lô hàng & Mã QR', href: '/admin/lo-hang', icon: QrCode },
       { label: 'Sổ cái kho (Ledger)', href: '/admin/ton-kho/lich-su', icon: History },
-      { label: 'Sản lượng theo tuần', href: '/admin/san-luong', icon: CalendarRange },
     ],
   },
   {
@@ -67,8 +75,8 @@ export const ADMIN_NAV_GROUPS = [
   {
     title: 'Vận hành & Hệ thống',
     items: [
-      { label: 'Quản lý vận chuyển', href: '/admin/van-chuyen', icon: Truck, badge: 'Phase 8' },
-      { label: 'Nhật ký thông báo', href: '/admin/thong-bao', icon: Bell, badge: 'Phase 9' },
+      { label: 'Quản lý vận chuyển', href: '/admin/van-chuyen', icon: Truck },
+      { label: 'Nhật ký thông báo', href: '/admin/thong-bao', icon: Bell },
       { label: 'Báo cáo & Thống kê', href: '/admin/bao-cao', icon: BarChart3 },
     ],
   },

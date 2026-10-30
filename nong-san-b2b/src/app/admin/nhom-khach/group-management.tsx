@@ -10,7 +10,6 @@ import {
   ShieldCheck,
   Sparkles,
   ArrowLeft,
-  Info,
   Pencil,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -138,25 +137,6 @@ export function GroupManagementClient({ initialGroups }: GroupManagementProps) {
             Danh sách Khách hàng CRM
           </Button>
         </Link>
-      </div>
-
-      {/* Policy Notice Banner */}
-      <div className="p-5 rounded-3xl bg-emerald-50/80 border border-emerald-200 flex items-start gap-3 text-xs text-emerald-900">
-        <Info className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-        <div className="space-y-1 leading-relaxed">
-          <div className="font-bold text-sm text-emerald-950">
-            Quy tắc áp dụng & Bảo toàn dữ liệu đơn hàng lịch sử
-          </div>
-          <p>
-            • Công thức tính đơn giá sau chiết khấu nhóm:{' '}
-            <code className="bg-white px-1.5 py-0.5 rounded border border-emerald-200 font-mono">
-              unitPricePerKg = round(basePricePerKg × (100 − discountPercent) / 100)
-            </code>
-          </p>
-          <p>
-            • Khi thay đổi <strong>% chiết khấu</strong> tại đây, mức mới <strong>chỉ áp dụng cho các đơn đặt mới</strong> (và đơn nháp định kỳ khi khách bấm xác nhận). Các đơn hàng đã xác nhận trước đó giữ nguyên mức chiết khấu và đơn giá đã snapshot.
-          </p>
-        </div>
       </div>
 
       {/* Group Cards Overview */}

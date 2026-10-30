@@ -84,7 +84,7 @@ export default async function HomePage() {
 
                 <h1 className="font-heading text-4xl sm:text-5xl lg:text-[52px] font-extrabold text-slate-900 tracking-tight leading-[1.12]">
                   Nền tảng cung ứng trái cây sỉ{' '}
-                  <span className="text-emerald-600 underline decoration-emerald-200 decoration-wavy decoration-2">
+                  <span className="text-emerald-600">
                     tận vườn
                   </span>{' '}
                   cho siêu thị &amp; đại lý

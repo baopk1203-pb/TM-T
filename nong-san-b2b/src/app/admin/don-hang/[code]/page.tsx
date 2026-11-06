@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { db } from '@/lib/db'
 import { derivePaymentStatus } from '@/lib/domain/settlement'
+import { processExpiredOrders } from '@/lib/services/order-expiration'
 import { OrderDetailClient, OrderDetailData } from './order-detail-client'
 
 export const dynamic = 'force-dynamic'
@@ -11,6 +12,8 @@ export default async function AdminOrderDetailPage({
   params: Promise<{ code: string }>
 }) {
   const { code } = await params
+
+  await processExpiredOrders(new Date()).catch(() => undefined)
 
   const [order, batches] = await Promise.all([
     db.order.findFirst({
@@ -26,6 +29,11 @@ export default async function AdminOrderDetailPage({
         items: {
           include: {
             batch: true,
+            packaging: {
+              include: {
+                product: true,
+              },
+            },
           },
         },
         transactions: {
@@ -37,6 +45,7 @@ export default async function AdminOrderDetailPage({
         complaints: {
           orderBy: { createdAt: 'desc' },
         },
+        shipment: true,
       },
     }),
     db.batch.findMany({
@@ -95,6 +104,9 @@ export default async function AdminOrderDetailPage({
     cancelledBy: order.cancelledBy,
     cancelReason: order.cancelReason,
     customerNote: order.customerNote,
+    preorderFinalPricePerKg: order.preorderFinalPricePerKg,
+    preorderFulfilledGrams: order.preorderFulfilledGrams,
+    preorderCustomerDecision: order.preorderCustomerDecision,
     createdAt: order.createdAt.toISOString(),
     addressSnapshot: {
       recipient: addressSnapshot?.recipient ?? '',
@@ -122,6 +134,8 @@ export default async function AdminOrderDetailPage({
       quantity: item.quantity,
       orderedGrams: item.orderedGrams,
       unitPricePerKg: item.unitPricePerKg,
+      preorderPricePerKg: item.packaging?.product?.preorderPricePerKg ?? item.unitPricePerKg,
+      preorderBandPercent: item.packaging?.product?.preorderBandPercent ?? 10,
       lineTotal: item.lineTotal,
       actualGrams: item.actualGrams,
       finalLineTotal: item.finalLineTotal,
@@ -165,7 +179,28 @@ export default async function AdminOrderDetailPage({
     })),
     paidAmount: payment.paidAmount,
     remainingAmount: payment.remainingAmount,
+    grossPaid: payment.grossPaid,
+    netPaid: payment.netPaid,
+    refundedAmount: payment.refundedAmount,
     paymentStatus: payment.status,
+    shippingDistanceKm: order.shippingDistanceKm,
+    shippingVehicleType: order.shippingVehicleType,
+    shipment: order.shipment
+      ? {
+          id: order.shipment.id,
+          code: order.shipment.code,
+          vehicleType: order.shipment.vehicleType,
+          distanceKm: order.shipment.distanceKm,
+          shippingFee: order.shipment.shippingFee,
+          driverName: order.shipment.driverName,
+          driverPhone: order.shipment.driverPhone,
+          licensePlate: order.shipment.licensePlate,
+          status: order.shipment.status,
+          dispatchedAt: order.shipment.dispatchedAt ? order.shipment.dispatchedAt.toISOString() : null,
+          deliveredAt: order.shipment.deliveredAt ? order.shipment.deliveredAt.toISOString() : null,
+          note: order.shipment.note,
+        }
+      : null,
   }
 
   const mappedBatches = batches.map((b) => ({

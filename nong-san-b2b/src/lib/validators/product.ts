@@ -2,11 +2,12 @@ import { z } from 'zod'
 import { SeasonStatus } from '@prisma/client'
 
 export const packagingInputSchema = z.object({
-  id: z.string().optional(),
+  id: z.string().optional().nullable(),
   name: z.string().min(2, 'Tên quy cách không được để trống'),
   weightGrams: z.number().int().min(100, 'Khối lượng phải từ 100 gram trở lên'),
   isSample: z.boolean().default(false),
   samplePrice: z.number().int().min(1000, 'Giá gói mẫu tối thiểu 1.000 đ').optional().nullable(),
+  isActive: z.boolean().optional(),
 })
 
 export const priceTierInputSchema = z.object({

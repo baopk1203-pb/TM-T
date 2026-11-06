@@ -2,6 +2,7 @@
 
 import { db } from '@/lib/db'
 import { getServerAuthSession } from '@/lib/auth'
+import { MembershipTier, resolveEffectiveMembershipTier } from '@/lib/domain/membership'
 import {
   priceCart,
   CartLineItemInput,
@@ -9,6 +10,11 @@ import {
   ProductPricingData,
 } from '@/lib/domain/pricing'
 import { OrderStatus } from '@prisma/client'
+import { getPublicStockByProductIds } from '@/lib/services/inventory-read'
+import {
+  evaluateCartItemStockWarning,
+  type PublicStockView,
+} from '@/lib/domain/inventory-view'
 
 export interface ExtendedProductInfo {
   id: string
@@ -22,6 +28,8 @@ export interface ExtendedProductInfo {
   leadTimeDays: number
   seasonStatus: string
   requiresCold: boolean
+  publicStock?: PublicStockView | null
+  stockWarning?: string | null
 }
 
 export interface QuoteCartResponse {
@@ -30,6 +38,9 @@ export interface QuoteCartResponse {
   groupName: string
   purchasedSampleProductIds: string[]
   productMetadata: Record<string, ExtendedProductInfo>
+  membershipTier?: MembershipTier | null
+  membershipDiscountPercent?: number
+  combinedDiscountPercent?: number
 }
 
 /**
@@ -47,6 +58,7 @@ export async function quoteCart(
   let userDiscountPercent = 0
   let groupName = 'Khách vãng lai'
   let purchasedSampleProductIds: string[] = []
+  let membershipTier: MembershipTier | null = null
 
   if (session?.user?.id) {
     // Đọc thông tin nhóm mới nhất từ DB
@@ -59,6 +71,7 @@ export async function quoteCart(
       userDiscountPercent = user.group.discountPercent
       groupName = user.group.name
     }
+    membershipTier = resolveEffectiveMembershipTier(user as unknown as { role?: string; membershipTier?: MembershipTier | null })
 
     // Đọc các sản phẩm mà khách hàng này đã từng mua gói mẫu (không tính đơn CANCELLED)
     const sampleItems = await db.orderItem.findMany({
@@ -89,6 +102,7 @@ export async function quoteCart(
       lines: [],
       products: [],
       groupDiscountPercent: userDiscountPercent,
+      membershipTier,
     })
     return {
       quote: emptyQuote,
@@ -96,31 +110,37 @@ export async function quoteCart(
       groupName,
       purchasedSampleProductIds,
       productMetadata: {},
+      membershipTier,
+      membershipDiscountPercent: emptyQuote.membershipDiscountPercent,
+      combinedDiscountPercent: emptyQuote.combinedDiscountPercent,
     }
   }
 
-  // Truy vấn sản phẩm từ DB
-  const dbProducts = await db.product.findMany({
-    where: {
-      id: { in: productIds },
-      isActive: true,
-    },
-    include: {
-      farm: {
-        select: {
-          name: true,
-          province: true,
+  // Truy vấn sản phẩm và tồn kho khả dụng (Shared Read Service F01D) từ DB
+  const [dbProducts, publicStockMap] = await Promise.all([
+    db.product.findMany({
+      where: {
+        id: { in: productIds },
+        isActive: true,
+      },
+      include: {
+        farm: {
+          select: {
+            name: true,
+            province: true,
+          },
+        },
+        priceTiers: {
+          orderBy: { minGrams: 'asc' },
+        },
+        packagings: {
+          where: { isActive: true },
+          orderBy: { weightGrams: 'asc' },
         },
       },
-      priceTiers: {
-        orderBy: { minGrams: 'asc' },
-      },
-      packagings: {
-        where: { isActive: true },
-        orderBy: { weightGrams: 'asc' },
-      },
-    },
-  })
+    }),
+    getPublicStockByProductIds(productIds),
+  ])
 
   // Chuẩn bị dữ liệu định giá chuẩn cho domain engine
   const pricingProducts: ProductPricingData[] = dbProducts.map((p) => ({
@@ -156,6 +176,8 @@ export async function quoteCart(
       leadTimeDays: p.leadTimeDays,
       seasonStatus: p.seasonStatus,
       requiresCold: p.requiresCold,
+      publicStock: publicStockMap[p.id] ?? null,
+      stockWarning: null,
     }
   }
 
@@ -164,7 +186,38 @@ export async function quoteCart(
     lines,
     products: pricingProducts,
     groupDiscountPercent: userDiscountPercent,
+    membershipTier,
   })
+
+  // Đối chiếu tổng khối lượng đặt mỗi sản phẩm trong giỏ với tồn kho khả dụng (Mục 9.3 & 9.4)
+  const requestedGramsByProduct = new Map<string, number>()
+  for (const summary of quote.productSummaries) {
+    requestedGramsByProduct.set(
+      summary.productId,
+      (requestedGramsByProduct.get(summary.productId) || 0) + summary.totalGrams
+    )
+  }
+  for (const sampleLine of quote.sampleLines) {
+    requestedGramsByProduct.set(
+      sampleLine.productId,
+      (requestedGramsByProduct.get(sampleLine.productId) || 0) + sampleLine.weightGrams
+    )
+  }
+
+  for (const [productId, requestedGrams] of requestedGramsByProduct.entries()) {
+    const meta = productMetadata[productId]
+    if (!meta) continue
+    const check = evaluateCartItemStockWarning({
+      productName: meta.name,
+      requestedGrams,
+      publicStock: meta.publicStock,
+    })
+    if (check.exceedsStock && check.warningMessage) {
+      meta.stockWarning = check.warningMessage
+      quote.errors.push(check.warningMessage)
+      quote.isValid = false
+    }
+  }
 
   // Kiểm tra vi phạm mua mẫu trùng
   for (const sampleLine of quote.sampleLines) {
@@ -188,6 +241,9 @@ export async function quoteCart(
     groupName,
     purchasedSampleProductIds,
     productMetadata,
+    membershipTier,
+    membershipDiscountPercent: quote.membershipDiscountPercent,
+    combinedDiscountPercent: quote.combinedDiscountPercent,
   }
 }
 

@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { getServerAuthSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { derivePaymentStatus } from '@/lib/domain/settlement'
+import { processExpiredOrders } from '@/lib/services/order-expiration'
 import { CustomerOrderView, CustomerOrderData } from './customer-order-view'
 import { Role } from '@prisma/client'
 
@@ -19,6 +20,8 @@ export default async function CustomerOrderDetailPage({
 
   const { code } = await params
 
+  await processExpiredOrders(new Date()).catch(() => undefined)
+
   const order = await db.order.findFirst({
     where: {
       OR: [{ code }, { id: code }],
@@ -27,6 +30,11 @@ export default async function CustomerOrderDetailPage({
       items: {
         include: {
           batch: true,
+          packaging: {
+            include: {
+              product: true,
+            },
+          },
         },
       },
       transactions: {
@@ -38,6 +46,7 @@ export default async function CustomerOrderDetailPage({
       complaints: {
         orderBy: { createdAt: 'desc' },
       },
+      shipment: true,
     },
   })
 
@@ -73,6 +82,7 @@ export default async function CustomerOrderDetailPage({
   const orderData: CustomerOrderData = {
     id: order.id,
     code: order.code,
+    type: order.type,
     status: order.status,
     paymentOption: order.paymentOption,
     subtotal: order.subtotal,
@@ -88,6 +98,23 @@ export default async function CustomerOrderDetailPage({
     createdAt: order.createdAt.toISOString(),
     cancelledBy: order.cancelledBy,
     cancelReason: order.cancelReason,
+    customerNote: order.customerNote,
+    preorderFinalPricePerKg: order.preorderFinalPricePerKg,
+    preorderFulfilledGrams: order.preorderFulfilledGrams,
+    preorderCustomerDecision: order.preorderCustomerDecision,
+    shipment: order.shipment
+      ? {
+          code: order.shipment.code,
+          status: order.shipment.status,
+          vehicleType: order.shipment.vehicleType,
+          driverName: order.shipment.driverName,
+          driverPhone: order.shipment.driverPhone,
+          licensePlate: order.shipment.licensePlate,
+          dispatchedAt: order.shipment.dispatchedAt ? order.shipment.dispatchedAt.toISOString() : null,
+          deliveredAt: order.shipment.deliveredAt ? order.shipment.deliveredAt.toISOString() : null,
+          note: order.shipment.note,
+        }
+      : null,
     addressSnapshot: {
       recipient: address.recipient,
       phone: address.phone,
@@ -98,12 +125,16 @@ export default async function CustomerOrderDetailPage({
     },
     items: order.items.map((item) => ({
       id: item.id,
+      productId: item.productId,
+      packagingId: item.packagingId,
       productName: item.productName,
       packagingName: item.packagingName,
       isSample: item.isSample,
       quantity: item.quantity,
       orderedGrams: item.orderedGrams,
       unitPricePerKg: item.unitPricePerKg,
+      preorderPricePerKg: item.packaging?.product?.preorderPricePerKg ?? item.unitPricePerKg,
+      preorderBandPercent: item.packaging?.product?.preorderBandPercent ?? 10,
       lineTotal: item.lineTotal,
       actualGrams: item.actualGrams,
       finalLineTotal: item.finalLineTotal,

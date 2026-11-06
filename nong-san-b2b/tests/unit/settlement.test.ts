@@ -5,8 +5,9 @@ import {
   computeCancellation,
   computeWeightSettlement,
   computeComplaintCompensation,
+  computePayableAmount,
 } from '@/lib/domain/settlement'
-import { TxType, TxStatus, OrderStatus, CancelActor } from '@prisma/client'
+import { TxType, TxStatus, OrderStatus, CancelActor, PaymentOption } from '@prisma/client'
 
 describe('Domain: settlement.ts (Mục 3.6, 3.8, 3.9 & Test Cases S1-S5, W1-W3, C1-C3)', () => {
   describe('computeDepositAmount', () => {
@@ -69,6 +70,40 @@ describe('Domain: settlement.ts (Mục 3.6, 3.8, 3.9 & Test Cases S1-S5, W1-W3, 
       expect(result.status).toBe('REFUNDED')
       expect(result.paidAmount).toBe(0)
     })
+
+    it('Test Case C1: Khách trả đủ 14.950.125, hoàn bồi thường khiếu nại 278.996 (DONE) -> PARTIALLY_REFUNDED, nợ còn lại = 0 (không nợ giả)', () => {
+      const deliveredOrder = {
+        total: 15277500,
+        finalTotal: 14950125,
+        status: OrderStatus.COMPLAINT,
+      }
+      const result = derivePaymentStatus(deliveredOrder, [
+        { type: TxType.PAYMENT, status: TxStatus.DONE, amount: 14950125 },
+        { type: TxType.REFUND, status: TxStatus.DONE, amount: 278996 },
+      ])
+      expect(result.status).toBe('PARTIALLY_REFUNDED')
+      expect(result.grossPaid).toBe(14950125)
+      expect(result.refundedAmount).toBe(278996)
+      expect(result.netPaid).toBe(14671129)
+      expect(result.paidAmount).toBe(14671129)
+      expect(result.remainingAmount).toBe(0) // Khách không phát sinh nợ giả sau bồi thường!
+      expect(result.isSettled).toBe(true)
+    })
+
+    it('Đơn có hoàn tiền bồi thường PENDING -> REFUND_PENDING, isSettled = false', () => {
+      const deliveredOrder = {
+        total: 15277500,
+        finalTotal: 14950125,
+        status: OrderStatus.COMPLAINT,
+      }
+      const result = derivePaymentStatus(deliveredOrder, [
+        { type: TxType.PAYMENT, status: TxStatus.DONE, amount: 14950125 },
+        { type: TxType.REFUND, status: TxStatus.PENDING, amount: 278996 },
+      ])
+      expect(result.status).toBe('REFUND_PENDING')
+      expect(result.hasPendingRefund).toBe(true)
+      expect(result.isSettled).toBe(false)
+    })
   })
 
   describe('computeCancellation (Mục 7.2 - S2 đến S5)', () => {
@@ -85,6 +120,23 @@ describe('Domain: settlement.ts (Mục 3.6, 3.8, 3.9 & Test Cases S1-S5, W1-W3, 
       )
       expect(result.forfeitAmount).toBe(4584000)
       expect(result.refundAmount).toBe(10693500)
+      expect(result.isDepositForfeited).toBe(true)
+    })
+
+    it('Test Case S2 (Legacy FULL order): Đơn cũ lưu nhầm depositAmount = 15.277.500 -> tự động bảo vệ chỉ phạt cọc 30%', () => {
+      const legacyOrder = {
+        status: OrderStatus.PROCESSING,
+        depositAmount: 15277500, // lưu nhầm bằng 100% total
+        total: 15277500,
+        paymentOption: 'FULL',
+      }
+      const result = computeCancellation(
+        legacyOrder,
+        15277500,
+        CancelActor.CUSTOMER
+      )
+      expect(result.forfeitAmount).toBe(4584000) // 30% cọc chuẩn
+      expect(result.refundAmount).toBe(10693500) // Hoàn 70%
       expect(result.isDepositForfeited).toBe(true)
     })
 
@@ -251,6 +303,116 @@ describe('Domain: settlement.ts (Mục 3.6, 3.8, 3.9 & Test Cases S1-S5, W1-W3, 
           submittedAt,
         })
       ).toThrow('quá thời hạn khiếu nại 24h')
+    })
+  })
+
+  describe('computePayableAmount (Xác định số tiền thanh toán thực tế & chống chuyển trùng)', () => {
+    const fullOrder = {
+      status: OrderStatus.PENDING_CONFIRMATION,
+      paymentOption: PaymentOption.FULL,
+      total: 10000000,
+      depositAmount: 3000000,
+    }
+
+    const depositOrder = {
+      status: OrderStatus.PENDING_CONFIRMATION,
+      paymentOption: PaymentOption.DEPOSIT_30,
+      total: 10000000,
+      depositAmount: 3000000,
+    }
+
+    it('1. Đơn FULL chưa thanh toán -> yêu cầu 100% (total)', () => {
+      const res = computePayableAmount(fullOrder, [])
+      expect(res.isPayable).toBe(true)
+      expect(res.amountToPay).toBe(10000000)
+      expect(res.grossPaid).toBe(0)
+    })
+
+    it('2. Đơn FULL đã ghi nhận 30% nhưng vẫn PENDING_CONFIRMATION -> chỉ yêu cầu 70% còn lại', () => {
+      const res = computePayableAmount(fullOrder, [
+        { type: TxType.PAYMENT, status: TxStatus.DONE, amount: 3000000 },
+      ])
+      expect(res.isPayable).toBe(true)
+      expect(res.amountToPay).toBe(7000000)
+      expect(res.grossPaid).toBe(3000000)
+    })
+
+    it('3. Đơn FULL đã thanh toán đủ 100% -> isPayable = false, không phát sinh QR chuyển trùng', () => {
+      const res = computePayableAmount(fullOrder, [
+        { type: TxType.PAYMENT, status: TxStatus.DONE, amount: 10000000 },
+      ])
+      expect(res.isPayable).toBe(false)
+      expect(res.amountToPay).toBe(0)
+      expect(res.reason).toContain('đã thanh toán đủ khoản cần xác nhận')
+    })
+
+    it('4. Đơn DEPOSIT_30 chưa thanh toán -> yêu cầu đúng depositAmount (30%)', () => {
+      const res = computePayableAmount(depositOrder, [])
+      expect(res.isPayable).toBe(true)
+      expect(res.amountToPay).toBe(3000000)
+      expect(res.grossPaid).toBe(0)
+    })
+
+    it('5. Đơn DEPOSIT_30 đã trả một phần cọc -> chỉ yêu cầu số tiền cọc còn thiếu', () => {
+      const res = computePayableAmount(depositOrder, [
+        { type: TxType.PAYMENT, status: TxStatus.DONE, amount: 1000000 },
+      ])
+      expect(res.isPayable).toBe(true)
+      expect(res.amountToPay).toBe(2000000)
+      expect(res.grossPaid).toBe(1000000)
+    })
+
+    it('6. Đơn DEPOSIT_30 đã cọc đủ 30% -> isPayable = false khi ở PENDING_CONFIRMATION', () => {
+      const res = computePayableAmount(depositOrder, [
+        { type: TxType.PAYMENT, status: TxStatus.DONE, amount: 3000000 },
+      ])
+      expect(res.isPayable).toBe(false)
+      expect(res.amountToPay).toBe(0)
+    })
+
+    it('7. Đơn DEPOSIT_30 khi chuyển sang PROCESSING -> yêu cầu phần nợ còn lại (70%)', () => {
+      const processingOrder = {
+        ...depositOrder,
+        status: OrderStatus.PROCESSING,
+      }
+      const res = computePayableAmount(processingOrder, [
+        { type: TxType.PAYMENT, status: TxStatus.DONE, amount: 3000000 },
+      ])
+      expect(res.isPayable).toBe(true)
+      expect(res.amountToPay).toBe(7000000)
+    })
+
+    it('8. Đơn đã CANCELLED -> isPayable = false, từ chối tạo thanh toán', () => {
+      const cancelledOrder = {
+        ...fullOrder,
+        status: OrderStatus.CANCELLED,
+      }
+      const res = computePayableAmount(cancelledOrder, [])
+      expect(res.isPayable).toBe(false)
+      expect(res.amountToPay).toBe(0)
+      expect(res.reason).toContain('CANCELLED')
+    })
+
+    it('9. Đơn đã COMPLETED -> isPayable = false, từ chối tạo thanh toán', () => {
+      const completedOrder = {
+        ...fullOrder,
+        status: OrderStatus.COMPLETED,
+      }
+      const res = computePayableAmount(completedOrder, [])
+      expect(res.isPayable).toBe(false)
+      expect(res.amountToPay).toBe(0)
+      expect(res.reason).toContain('COMPLETED')
+    })
+
+    it('10. Bỏ qua các giao dịch PAYMENT thất bại hoặc PENDING', () => {
+      const res = computePayableAmount(fullOrder, [
+        { type: TxType.PAYMENT, status: TxStatus.PENDING, amount: 5000000 },
+        { type: TxType.REFUND, status: TxStatus.DONE, amount: 1000000 },
+      ])
+      // Chỉ tính PAYMENT có status: DONE
+      expect(res.isPayable).toBe(true)
+      expect(res.amountToPay).toBe(10000000)
+      expect(res.grossPaid).toBe(0)
     })
   })
 })

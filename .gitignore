@@ -5,3 +5,4 @@ nong-san-b2b/.env
 nong-san-b2b/.env.local
 .DS_Store
 *.log
+.agents/

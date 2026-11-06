@@ -43,6 +43,11 @@
 8. **Khi tài liệu này mâu thuẫn hoặc chưa rõ:** hỏi người dùng, không tự suy đoán. Nếu buộc phải giả định, ghi lại vào mục *Giả định đã đưa ra* của phase đó.
 9. **Không tự ý đổi stack** hay thêm thư viện lớn ngoài danh sách ở mục 2 khi chưa hỏi.
 10. API của thư viện thay đổi theo phiên bản (Next.js, Prisma, Auth.js). **Đọc tài liệu chính thức đúng phiên bản đã cài** trước khi viết cấu hình.
+11. **Chiến lược nhánh Git (Branching Workflow):**
+    - Mọi tác vụ fix lỗi (bugfix/hotfix), phát triển tính năng/phase mới hay refactor **BẮT BUỘC thực hiện, kiểm tra và commit trên nhánh `beta` trước**.
+    - Sau khi hoàn thành trên nhánh `beta`, phải chạy nghiệm thu đủ 4 lệnh: `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`. Tất cả phải PASS.
+    - Dừng lại, báo cáo kết quả kèm bằng chứng cho người dùng và **chỉ khi người dùng đồng ý mới được đưa lên nhánh `main`**.
+    - Khi được người dùng phê duyệt lên `main`: Agent tự động checkout sang `main`, merge từ `beta`, push lên `origin/main`, sau đó checkout quay lại nhánh `beta` để sẵn sàng cho tác vụ tiếp theo.
 
 ---
 
@@ -52,7 +57,7 @@
 |---|---|
 | Framework | **Next.js** (App Router, TypeScript, Server Actions), bản ổn định mới nhất |
 | UI | Tailwind CSS + **shadcn/ui**, icon `lucide-react` |
-| CSDL | **PostgreSQL** (local qua Docker, hoặc Neon/Supabase free) |
+| CSDL | **PostgreSQL** (chạy 100% offline tự động qua `embedded-postgres`, hoặc Neon/Supabase cloud) |
 | ORM | **Prisma** |
 | Xác thực | **Auth.js** (gói `next-auth`), Credentials provider + `bcryptjs` |
 | Validate | `zod` (dùng chung client/server) |
@@ -446,7 +451,7 @@ flowchart LR
 | 4 | Checkout ra đơn, VietQR, Admin xác nhận tiền, tự hủy khi quá hạn |
 | 5 | Admin đi hết vòng đời đơn, hủy/hoàn cọc, chốt khối lượng, khiếu nại |
 | 6 | Đơn định kỳ (đơn nháp), Pre-order mùa vụ, dashboard khách |
-| 7 | Quản lý khách và nhóm, dashboard báo cáo |
+| 7 | Quản lý khách và nhóm, dashboard báo cáo (Code Complete / Local QA Accepted / Beta Validation Pending) |
 | 8 | Phí ship theo khoảng cách + loại xe, quản lý chuyến giao |
 | 9 | Email + Zalo ZNS, e2e test, deploy |
 
@@ -580,39 +585,40 @@ flowchart LR
 
 ## Phase 6 – Đơn định kỳ, Pre-order & Dashboard khách
 
-- [ ] `recurring.ts`: `upcomingDeliveryDates(schedule, today, leadTime)` và `shouldCreateDraft(...)` kèm test (an toàn khi chạy lặp, không tạo trùng).
-- [ ] `/tai-khoan/dinh-ky`: tạo lịch từ đơn COMPLETED hoặc thủ công; bật/tắt; sửa thứ, khung giờ, địa chỉ, số lượng.
-- [ ] Job `/api/cron/recurring` + nút Admin "Chạy sinh đơn định kỳ", tạo đơn `DRAFT` (`type = RECURRING`) và ghi `RECURRING_DRAFT_CREATED`.
-- [ ] Khách xác nhận đơn nháp: tính lại giá, cho sửa số lượng, chọn thanh toán, chuyển `PENDING_CONFIRMATION` rồi hiện VietQR.
-- [ ] Job hủy đơn nháp quá hạn (gộp chung vào `expire-orders`).
-- [ ] `preorder.ts`: `checkPriceBand()`, `computePreorderShortfallRefund()` kèm test (mục 7.5).
-- [ ] Storefront pre-order: trên trang sản phẩm `preorderOpen` có khối "Đặt trước vụ mùa" (giá dự kiến, biên độ ±%, kỳ thu hoạch, cọc 30% bắt buộc), checkout riêng không chọn ngày.
-- [ ] Admin pre-order: danh sách đơn `PREORDER_WAITING` theo sản phẩm; form **Vào vụ** (nhập giá chốt và khối lượng đáp ứng cho từng đơn hoặc hàng loạt), ghi `PREORDER_HARVEST_READY`; xử lý theo 3.10.
-- [ ] Khách: khối "Cần bạn quyết định" (pre-order ngoài biên độ: Chấp nhận/Hủy).
-- [ ] `/tai-khoan` dashboard: thẻ thống kê (đơn đang xử lý, chờ thanh toán, đơn nháp chờ xác nhận, pre-order) và danh sách đơn gần đây.
+- [x] `recurring.ts`: `upcomingDeliveryDates(schedule, today, leadTime)` và `shouldCreateDraft(...)` kèm test (an toàn khi chạy lặp, không tạo trùng).
+- [x] `/tai-khoan/dinh-ky`: tạo lịch từ đơn COMPLETED hoặc thủ công; bật/tắt; sửa thứ, khung giờ, địa chỉ, số lượng.
+- [x] Job `/api/cron/recurring` + nút Admin "Chạy sinh đơn định kỳ", tạo đơn `DRAFT` (`type = RECURRING`) và ghi `RECURRING_DRAFT_CREATED`.
+- [x] Khách xác nhận đơn nháp: tính lại giá, cho sửa số lượng, chọn thanh toán, chuyển `PENDING_CONFIRMATION` rồi hiện VietQR.
+- [x] Job hủy đơn nháp quá hạn (gộp chung vào `expire-orders`).
+- [x] `preorder.ts`: `checkPriceBand()`, `computePreorderShortfallRefund()` kèm test (mục 7.5).
+- [x] Storefront pre-order: trên trang sản phẩm `preorderOpen` có khối "Đặt trước vụ mùa" (giá dự kiến, biên độ ±%, kỳ thu hoạch, cọc 30% bắt buộc), checkout riêng không chọn ngày.
+- [x] Admin pre-order: danh sách đơn `PREORDER_WAITING` theo sản phẩm; form **Vào vụ** (nhập giá chốt và khối lượng đáp ứng cho từng đơn hoặc hàng loạt), ghi `PREORDER_HARVEST_READY`; xử lý theo 3.10.
+- [x] Khách: khối "Cần bạn quyết định" (pre-order ngoài biên độ: Chấp nhận/Hủy).
+- [x] `/tai-khoan` dashboard: 4 thẻ thống kê tách biệt không đếm trùng (đơn đang xử lý, chờ thanh toán, đơn nháp chờ xác nhận, pre-order), khối hành động ưu tiên và danh sách đơn gần đây.
 
-**DoD:** tạo lịch T2/T5, chạy job 2 lần chỉ ra đúng số đơn nháp. Kịch bản pre-order trong biên độ, ngoài biên độ và mất mùa một phần đều chạy đúng số tiền.
-
----
-
-## Phase 7 – CRM khách hàng & Báo cáo
-
-- [ ] `/admin/khach-hang`: danh sách (tên doanh nghiệp, MST, nhóm, số đơn, doanh thu), chi tiết khách (đơn hàng, địa chỉ), **đổi nhóm** (ghi log).
-- [ ] `/admin/nhom-khach`: sửa % chiết khấu. Thay đổi chỉ áp dụng cho đơn mới; đơn cũ giữ snapshot.
-- [ ] `/admin/bao-cao` (lọc theo khoảng ngày, dùng `recharts`):
-  - Doanh thu theo ngày/tuần (tổng `finalTotal` của đơn `COMPLETED`).
-  - Top 10 sản phẩm theo kg và theo doanh thu.
-  - Tỷ lệ hủy (theo `cancelledBy`), tỷ lệ khiếu nại.
-  - **Tỷ lệ hao hụt trung bình** = `1 − Σ actualGrams / Σ orderedGrams`.
-  - Doanh thu theo nhóm khách.
-- [ ] `/admin` dashboard: KPI hôm nay (đơn mới, chờ xác nhận tiền, đơn giao hôm nay, khiếu nại mở).
-- [ ] Các truy vấn báo cáo đặt trong `src/server/reports.ts`, có test với dữ liệu seed nhỏ.
-
-**DoD:** số liệu báo cáo khớp khi đối chiếu tay với dữ liệu seed.
+**DoD:** Tạo lịch T2/T5, chạy job 2 lần chỉ ra đúng số đơn nháp (idempotent). Kịch bản pre-order trong biên độ, ngoài biên độ và mất mùa một phần/toàn phần đều chạy đúng số tiền cọc/hoàn cọc. Dashboard hiển thị 4 nhóm KPI mutually exclusive và dẫn đúng luồng tác nghiệp. Đã PASS toàn bộ Local/Static QA (Batch 6A: `9cd484a`, Batch 6B: `e6208a5`, Batch 6C: `d0924fb`). Tổng 283/283 unit tests PASS. Beta Runtime E2E chưa được xác minh.
 
 ---
 
-## Phase 8 – VẬN CHUYỂN (phase cuối, phần 1)
+## Phase 7 – CRM khách hàng & Báo cáo (Code Complete / Local QA Accepted / Beta Validation Pending)
+
+- [x] `/admin/khach-hang`: danh sách (tên doanh nghiệp, MST, nhóm, số đơn, doanh thu), chi tiết khách (đơn hàng, địa chỉ), **đổi nhóm** (ghi structured server log). *(Hoàn thành ở mức Local QA — QA-TASK-16 PASS, commit `86778a9`)*
+- [x] `/admin/nhom-khach`: sửa % chiết khấu (0..50% số nguyên). Thay đổi chỉ áp dụng cho đơn mới; đơn cũ giữ snapshot. Đồng bộ DB sang UI qua `getServerAuthSession`. *(Hoàn thành ở mức Local QA — QA-TASK-16 PASS, commit `86778a9`)*
+- [x] `/admin/bao-cao` (lọc theo khoảng ngày, dùng `recharts`): *(Hoàn thành ở mức Local QA — QA-TASK-17 PASS, commit `2c7c57e`)*
+  - Doanh thu theo ngày/tuần (tổng `finalTotal ?? total` của đơn `COMPLETED`).
+  - Top 10 sản phẩm theo kg và theo doanh thu (ưu tiên `actualGrams`, tách hàng mẫu).
+  - Tỷ lệ hủy (theo `cancelledBy`: CUSTOMER, SELLER, SYSTEM), tỷ lệ khiếu nại (theo đơn có khiếu nại).
+  - **Tỷ lệ hao hụt trung bình** = `1 − Σ actualGrams / Σ orderedGrams` (theo tổng trọng lượng có cân).
+  - Doanh thu theo nhóm khách hàng hiện tại (nhãn cảnh báo rõ ràng).
+  - Phân tích dòng tiền đối soát tách biệt (đã thanh toán, đã hoàn, chờ hoàn).
+- [x] `/admin` dashboard: KPI hôm nay (đơn mới hôm nay, chờ xác nhận tiền, đơn giao hôm nay, khiếu nại mở) truy vấn từ database thật. *(Hoàn thành ở mức Local QA — QA-TASK-17 PASS, commit `2c7c57e`)*
+- [x] Các truy vấn báo cáo đặt trong `src/server/reports.ts`, có test với dữ liệu seed/fixture nhỏ (13 unit test cases). *(Hoàn thành ở mức Local QA — QA-TASK-17 PASS, commit `2c7c57e`)*
+
+**DoD:** Số liệu báo cáo khớp khi đối chiếu tay với dữ liệu seed/fixture. Đã PASS toàn bộ Local/Static QA (Batch 7A: QA-TASK-16, commit `86778a9`; Batch 7B: QA-TASK-17, commit `2c7c57e`). Tổng 314/314 unit tests PASS (26/26 test suites). Trạng thái: **Code Complete / Local QA Accepted / Beta Validation Pending**. Beta Runtime E2E chưa được xác minh.
+
+---
+
+## Phase 8 – VẬN CHUYỂN (Phase 8A + 8B: Completed — Local QA Accepted)
 
 **Mục tiêu:** tính phí ship theo **khoảng cách + loại xe**, quản lý chuyến giao. Thay `zeroShippingCalculator` mà **không sửa** luồng checkout ngoài phần hiển thị.
 
@@ -634,23 +640,33 @@ Bảng giá seed (giả định minh họa):
 | COLD | 0 | 250.000 | 12.000 |
 | COLD | 500.000 | 450.000 | 18.000 |
 
-**Việc cần làm**
-- [ ] Prisma: `ShippingRate`, `Shipment(orderId @unique, vehicleType, distanceKm, fee, driverName, driverPhone, plateNumber, dispatchedAt, deliveredAt, note)`, `AppSetting` (key/value: `warehouseLat`, `warehouseLng`, `warehouseAddress`, `maxRadiusKm`). Thêm `GOOGLE_MAPS_API_KEY` vào `.env.example`.
-- [ ] Geocode địa chỉ (Geocoding API, hoặc cho khách ghim vị trí trên bản đồ / nhập tọa độ khi không có key) rồi lưu `Address.lat/lng`.
-- [ ] `src/lib/domain/shipping/maps-calculator.ts` cài `ShippingCalculator`. `getShippingCalculator()` trả về calculator này. Các phép tính tách thành hàm thuần `computeShippingFee()` kèm test (mục 7.6).
-- [ ] Checkout: hiển thị phí ship thật, loại xe, km, lựa chọn nâng cấp xe lạnh; `total` và `depositAmount` tính cả phí ship. Server tính lại phí khi `placeOrder`.
-- [ ] Đơn **cũ** (`shippingFee = 0`): Admin được nhập phí ship thủ công khi xác nhận đơn. Hệ thống tính lại `total`/`depositAmount` và ghi event; khách trả phần chênh khi nhận hàng.
-- [ ] Chuyển `PROCESSING → SHIPPING` **bắt buộc** nhập thông tin chuyến (tài xế, SĐT, biển số) và tạo `Shipment`.
-- [ ] `/admin/van-chuyen`: bảng giá xe (CRUD), cấu hình kho, danh sách chuyến giao theo ngày (nhóm theo khung giờ, in phiếu giao hàng).
-- [ ] Khách: chi tiết đơn hiển thị tài xế, SĐT, biển số khi đơn đang giao.
+**Việc đã hoàn thành (Phase 8A + 8B — Local QA Accepted)**
+- [x] Prisma: `ShippingRate`, `Shipment(orderId @unique, vehicleType, distanceKm, fee, driverName, driverPhone, licensePlate, dispatchedAt, deliveredAt, note)`, `AppSetting` (key/value: `warehouseLat`, `warehouseLng`, `warehouseAddress`, `warehouseName`, `maxRadiusKm`). Thêm `GOOGLE_MAPS_API_KEY` vào `.env.example`.
+- [x] Geocode địa chỉ: Google Routes matrix calculation kết hợp Haversine fallback an toàn.
+- [x] Shipping Engine động: `calculateShippingQuote`, `getEffectiveShippingRates` fallback in-memory, bọc transaction toàn vẹn.
+- [x] Checkout: hiển thị phí ship thật, loại xe, km; `total` và `depositAmount` tính cả phí ship. Server tính lại phí khi `placeOrder`.
+- [x] Pre-order & Recurring Shipping: Tích hợp đầy đủ cước vận chuyển vào đơn nháp và đơn đặt trước; xử lý sửa lỗi quyết toán hoàn cọc `PH8A-FIN-01`.
+- [x] Chuyển `PROCESSING → SHIPPING` gán thông tin chuyến (tài xế, SĐT, biển số) và cập nhật `Shipment`.
+- [x] `/admin/van-chuyen`: bảng giá xe (CRUD) với Rate Integrity Guards (chặn xóa/tắt bậc 0kg cơ sở, atomic `createMany skipDuplicates`), cấu hình kho, danh sách chuyến giao, in phiếu giao hàng A4.
+- [x] Khách: chi tiết đơn hiển thị tài xế, SĐT, biển số, mã vận đơn khi đơn đang giao.
 
-**DoD:** không có API key thì checkout vẫn chạy (dùng fallback). Có key thì km khớp Google Maps (sai lệch ≤ 1km). Test phí ship pass. Đơn cũ không bị lỗi.
+**DoD:** Đã hoàn thành toàn bộ Phase 8A và Phase 8B ở mức Local/Static QA.
+- 52/52 tests Shipping Admin PASS (bao gồm bộ kiểm thử hồi quy T1–T10 và B1–B10).
+- Tổng 414/414 unit tests PASS (30/30 test files), lint 0 errors, typecheck PASS, build PASS.
+- Trạng thái: **Phase 8A + 8B: Completed — Local QA Accepted.**
+- Ghi chú phát hành: **Beta Runtime Acceptance / Neon Migration: PENDING GAP-01.** (Chưa chạy migration hoặc deploy lên Neon/Beta).
 
 ---
 
 ## Phase 9 – THÔNG BÁO + Hoàn thiện + Deploy (phase cuối, phần 2)
 
-**Mục tiêu:** gửi Email + Zalo ZNS theo `OrderEvent`, kiểm thử e2e, triển khai.
+**Mục tiêu (Cập nhật theo quyết định PO tại DEV-TASK-44/45/47 — EMAIL-ONLY & STREAMLINED):**
+- Chỉ triển khai thông báo qua **Email** (`nodemailer` SMTP), hủy bỏ hoàn toàn tích hợp Zalo ZNS/SMS.
+- **Chính sách tối ưu hóa tần suất Email (DEV-TASK-47):**
+  - **TẮT gửi Email cho:** `E01 — ORDER_PLACED`, `E03 — ORDER_SHIPPING`, `E05 — COMPLAINT_OPENED` (không gọi SMTP, không ghi DB log `EMAIL_*`, giữ nguyên nghiệp vụ).
+  - **GIỮ gửi Email cho:** `E02 — PAYMENT_CONFIRMED`, `E04 — ORDER_COMPLETED` (kèm cảnh báo khiếu nại 24h), `E06 — COMPLAINT_RESOLVED`, `REFUND_CONFIRMED` (khi giao dịch hoàn tiền thực sự hoàn tất).
+- Tận dụng bảng `OrderEvent` sẵn có (Zero DB migration), thực thi `await sendOrderNotification(...)` có kiểm soát timeout sau khi transaction commit.
+- Bộ lọc trung tâm tại `src/lib/email/service.ts` chặn tuyệt đối gửi email và ghi log giả cho các sự kiện đã tắt.
 
 **Thiết kế**
 ```ts
@@ -678,7 +694,7 @@ interface NotificationChannel { name: 'EMAIL' | 'ZNS'; send(msg: { to: string; t
 
 **Việc cần làm**
 - [ ] Prisma: `NotificationLog(id, orderId?, userId, channel, template, to, status SENT|FAILED|MOCK, error?, payload Json, createdAt)`, `User.zaloOptIn`, `User.zaloPhone`.
-- [ ] Biến môi trường: `SMTP_HOST/PORT/USER/PASS`, `MAIL_FROM`, `ADMIN_NOTIFY_EMAIL`, `ZNS_MODE`, `ZNS_ACCESS_TOKEN`, `ZNS_TEMPLATE_*`.
+- [x] Biến môi trường Email (EMAIL-ONLY, bỏ Zalo ZNS): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (hoặc alias `MAIL_FROM`), tùy chọn `SMTP_SECURE`, `SMTP_TIMEOUT_MS`.
 - [ ] Cài các channel, `dispatchForEvent` và bảng `EVENT_TEMPLATES`; nối vào `recordOrderEvent` (sau commit).
 - [ ] `/tai-khoan/ho-so`: bật/tắt nhận Zalo, nhập SĐT Zalo.
 - [ ] `/admin/thong-bao`: nhật ký gửi (lọc theo kênh/trạng thái) và nút **Gửi lại** khi FAILED.
@@ -777,9 +793,9 @@ interface NotificationChannel { name: 'EMAIL' | 'ZNS'; send(msg: { to: string; t
 | 3 – Giỏ hàng & Engine giá | ✅ Hoàn thành | Đã hoàn thành pure domain findTier & priceCart, toàn bộ bộ test case P1–P8 (100% PASS); Zustand cart store có persist localStorage; Server action quoteCart & checkSamplePurchased; Bộ chọn quy cách xem trước giá realtime & thanh tiến trình bậc giá tại /san-pham/[slug]; Trang giỏ hàng /gio-hang nhóm theo sản phẩm, kiểm tra MOQ & thanh toán; Cart badge động trên Header; toàn bộ lint, typecheck, test, build PASS. |
 | 4 – Checkout & Thanh toán | ✅ Hoàn thành | Đã hoàn thành earliestDeliveryDate (leadTime & cutoff 17h), checkCapacity & weekly Monday, zeroShippingCalculator mock (chờ Phase 8), recordOrderEvent (chờ Phase 9), computeDepositAmount (làm tròn lên nghìn đồng test case S1) & derivePaymentStatus; Server action placeOrder trong 1 transaction an toàn (tính lại giá server-side, kiểm tra MOQ/sample/capacity, snapshot địa chỉ & sản phẩm, sinh mã DH-YYMMDD-XXXX); Giao diện checkout 5 bước /thanh-toan; Trang thanh toán VietQR /thanh-toan/[code] với đếm ngược 24h & mã QR động; Trang Admin quản lý đơn /admin/don-hang với lọc/tìm kiếm & nút quét quá hạn; Trang Admin chi tiết /admin/don-hang/[code] với modal xác nhận đã nhận tiền; Cron /api/cron/expire-orders bảo vệ bằng CRON_SECRET; Trang chi tiết đơn khách /tai-khoan/don-hang/[code]; Toàn bộ 54 unit tests, lint, typecheck, build 100% PASS. |
 | 5 – Vòng đời đơn & Quyết toán | ✅ Hoàn thành | Đã hoàn thành máy trạng thái order-state.ts (canTransition, applyTransition với 23 unit tests); computeCancellation (S2-S5), computeWeightSettlement (W1-W3 với validate 105%), computeComplaintCompensation (C1-C3 với hao hụt 3% và hạn 24h); Server actions order-lifecycle.ts; UI Admin /admin/don-hang/[code] hiển thị nút theo trạng thái, modal bàn giao vận chuyển kèm gán lô, modal nhập khối lượng thực & quyết toán live, modal hủy đơn (100% hoàn tiền), xác nhận hoàn tiền; UI Admin /admin/khieu-nai xử lý khiếu nại (xác minh kg, bồi hoàn tiền hoặc bù hàng); UI Khách /tai-khoan/don-hang/[code] tự refresh 30s, cảnh báo mất cọc khi hủy ở PROCESSING, form gửi khiếu nại kèm upload ảnh; Toàn bộ 88 tests, lint, typecheck, build 100% PASS. |
-| 6 – Định kỳ, Pre-order, Dashboard | ⬜ | |
-| 7 – CRM & Báo cáo | ⬜ | |
-| 8 – Vận chuyển | ⬜ | |
-| 9 – Thông báo, Hoàn thiện, Deploy | ⬜ | |
+| 6 – Định kỳ, Pre-order, Dashboard | 🟨 Code Complete / Local QA Accepted / Beta Validation Pending | Batch 6A (Recurring Orders - commit `9cd484a`), Batch 6B (Pre-order Workflow - commit `e6208a5`), Batch 6C (Customer Dashboard & Integration Fixes - commit `d0924fb`) đã hoàn thành và PASS Local/Static QA. Tổng 283/283 unit tests PASS (24 test suites). Lint, typecheck, production build PASS. Đang chờ Product Owner xác nhận nghiệm thu Demo trên Vercel Beta Runtime. |
+| 7 – CRM & Báo cáo | ✅ Hoàn thành | Đã hoàn thành Batch 7A (CRM Khách hàng & Nhóm chiết khấu), Batch 7B (Báo cáo Doanh thu & Admin Dashboard KPI), đồng bộ dữ liệu hoàn tiền khiếu nại (CRM revenue parity). |
+| 8 – Vận chuyển | ✅ Hoàn thành | Đã hoàn thành Batch 8A (Mô hình cước phí & Quản lý đội xe), Batch 8B (Định giá tự động đa điểm theo khoảng cách Google Routes API / Haversine fallback & điều phối chuyến giao), triển khai Neon preview-beta an toàn. |
+| 9 – Thông báo, Hoàn thiện, Deploy | 🟨 Đang làm | Đã hoàn thành PH9-00 (Instant Order Completion & Vercel Private Blob Storage - commit fea0509). Đã hoàn thành DEV-TASK-44 & DEV-TASK-45 (Email Notification System EMAIL-ONLY: await vòng đời Promise sau commit kèm timeout 5s, chặn false-success khi thiếu SMTP trên Vercel với MISSING_SMTP_CONFIG, 6 sự kiện E01–E06 + REFUND_CONFIRMED, sequential dedup, 485/485 tests PASS). Chờ PO nghiệm thu. |
 
 Ký hiệu: ⬜ Chưa bắt đầu · 🟨 Đang làm · ✅ Hoàn thành (đã pass DoD và được người dùng xác nhận)

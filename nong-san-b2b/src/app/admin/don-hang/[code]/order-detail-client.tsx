@@ -21,6 +21,8 @@ import {
   QrCode,
   ExternalLink,
   ShieldAlert,
+  Sparkles,
+  Printer,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -37,6 +39,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatVND } from '@/lib/money'
+import { formatVietnamDate, formatVietnamDateTime, formatDeliveryTimeSlot } from '@/lib/utils'
+import { getComplaintPhotoUrl } from '@/lib/storage-helpers'
 import { confirmPayment } from '@/actions/admin-order'
 import {
   cancelOrder,
@@ -45,6 +49,9 @@ import {
   confirmRefundDone,
   completeOrder,
 } from '@/actions/order-lifecycle'
+import { adminProcessHarvest } from '@/actions/preorder'
+import { checkPriceBand, computePreorderShortfallRefund } from '@/lib/domain/preorder'
+import { PackingSlipModal, PackingSlipData } from '@/components/admin/packing-slip-modal'
 import { toast } from 'sonner'
 import {
   OrderStatus,
@@ -52,6 +59,9 @@ import {
   TxType,
   TxStatus,
   ComplaintStatus,
+  TimeSlot,
+  ShipmentStatus,
+  VehicleType,
 } from '@prisma/client'
 
 export interface OrderDetailData {
@@ -65,6 +75,22 @@ export interface OrderDetailData {
   timeSlot: string | null
   subtotal: number
   shippingFee: number
+  shippingDistanceKm?: number | null
+  shippingVehicleType?: VehicleType | null
+  shipment?: {
+    id: string
+    code: string
+    vehicleType: VehicleType
+    distanceKm: number
+    shippingFee: number
+    driverName?: string | null
+    driverPhone?: string | null
+    licensePlate?: string | null
+    status: ShipmentStatus
+    dispatchedAt?: string | null
+    deliveredAt?: string | null
+    note?: string | null
+  } | null
   total: number
   depositAmount: number
   finalSubtotal: number | null
@@ -74,6 +100,9 @@ export interface OrderDetailData {
   cancelledBy: string | null
   cancelReason: string | null
   customerNote: string | null
+  preorderFinalPricePerKg?: number | null
+  preorderFulfilledGrams?: number | null
+  preorderCustomerDecision?: string | null
   createdAt: string
   addressSnapshot: {
     recipient: string
@@ -101,6 +130,8 @@ export interface OrderDetailData {
     quantity: number
     orderedGrams: number
     unitPricePerKg: number
+    preorderPricePerKg?: number | null
+    preorderBandPercent?: number
     lineTotal: number
     actualGrams: number | null
     finalLineTotal: number | null
@@ -144,6 +175,9 @@ export interface OrderDetailData {
   }[]
   paidAmount: number
   remainingAmount: number
+  grossPaid?: number
+  netPaid?: number
+  refundedAmount?: number
   paymentStatus: 'AWAITING_PAYMENT' | 'DEPOSIT_PAID' | 'PAID' | 'REFUND_PENDING' | 'PARTIALLY_REFUNDED' | 'REFUNDED'
 }
 
@@ -179,17 +213,24 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
 
   // Payment form state
-  const defaultAmount =
-    order.paidAmount < order.depositAmount
-      ? order.depositAmount - order.paidAmount
-      : order.remainingAmount > 0
-      ? order.remainingAmount
-      : order.total
+  const targetTotal = order.finalTotal ?? order.total
+  const isFullPayment = order.paymentOption === 'FULL'
+
+  const defaultAmount = isFullPayment
+    ? Math.max(0, targetTotal - order.paidAmount)
+    : order.paidAmount < order.depositAmount
+    ? order.depositAmount - order.paidAmount
+    : Math.max(0, order.remainingAmount)
 
   const [paymentAmount, setPaymentAmount] = useState(defaultAmount)
   const [paymentMethod, setPaymentMethod] = useState<TxMethod>(TxMethod.BANK_TRANSFER)
   const [referenceCode, setReferenceCode] = useState('')
   const [paymentNote, setPaymentNote] = useState('')
+
+  const handleOpenPaymentDialog = () => {
+    setPaymentAmount(defaultAmount)
+    setPaymentDialogOpen(true)
+  }
 
   // Batch assignments state for SHIPPING
   const [batchAssignments, setBatchAssignments] = useState<Record<string, string>>(() => {
@@ -199,6 +240,38 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
     }
     return init
   })
+
+  // Dispatch driver form state & packing slip modal
+  const [dispatchDriverName, setDispatchDriverName] = useState(order.shipment?.driverName || '')
+  const [dispatchDriverPhone, setDispatchDriverPhone] = useState(order.shipment?.driverPhone || '')
+  const [dispatchLicensePlate, setDispatchLicensePlate] = useState(order.shipment?.licensePlate || '')
+  const [dispatchNote, setDispatchNote] = useState(order.shipment?.note || '')
+  const [packingSlipOpen, setPackingSlipOpen] = useState(false)
+
+  const packingSlipData: PackingSlipData = {
+    orderCode: order.code,
+    shipmentCode: order.shipment?.code || `SHIP-${order.code}`,
+    deliveryDate: order.deliveryDate,
+    timeSlot: order.timeSlot,
+    customerName: order.user.fullName,
+    companyName: order.user.companyName,
+    taxCode: null,
+    phone: order.addressSnapshot.phone || order.user.phone,
+    address: `${order.addressSnapshot.line}, ${order.addressSnapshot.ward}, ${order.addressSnapshot.district}, ${order.addressSnapshot.province}`,
+    driverName: order.shipment?.driverName || dispatchDriverName || null,
+    driverPhone: order.shipment?.driverPhone || dispatchDriverPhone || null,
+    licensePlate: order.shipment?.licensePlate || dispatchLicensePlate || null,
+    vehicleType: (order.shipment?.vehicleType || order.shippingVehicleType || 'NORMAL') as string,
+    note: order.shipment?.note || order.customerNote || null,
+    items: order.items.map((item) => ({
+      id: item.id,
+      productName: item.productName,
+      packagingName: item.packagingName,
+      orderedKg: item.orderedGrams / 1000,
+      batchCode: item.batchCode,
+      isSample: item.isSample,
+    })),
+  }
 
   // Settle weights form state (actualKg entered by admin)
   const [actualKgMap, setActualKgMap] = useState<Record<string, number>>(() => {
@@ -212,6 +285,85 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
   // Cancel form state
   const [cancelReasonOption, setCancelReasonOption] = useState(cancelReasons[0])
   const [cancelReasonCustom, setCancelReasonCustom] = useState('')
+
+  // Harvest form state for Pre-order
+  const firstItem = order.items[0]
+  const basePreorderPrice = firstItem?.preorderPricePerKg || firstItem?.unitPricePerKg || 0
+  const bandPercent = firstItem?.preorderBandPercent ?? 10
+  const orderedKg = (firstItem?.orderedGrams ?? 0) / 1000
+
+  const [harvestDialogOpen, setHarvestDialogOpen] = useState(false)
+  const [harvestPricePerKg, setHarvestPricePerKg] = useState<number>(
+    order.preorderFinalPricePerKg || basePreorderPrice
+  )
+  const [harvestFulfilledKg, setHarvestFulfilledKg] = useState<number>(
+    (order.preorderFulfilledGrams ?? firstItem?.orderedGrams ?? 0) / 1000
+  )
+  const [harvestDeliveryDate, setHarvestDeliveryDate] = useState<string>(() => {
+    if (order.deliveryDate) {
+      return order.deliveryDate.split('T')[0]
+    }
+    const d = new Date()
+    d.setDate(d.getDate() + 2)
+    return d.toISOString().split('T')[0]
+  })
+  const [harvestTimeSlot, setHarvestTimeSlot] = useState<TimeSlot>(
+    (order.timeSlot as TimeSlot) || TimeSlot.MORNING
+  )
+  const [harvestBatchId, setHarvestBatchId] = useState<string>(firstItem?.batchId || '')
+  const [harvestAdminNote, setHarvestAdminNote] = useState<string>('')
+
+  const handleProcessHarvest = () => {
+    if (harvestPricePerKg <= 0 && harvestFulfilledKg > 0) {
+      toast.error('Vui lòng nhập đơn giá chốt vụ hợp lệ (> 0)')
+      return
+    }
+
+    if (harvestFulfilledKg < 0) {
+      toast.error('Khối lượng thực giao không được âm')
+      return
+    }
+
+    const priceBandCheck = checkPriceBand(basePreorderPrice || 1, harvestPricePerKg, bandPercent)
+    if (priceBandCheck.inBand && harvestFulfilledKg > 0 && !harvestDeliveryDate) {
+      toast.error('Vui lòng chọn ngày giao hàng khi đơn giá chốt trong biên độ')
+      return
+    }
+
+    startTransition(async () => {
+      try {
+        const res = await adminProcessHarvest({
+          orderId: order.id,
+          finalPricePerKg: harvestPricePerKg,
+          fulfilledGrams: Math.round(harvestFulfilledKg * 1000),
+          deliveryDate: harvestDeliveryDate || undefined,
+          timeSlot: harvestTimeSlot,
+          batchId: harvestBatchId || undefined,
+          adminNote: harvestAdminNote.trim() || undefined,
+        })
+
+        if (res.success) {
+          if (res.action === 'CONFIRMED_IN_BAND') {
+            toast.success(
+              `Chốt vụ thành công trong biên độ (${res.diffPercent}%)! Đơn đã chuyển sang Đang xử lý.`
+            )
+          } else if (res.action === 'WAITING_CUSTOMER_DECISION') {
+            toast.warning(
+              `Giá chốt vượt biên độ (+${res.diffPercent}%). Đơn hàng đã ghi nhận và đang chờ khách hàng xác nhận.`
+            )
+          } else if (res.action === 'LOST_AND_CANCELLED') {
+            toast.error('Đã ghi nhận mất mùa 100%. Đơn đã hủy và tạo lệnh hoàn trả cọc.')
+          }
+          setHarvestDialogOpen(false)
+          router.refresh()
+        } else {
+          toast.error(res.error || 'Có lỗi xảy ra khi chốt vụ mùa')
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Có lỗi xảy ra')
+      }
+    })
+  }
 
   // Handlers
   const handleConfirmPayment = () => {
@@ -244,6 +396,19 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
   }
 
   const handleTransitionToShipping = () => {
+    if (!dispatchDriverName.trim() || dispatchDriverName.trim().length < 2) {
+      toast.error('Vui lòng nhập họ tên tài xế (tối thiểu 2 ký tự)')
+      return
+    }
+    if (!dispatchDriverPhone.trim() || !/^(0|\+84)(3|5|7|8|9)[0-9]{8}$/.test(dispatchDriverPhone.trim())) {
+      toast.error('Số điện thoại tài xế không hợp lệ (10 chữ số VN, ví dụ: 0912345678)')
+      return
+    }
+    if (!dispatchLicensePlate.trim() || dispatchLicensePlate.trim().length < 3) {
+      toast.error('Vui lòng nhập biển số xe giao hàng hợp lệ')
+      return
+    }
+
     startTransition(async () => {
       try {
         const assignments = Object.entries(batchAssignments)
@@ -253,6 +418,10 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
         const res = await transitionToShipping({
           orderId: order.id,
           batchAssignments: assignments,
+          driverName: dispatchDriverName,
+          driverPhone: dispatchDriverPhone,
+          licensePlate: dispatchLicensePlate,
+          note: dispatchNote,
         })
 
         if (res.success) {
@@ -397,7 +566,15 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
     }
   })()
 
+  // Phân biệt đơn F01C (giữ chỗ 10 phút) và đơn legacy (chính sách cũ 24 giờ)
+  const isF01cOrder = (() => {
+    if (!order.paymentDueAt || !order.createdAt) return false
+    const durationMs = new Date(order.paymentDueAt).getTime() - new Date(order.createdAt).getTime()
+    return durationMs <= 15 * 60 * 1000 // <= 15 phút (chuẩn F01C là 10 phút)
+  })()
+
   const isDueOver =
+    order.status === OrderStatus.PENDING_CONFIRMATION &&
     order.paymentDueAt &&
     new Date(order.paymentDueAt) < new Date() &&
     order.paidAmount === 0
@@ -406,48 +583,65 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
     (t) => t.type === TxType.REFUND && t.status === TxStatus.PENDING
   )
 
+  const isSettled =
+    !pendingRefundTx &&
+    order.remainingAmount === 0 &&
+    (order.grossPaid !== undefined
+      ? order.grossPaid >= targetTotal
+      : order.paidAmount === targetTotal || (order.paymentStatus === 'PARTIALLY_REFUNDED' && order.remainingAmount === 0))
+
   const isEligibleToComplete =
     (order.status === OrderStatus.DELIVERED || order.status === OrderStatus.COMPLAINT) &&
-    order.paidAmount === (order.finalTotal ?? order.total) &&
-    !pendingRefundTx &&
+    isSettled &&
     order.complaints.every((c) => c.status !== ComplaintStatus.OPEN)
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* Header & Quick Action Toolbar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-card">
         <div className="flex items-center gap-3">
           <Link href="/admin/don-hang">
             <Button
               variant="ghost"
               size="sm"
-              className="h-9 w-9 p-0 rounded-xl text-slate-500 hover:text-slate-900"
+              className="h-10 w-10 p-0 rounded-full text-slate-500 hover:text-slate-900 hover:bg-slate-100"
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
           </Link>
           <div>
             <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-xl font-black text-slate-900 tracking-tight font-mono">
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-mono">
                 {order.code}
               </h1>
               <OrderStatusBadge status={order.status} />
               <PaymentStatusBadge status={order.paymentStatus} />
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Tạo lúc {new Date(order.createdAt).toLocaleString('vi-VN')} • Mã ID: {order.id}
+              Tạo lúc {formatVietnamDateTime(order.createdAt)} • Mã ID: {order.id}
             </p>
           </div>
         </div>
 
         {/* Dynamic Action Buttons based on Order State */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Action 0: Vào vụ & Chốt giá mùa vụ (PREORDER ở PREORDER_WAITING) */}
+          {order.type === 'PREORDER' && order.status === OrderStatus.PREORDER_WAITING && (
+            <Button
+              onClick={() => setHarvestDialogOpen(true)}
+              className="bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs gap-1.5 shadow-sm"
+            >
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              Vào vụ & Chốt giá mùa vụ
+            </Button>
+          )}
+
           {/* Action 1: Xác nhận đã nhận tiền (khi còn thiếu tiền) */}
           {order.status !== OrderStatus.CANCELLED &&
             order.status !== OrderStatus.COMPLETED &&
             order.remainingAmount > 0 && (
               <Button
-                onClick={() => setPaymentDialogOpen(true)}
+                onClick={handleOpenPaymentDialog}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-sm"
               >
                 <CheckCircle2 className="w-4 h-4" />
@@ -489,8 +683,9 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
             </Button>
           )}
 
-          {/* Action 5: Hủy đơn hàng (khi ở PENDING hoặc PROCESSING) */}
+          {/* Action 5: Hủy đơn hàng (khi ở PENDING, PREORDER_WAITING hoặc PROCESSING) */}
           {(order.status === OrderStatus.PENDING_CONFIRMATION ||
+            order.status === OrderStatus.PREORDER_WAITING ||
             order.status === OrderStatus.PROCESSING) && (
             <Button
               variant="outline"
@@ -501,16 +696,28 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
               Hủy đơn
             </Button>
           )}
+
+          {/* Action 6: In phiếu giao hàng (Packing Slip) */}
+          <Button
+            variant="outline"
+            onClick={() => setPackingSlipOpen(true)}
+            className="border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold gap-1.5 shadow-sm"
+          >
+            <Printer className="w-4 h-4 text-slate-600" />
+            Phiếu giao hàng
+          </Button>
         </div>
       </div>
 
-      {/* Due Alert if overdue */}
+      {/* Due Alert if overdue (chỉ hiển thị cho đơn đang PENDING_CONFIRMATION) */}
       {isDueOver && (
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-3 text-amber-900 text-xs">
           <Clock className="w-5 h-5 text-amber-600 shrink-0" />
           <div>
-            <strong>Đơn hàng đã quá hạn thanh toán 24h:</strong> Hạn chót là{' '}
-            {new Date(order.paymentDueAt!).toLocaleString('vi-VN')}. Khách hàng chưa hoàn tất thanh toán. Bạn có thể hủy hoặc chạy &quot;Quét đơn quá hạn&quot;.
+            <strong>
+              Đơn hàng đã quá hạn thanh toán ({isF01cOrder ? 'giữ chỗ 10 phút' : 'chính sách 24h'}):
+            </strong>{' '}
+            Hạn chót là {formatVietnamDateTime(order.paymentDueAt)}. Khách hàng chưa hoàn tất thanh toán. Bạn có thể hủy để giải phóng tồn kho hoặc chạy &quot;Quét đơn quá hạn&quot;.
           </div>
         </div>
       )}
@@ -519,9 +726,16 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
       {order.status === OrderStatus.CANCELLED && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 text-rose-900 text-xs">
           <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-          <div>
-            <strong>Đơn hàng đã bị hủy bởi {order.cancelledBy === 'CUSTOMER' ? 'Khách hàng' : order.cancelledBy === 'SELLER' ? 'Bên bán (Admin)' : 'Hệ thống'}:</strong>
-            <p className="mt-0.5 text-rose-800">Lý do: {order.cancelReason || 'Không có lý do cụ thể'}</p>
+          <div className="space-y-0.5">
+            <strong>
+              Đơn hàng đã bị hủy bởi {order.cancelledBy === 'CUSTOMER' ? 'Khách hàng' : order.cancelledBy === 'SELLER' ? 'Bên bán (Admin)' : 'Hệ thống'}:
+            </strong>
+            <p className="text-rose-800">Lý do: {order.cancelReason || 'Không có lý do cụ thể'}</p>
+            {order.paymentDueAt && (
+              <p className="text-rose-600/80 text-[11px]">
+                Thời hạn thanh toán ban đầu: {formatVietnamDateTime(order.paymentDueAt)} ({isF01cOrder ? 'Giữ chỗ FEFO 10 phút' : 'Chính sách cũ 24h'})
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -572,15 +786,11 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                   Ngày giao dự kiến:{' '}
                   <strong>
                     {order.deliveryDate
-                      ? new Date(order.deliveryDate).toLocaleDateString('vi-VN')
+                      ? formatVietnamDate(order.deliveryDate)
                       : 'Vụ mùa'}
                   </strong>{' '}
                   •{' '}
-                  {order.timeSlot === 'MORNING'
-                    ? 'Buổi sáng (07:00 - 11:30)'
-                    : order.timeSlot === 'AFTERNOON'
-                    ? 'Buổi chiều (13:30 - 17:30)'
-                    : 'Cả ngày'}
+                  {formatDeliveryTimeSlot(order.timeSlot)}
                 </div>
               </div>
 
@@ -592,6 +802,197 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
               )}
             </CardContent>
           </Card>
+
+          {/* Shipment Information Card */}
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-bold flex items-center gap-2 text-slate-900">
+                <Truck className="w-4 h-4 text-indigo-600" />
+                Thông tin Vận chuyển & Vận đơn
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                {order.shipment ? (
+                  <Badge
+                    className={
+                      order.shipment.status === 'DELIVERED'
+                        ? 'bg-teal-100 text-teal-800 border-teal-200'
+                        : order.shipment.status === 'DISPATCHED'
+                        ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                        : order.shipment.status === 'CANCELLED'
+                        ? 'bg-rose-100 text-rose-800 border-rose-200'
+                        : 'bg-amber-100 text-amber-800 border-amber-200'
+                    }
+                  >
+                    {order.shipment.status === 'DELIVERED'
+                      ? 'Đã giao'
+                      : order.shipment.status === 'DISPATCHED'
+                      ? 'Đang vận chuyển'
+                      : order.shipment.status === 'CANCELLED'
+                      ? 'Đã hủy'
+                      : 'Chờ giao'}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-slate-500 border-slate-200">
+                    Chưa có vận đơn
+                  </Badge>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPackingSlipOpen(true)}
+                  className="h-7 text-xs gap-1 border-slate-200 hover:bg-slate-50"
+                >
+                  <Printer className="w-3.5 h-3.5 text-slate-600" />
+                  In phiếu
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-1.5 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                <div className="text-slate-500 font-medium">Mã vận đơn:</div>
+                <div className="text-sm font-bold text-slate-800 font-mono">
+                  {order.shipment?.code || `Chưa gán (Dự kiến: SHIP-${order.code})`}
+                </div>
+                <div className="text-slate-600 pt-1">
+                  Loại xe vận chuyển:{' '}
+                  <strong className="text-slate-800">
+                    {(order.shipment?.vehicleType || order.shippingVehicleType) === 'COLD'
+                      ? 'Xe đông lạnh (Bảo quản mát)'
+                      : 'Xe tải thường'}
+                  </strong>
+                </div>
+                <div className="text-slate-600">
+                  Khoảng cách tính cước:{' '}
+                  <strong>
+                    {order.shipment?.distanceKm ?? order.shippingDistanceKm ?? 0} km
+                  </strong>
+                </div>
+                <div className="text-slate-600">
+                  Cước phí vận chuyển:{' '}
+                  <strong className="text-emerald-700">
+                    {formatVND(order.shipment?.shippingFee ?? order.shippingFee)}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                <div className="text-slate-500 font-medium">Tài xế & Phương tiện:</div>
+                {order.shipment?.driverName ? (
+                  <>
+                    <div className="font-bold text-slate-800 text-sm">
+                      {order.shipment.driverName}
+                    </div>
+                    <div className="text-slate-600">
+                      Điện thoại:{' '}
+                      <a
+                        href={`tel:${order.shipment.driverPhone}`}
+                        className="text-indigo-600 font-bold hover:underline"
+                      >
+                        {order.shipment.driverPhone}
+                      </a>
+                    </div>
+                    <div className="text-slate-600">
+                      Biển số xe: <strong className="font-mono">{order.shipment.licensePlate}</strong>
+                    </div>
+                    {order.shipment.dispatchedAt && (
+                      <div className="text-[11px] text-slate-500 pt-1">
+                        Xuất kho:{' '}
+                        <strong>{formatVietnamDateTime(order.shipment.dispatchedAt)}</strong>
+                      </div>
+                    )}
+                    {order.shipment.deliveredAt && (
+                      <div className="text-[11px] text-teal-700 font-semibold">
+                        Giao thành công:{' '}
+                        <strong>{formatVietnamDateTime(order.shipment.deliveredAt)}</strong>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-slate-500 italic py-2">
+                    Chưa bàn giao tài xế vận chuyển. Sẽ cập nhật thông tin khi chuyển sang trạng thái Đang giao (SHIPPING).
+                  </div>
+                )}
+              </div>
+
+              {order.shipment?.note && (
+                <div className="sm:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-100 text-slate-600">
+                  <strong>Ghi chú vận chuyển:</strong> {order.shipment.note}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Pre-order Information Card */}
+          {order.type === 'PREORDER' && (
+            <Card className="border-purple-200 bg-purple-50/40 shadow-sm">
+              <CardHeader className="pb-3 border-b border-purple-100 bg-purple-50/70">
+                <CardTitle className="text-sm font-bold flex items-center justify-between text-purple-900">
+                  <span className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-purple-600" />
+                    Hợp đồng Đặt Trước Vụ Mùa (Pre-order Contract)
+                  </span>
+                  <Badge variant="outline" className="bg-white border-purple-300 text-purple-800 text-xs">
+                    Biên độ cam kết: ±{bandPercent}%
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-5 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div className="bg-white p-3.5 rounded-xl border border-purple-100 space-y-1">
+                  <span className="text-slate-500 font-medium block">Đơn giá cọc ban đầu:</span>
+                  <div className="text-sm font-bold text-slate-800">
+                    {formatVND(basePreorderPrice)}/kg
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    Biên độ cho phép: {formatVND(Math.round(basePreorderPrice * (1 - bandPercent / 100)))} –{' '}
+                    {formatVND(Math.round(basePreorderPrice * (1 + bandPercent / 100)))}
+                  </div>
+                </div>
+
+                <div className="bg-white p-3.5 rounded-xl border border-purple-100 space-y-1">
+                  <span className="text-slate-500 font-medium block">Đơn giá chốt vụ thực tế:</span>
+                  <div className="text-sm font-bold text-purple-900">
+                    {order.preorderFinalPricePerKg
+                      ? `${formatVND(order.preorderFinalPricePerKg)}/kg`
+                      : 'Chưa chốt giá vụ'}
+                  </div>
+                  {order.preorderFinalPricePerKg && (
+                    <div className="text-[11px] font-semibold text-purple-700">
+                      Biến động:{' '}
+                      {
+                        checkPriceBand(basePreorderPrice || 1, order.preorderFinalPricePerKg, bandPercent)
+                          .diffPercent
+                      }
+                      %{' '}
+                      {checkPriceBand(basePreorderPrice || 1, order.preorderFinalPricePerKg, bandPercent).inBand
+                        ? '(Trong biên độ)'
+                        : '(Ngoài biên độ)'}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white p-3.5 rounded-xl border border-purple-100 space-y-1">
+                  <span className="text-slate-500 font-medium block">Sản lượng & Quyết định:</span>
+                  <div className="text-sm font-bold text-slate-800">
+                    {order.preorderFulfilledGrams !== null && order.preorderFulfilledGrams !== undefined
+                      ? `${order.preorderFulfilledGrams / 1000} kg / ${orderedKg} kg`
+                      : `Đặt ${orderedKg} kg (Chờ cân)`}
+                  </div>
+                  <div className="text-[11px] text-slate-600">
+                    Khách phản hồi:{' '}
+                    <strong>
+                      {order.preorderCustomerDecision === 'ACCEPT'
+                        ? 'Đã chấp nhận giá'
+                        : order.preorderCustomerDecision === 'CANCEL'
+                        ? 'Đã từ chối (Hủy & Hoàn cọc)'
+                        : order.preorderFinalPricePerKg
+                        ? 'Đang chờ khách phản hồi'
+                        : 'Chưa có'}
+                    </strong>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Items Table Card with Batch QR & Settled Weights */}
           <Card className="border-slate-200 shadow-sm overflow-hidden">
@@ -710,12 +1111,15 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                     <div className="text-slate-600">{c.description}</div>
                     {c.photos.length > 0 && (
                       <div className="flex gap-2 pt-1 overflow-x-auto">
-                        {c.photos.map((p, i) => (
-                          <a key={i} href={p} target="_blank" rel="noreferrer">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={p} alt="Minh chứng" className="w-14 h-14 object-cover rounded-lg border border-slate-200" />
-                          </a>
-                        ))}
+                        {c.photos.map((p, i) => {
+                          const photoUrl = getComplaintPhotoUrl(p)
+                          return (
+                            <a key={i} href={photoUrl} target="_blank" rel="noreferrer">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={photoUrl} alt="Minh chứng" className="w-14 h-14 object-cover rounded-lg border border-slate-200" />
+                            </a>
+                          )
+                        })}
                       </div>
                     )}
                     {c.compensation && (
@@ -768,7 +1172,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-500 mt-0.5">
-                          {new Date(tx.createdAt).toLocaleString('vi-VN')}
+                          {formatVietnamDateTime(tx.createdAt)}
                           {tx.reference && ` • Mã GD: ${tx.reference}`}
                           {tx.note && ` • ${tx.note}`}
                         </div>
@@ -823,7 +1227,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                         {evt.type}
                       </span>
                       <span className="text-[11px] text-slate-400">
-                        {new Date(evt.createdAt).toLocaleString('vi-VN')}
+                        {formatVietnamDateTime(evt.createdAt)}
                       </span>
                     </div>
                     {evt.note && <div className="text-slate-600 mt-0.5">{evt.note}</div>}
@@ -885,12 +1289,21 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                   </span>
                 </div>
 
-                <div className="flex justify-between text-slate-700">
-                  <span>Tiền cọc tối thiểu (30%):</span>
-                  <span className="font-bold font-mono text-amber-800">
-                    {formatVND(order.depositAmount)}
-                  </span>
-                </div>
+                {order.paymentOption === 'DEPOSIT_30' ? (
+                  <div className="flex justify-between text-slate-700">
+                    <span>Tiền cọc tối thiểu (30%):</span>
+                    <span className="font-bold font-mono text-amber-800">
+                      {formatVND(order.depositAmount)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between text-slate-700">
+                    <span>Yêu cầu thanh toán (100%):</span>
+                    <span className="font-bold font-mono text-amber-800">
+                      {formatVND(targetTotal)}
+                    </span>
+                  </div>
+                )}
 
                 <div className="flex justify-between text-emerald-800 font-bold border-t border-slate-200 pt-2">
                   <span>Đã thanh toán thực tế:</span>
@@ -909,7 +1322,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                 <div className="text-[11px] text-slate-500 pt-1 flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-slate-400" />
                   <span>
-                    Hạn thanh toán: {new Date(order.paymentDueAt).toLocaleString('vi-VN')}
+                    Hạn thanh toán: {formatVietnamDateTime(order.paymentDueAt)}
                   </span>
                 </div>
               )}
@@ -918,7 +1331,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
               <div className="pt-3 space-y-2">
                 {order.remainingAmount > 0 && order.status !== OrderStatus.CANCELLED && (
                   <Button
-                    onClick={() => setPaymentDialogOpen(true)}
+                    onClick={handleOpenPaymentDialog}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-sm"
                   >
                     <CheckCircle2 className="w-4 h-4" />
@@ -970,7 +1383,10 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
               Xác nhận giao dịch thanh toán
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500">
-              Ghi nhận tiền thanh toán cho đơn hàng <strong className="font-mono">{order.code}</strong>.
+              Ghi nhận tiền thanh toán cho đơn hàng <strong className="font-mono">{order.code}</strong>
+              {isFullPayment
+                ? ' (Khách hàng chọn thanh toán 100% giá trị đơn hàng).'
+                : ' (Khách hàng chọn hình thức đặt cọc 30%).'}
             </DialogDescription>
           </DialogHeader>
 
@@ -989,9 +1405,20 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                 className="mt-1 font-mono font-bold text-sm"
               />
               <div className="text-[11px] text-slate-500 mt-1 flex justify-between">
-                <span>Cọc tối thiểu: {formatVND(order.depositAmount)}</span>
+                {isFullPayment ? (
+                  <span>
+                    {order.paidAmount > 0
+                      ? `Đã nhận: ${formatVND(order.paidAmount)} / ${formatVND(targetTotal)}`
+                      : `Yêu cầu thanh toán (100%): ${formatVND(targetTotal)}`}
+                  </span>
+                ) : (
+                  <span>Cọc tối thiểu (30%): {formatVND(order.depositAmount)}</span>
+                )}
                 <span>Còn lại: {formatVND(order.remainingAmount)}</span>
               </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                * Số tiền mặc định là gợi ý theo nghĩa vụ thanh toán; Admin vẫn phải xác nhận số tiền thực tế nhận được.
+              </p>
             </div>
 
             <div>
@@ -1071,7 +1498,60 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-2 text-xs max-h-96 overflow-y-auto">
+          <div className="space-y-4 py-2 text-xs max-h-[70vh] overflow-y-auto">
+            {/* Form tài xế & phương tiện bắt buộc */}
+            <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 space-y-2.5">
+              <div className="font-bold text-indigo-900 text-xs flex items-center gap-1.5">
+                <Truck className="w-3.5 h-3.5 text-indigo-600" />
+                Thông tin Tài xế & Phương tiện Giao hàng
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[11px] font-semibold text-slate-700">Tên tài xế *</Label>
+                  <Input
+                    placeholder="Nguyễn Văn Hùng"
+                    value={dispatchDriverName}
+                    onChange={(e) => setDispatchDriverName(e.target.value)}
+                    className="h-8 text-xs bg-white mt-0.5"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[11px] font-semibold text-slate-700">SĐT tài xế *</Label>
+                  <Input
+                    placeholder="0912345678"
+                    value={dispatchDriverPhone}
+                    onChange={(e) => setDispatchDriverPhone(e.target.value)}
+                    className="h-8 text-xs bg-white mt-0.5"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[11px] font-semibold text-slate-700">Biển số xe *</Label>
+                  <Input
+                    placeholder="51D-123.45"
+                    value={dispatchLicensePlate}
+                    onChange={(e) => setDispatchLicensePlate(e.target.value.toUpperCase())}
+                    className="h-8 text-xs bg-white mt-0.5 font-mono uppercase"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[11px] font-semibold text-slate-700">Ghi chú chuyến</Label>
+                  <Input
+                    placeholder="Xe lạnh 1.5 tấn"
+                    value={dispatchNote}
+                    onChange={(e) => setDispatchNote(e.target.value)}
+                    className="h-8 text-xs bg-white mt-0.5"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                Gán Lô hàng Thu hoạch (Tùy chọn)
+              </Label>
+              <div className="space-y-3">
             {order.items.map((item) => {
               const itemBatches = availableBatches.filter((b) => b.productId === item.productId)
               return (
@@ -1100,7 +1580,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                       <option value="">-- Chưa gán lô --</option>
                       {itemBatches.map((b) => (
                         <option key={b.id} value={b.id}>
-                          Lô {b.code} (Thu hoạch {new Date(b.harvestDate).toLocaleDateString('vi-VN')} - {(b.quantityGrams / 1000).toLocaleString('vi-VN')} kg)
+                          Lô {b.code} (Thu hoạch {formatVietnamDate(b.harvestDate)} - {(b.quantityGrams / 1000).toLocaleString('vi-VN')} kg)
                         </option>
                       ))}
                     </select>
@@ -1108,6 +1588,8 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
                 </div>
               )
             })}
+              </div>
+            </div>
           </div>
 
           <DialogFooter>
@@ -1275,7 +1757,7 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
               disabled={isPending || settlePreview.hasOver105}
               className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs gap-1.5"
             >
-              {isPending ? 'Đang quyết toán...' : 'Xác nhận chốt cân & Giao hàng'}
+              {isPending ? 'Đang quyết toán...' : 'Xác nhận chốt cân & Hoàn thành đơn'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1345,6 +1827,226 @@ export function OrderDetailClient({ order, availableBatches }: OrderDetailClient
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* DIALOG CHỐT VỤ MÙA PRE-ORDER */}
+      <Dialog open={harvestDialogOpen} onOpenChange={setHarvestDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-600" />
+              Vào vụ & Chốt giá mùa vụ (Đơn {order.code})
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Nhập đơn giá thực tế khi thu hoạch và sản lượng thực tế nông trại bàn giao.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-xs">
+            {/* Info Summary */}
+            <div className="p-3 bg-purple-50 rounded-xl border border-purple-100 grid grid-cols-2 gap-3 text-purple-900">
+              <div>
+                <span className="text-purple-600 block text-[11px]">Sản phẩm đặt trước:</span>
+                <strong className="text-xs">{firstItem?.productName}</strong>
+              </div>
+              <div>
+                <span className="text-purple-600 block text-[11px]">Khối lượng đặt:</span>
+                <strong className="text-xs">{orderedKg} kg</strong>
+              </div>
+              <div>
+                <span className="text-purple-600 block text-[11px]">Đơn giá cọc ban đầu:</span>
+                <strong className="text-xs">{formatVND(basePreorderPrice)}/kg</strong>
+              </div>
+              <div>
+                <span className="text-purple-600 block text-[11px]">Biên độ cam kết:</span>
+                <strong className="text-xs">
+                  ±{bandPercent}% ({formatVND(Math.round(basePreorderPrice * (1 - bandPercent / 100)))} –{' '}
+                  {formatVND(Math.round(basePreorderPrice * (1 + bandPercent / 100)))})
+                </strong>
+              </div>
+            </div>
+
+            {/* Final Price Input */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-baseline">
+                <Label htmlFor="harvestPrice" className="text-xs font-bold text-slate-800">
+                  Đơn giá chốt vụ thực tế (đ/kg) *
+                </Label>
+                {harvestPricePerKg > 0 && basePreorderPrice > 0 && (
+                  (() => {
+                    const check = checkPriceBand(basePreorderPrice, harvestPricePerKg, bandPercent)
+                    return (
+                      <Badge
+                        variant="outline"
+                        className={
+                          check.inBand
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                            : 'bg-amber-50 text-amber-700 border-amber-300'
+                        }
+                      >
+                        {check.inBand
+                          ? `Trong biên độ (Biến động ${check.diffPercent}%)`
+                          : `Ngoài biên độ (Biến động ${check.diffPercent}%)`}
+                      </Badge>
+                    )
+                  })()
+                )}
+              </div>
+              <Input
+                id="harvestPrice"
+                type="number"
+                min="0"
+                step="1000"
+                value={harvestPricePerKg || ''}
+                onChange={(e) => setHarvestPricePerKg(Math.max(0, parseInt(e.target.value) || 0))}
+                className="text-xs font-semibold"
+              />
+              <p className="text-[11px] text-slate-500">
+                Nếu đơn giá trong biên độ (≤ ±{bandPercent}%), đơn sẽ tự động chuyển sang ĐANG XỬ LÝ. Nếu vượt biên độ, đơn sẽ chờ khách hàng quyết định.
+              </p>
+            </div>
+
+            {/* Fulfilled Grams Input */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-baseline">
+                <Label htmlFor="harvestGrams" className="text-xs font-bold text-slate-800">
+                  Khối lượng thực giao (kg) *
+                </Label>
+                {harvestFulfilledKg < orderedKg && (
+                  <span className="text-amber-700 font-semibold text-[11px]">
+                    {harvestFulfilledKg === 0 ? 'Thất thu 100%' : `Thiếu ${(orderedKg - harvestFulfilledKg).toFixed(1)} kg`}
+                  </span>
+                )}
+              </div>
+              <Input
+                id="harvestGrams"
+                type="number"
+                min="0"
+                step="0.5"
+                value={harvestFulfilledKg || ''}
+                onChange={(e) => setHarvestFulfilledKg(Math.max(0, parseFloat(e.target.value) || 0))}
+                className="text-xs font-semibold"
+              />
+              {harvestFulfilledKg === 0 ? (
+                <div className="p-2 bg-rose-50 border border-rose-200 rounded text-rose-800 text-[11px]">
+                  ⚠️ Khối lượng 0 kg đại diện cho mất mùa 100%. Hệ thống sẽ tự động hủy đơn và tạo lệnh hoàn 100% tiền cọc cho khách.
+                </div>
+              ) : harvestFulfilledKg < orderedKg ? (
+                (() => {
+                  const refund = computePreorderShortfallRefund({
+                    depositAmount: order.depositAmount,
+                    orderedGrams: Math.round(orderedKg * 1000),
+                    fulfilledGrams: Math.round(harvestFulfilledKg * 1000),
+                  })
+                  return (
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-[11px]">
+                      Sản lượng thiếu hụt sẽ tự động tạo lệnh hoàn lại {formatVND(refund)} tiền cọc tương ứng cho khách hàng.
+                    </div>
+                  )
+                })()
+              ) : null}
+            </div>
+
+            {/* Delivery Date & Time Slot (Required if in-band and fulfilledKg > 0) */}
+            {harvestFulfilledKg > 0 && (
+              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100">
+                <div className="space-y-1">
+                  <Label htmlFor="harvestDeliveryDate" className="text-xs font-semibold text-slate-700">
+                    Ngày giao hàng *
+                  </Label>
+                  <Input
+                    id="harvestDeliveryDate"
+                    type="date"
+                    value={harvestDeliveryDate}
+                    onChange={(e) => setHarvestDeliveryDate(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="harvestTimeSlot" className="text-xs font-semibold text-slate-700">
+                    Khung giờ giao
+                  </Label>
+                  <select
+                    id="harvestTimeSlot"
+                    value={harvestTimeSlot}
+                    onChange={(e) => setHarvestTimeSlot(e.target.value as TimeSlot)}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs"
+                  >
+                    <option value="MORNING">Buổi sáng (07:00 - 11:30)</option>
+                    <option value="AFTERNOON">Buổi chiều (13:30 - 17:30)</option>
+                    <option value="EVENING">Buổi tối (18:00 - 21:00)</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* Select Batch (optional) */}
+            {availableBatches.length > 0 && harvestFulfilledKg > 0 && (
+              <div className="space-y-1">
+                <Label htmlFor="harvestBatchSelect" className="text-xs font-semibold text-slate-700">
+                  Gán lô nông sản thu hoạch (Batch)
+                </Label>
+                <select
+                  id="harvestBatchSelect"
+                  value={harvestBatchId}
+                  onChange={(e) => setHarvestBatchId(e.target.value)}
+                  className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs"
+                >
+                  <option value="">-- Chưa gán lô --</option>
+                  {availableBatches
+                    .filter((b) => !firstItem?.productId || b.productId === firstItem.productId)
+                    .map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.code} (Thu hoạch {formatVietnamDate(b.harvestDate)} -{' '}
+                        {b.quantityGrams / 1000}kg)
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
+            {/* Note */}
+            <div className="space-y-1">
+              <Label htmlFor="harvestNote" className="text-xs font-semibold text-slate-700">
+                Ghi chú nội bộ
+              </Label>
+              <Input
+                id="harvestNote"
+                placeholder="Ghi chú về chất lượng vụ mùa..."
+                value={harvestAdminNote}
+                onChange={(e) => setHarvestAdminNote(e.target.value)}
+                className="text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setHarvestDialogOpen(false)}
+              disabled={isPending}
+              className="text-xs"
+            >
+              Hủy
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleProcessHarvest}
+              disabled={isPending}
+              className="bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs gap-1.5"
+            >
+              {isPending ? 'Đang xử lý...' : 'Xác nhận chốt vụ mùa'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal 5: Phiếu Giao Hàng & Xuất Kho A4 */}
+      <PackingSlipModal
+        open={packingSlipOpen}
+        onOpenChange={setPackingSlipOpen}
+        data={packingSlipData}
+      />
     </div>
   )
 }

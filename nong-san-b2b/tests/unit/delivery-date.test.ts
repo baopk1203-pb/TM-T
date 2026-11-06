@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   earliestDeliveryDate,
+  formatVietnamDate,
+  formatVietnamDateTime,
   getVietnamDateParts,
   isDeliveryDateValid,
 } from '@/lib/domain/delivery-date'
@@ -72,6 +74,59 @@ describe('Domain: earliestDeliveryDate (Mục 3.5 & Test Case 7.7)', () => {
     it('không hợp lệ khi chọn ngày trong quá khứ hoặc trước ngày sớm nhất', () => {
       const pastDay = new Date(Date.UTC(2026, 9, 16))
       expect(isDeliveryDateValid(pastDay, minDate)).toBe(false)
+    })
+  })
+
+  describe('formatVietnamDate & formatVietnamDateTime (QW08-01 Timezone Consistency)', () => {
+    it('hiển thị đồng nhất giờ tạo đơn theo Asia/Ho_Chi_Minh (UTC+7) giữa Dashboard và Danh sách đơn hàng', () => {
+      // DH-261023-FVGP: 2026-10-23T12:40:00Z -> 19:40 ngày 23/10/2026 giờ VN
+      const fvgpUtc = '2026-10-23T12:40:00.000Z'
+      const dashboardFormatFvgp = formatVietnamDate(fvgpUtc, {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      const orderListFormatFvgp = formatVietnamDate(fvgpUtc, {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+
+      expect(dashboardFormatFvgp).toContain('19:40')
+      expect(dashboardFormatFvgp).toMatch(/23[/-]10/)
+      expect(orderListFormatFvgp).toContain('19:40')
+      expect(orderListFormatFvgp).toContain('23/10/2026')
+
+      // DH-261021-K65U: 2026-10-21T08:10:00Z -> 15:10 ngày 21/10/2026 giờ VN
+      const k65uUtc = new Date('2026-10-21T08:10:00.000Z')
+      const dashboardFormatK65u = formatVietnamDate(k65uUtc, {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      const orderListFormatK65u = formatVietnamDate(k65uUtc, {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+
+      expect(dashboardFormatK65u).toContain('15:10')
+      expect(dashboardFormatK65u).toMatch(/21[/-]10/)
+      expect(orderListFormatK65u).toContain('15:10')
+      expect(orderListFormatK65u).toContain('21/10/2026')
+    })
+
+    it('formatVietnamDateTime trả về chuỗi rỗng khi đầu vào null/undefined hoặc không hợp lệ', () => {
+      expect(formatVietnamDate(null)).toBe('')
+      expect(formatVietnamDateTime(undefined)).toBe('')
+      expect(formatVietnamDateTime('invalid-date')).toBe('')
+      expect(formatVietnamDateTime('2026-10-23T12:40:00.000Z')).toContain('19:40')
     })
   })
 })

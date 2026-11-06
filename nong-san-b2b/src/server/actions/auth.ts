@@ -3,7 +3,8 @@
 import { registerSchema, RegisterInput } from '@/lib/validators/auth'
 import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
-import { Role } from '@prisma/client'
+import { Role, Prisma } from '@prisma/client'
+import { MembershipTier } from '@/lib/domain/membership'
 
 export async function registerUser(input: RegisterInput) {
   try {
@@ -42,18 +43,45 @@ export async function registerUser(input: RegisterInput) {
     // 3. Hash mật khẩu và tạo tài khoản
     const passwordHash = await bcrypt.hash(password, 10)
 
-    const user = await db.user.create({
-      data: {
-        email: normalizedEmail,
-        passwordHash,
-        fullName: fullName.trim(),
-        phone: phone.trim(),
-        companyName: companyName.trim(),
-        taxCode: taxCode?.trim() || null,
-        role: Role.CUSTOMER,
-        groupId: defaultGroup?.id ?? null,
-      },
-    })
+    let user
+    try {
+      user = await db.user.create({
+        data: {
+          email: normalizedEmail,
+          passwordHash,
+          fullName: fullName.trim(),
+          phone: phone.trim(),
+          companyName: companyName.trim(),
+          taxCode: taxCode?.trim() || null,
+          role: Role.CUSTOMER,
+          groupId: defaultGroup?.id ?? null,
+          membershipTier: MembershipTier.BRONZE,
+        } as unknown as Prisma.UserCreateInput,
+      })
+    } catch (createErr: unknown) {
+      // Fallback an toàn nếu database chưa chạy migration bổ sung cột membershipTier
+      const errMsg = createErr instanceof Error ? createErr.message : String(createErr)
+      if (
+        errMsg.includes('membershipTier') ||
+        errMsg.includes('column') ||
+        errMsg.includes('Unknown argument')
+      ) {
+        user = await db.user.create({
+          data: {
+            email: normalizedEmail,
+            passwordHash,
+            fullName: fullName.trim(),
+            phone: phone.trim(),
+            companyName: companyName.trim(),
+            taxCode: taxCode?.trim() || null,
+            role: Role.CUSTOMER,
+            groupId: defaultGroup?.id ?? null,
+          },
+        })
+      } else {
+        throw createErr
+      }
+    }
 
     return {
       success: true,

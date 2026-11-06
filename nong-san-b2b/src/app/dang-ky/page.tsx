@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Leaf, ArrowRight, Loader2, Building2, ShieldCheck } from 'lucide-react'
+import { ArrowRight, Loader2, Building2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { BrandLogo } from '@/components/ui/brand-logo'
 import { toast } from 'sonner'
 import { registerUser } from '@/server/actions/auth'
 
@@ -50,15 +51,10 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50/50 via-white to-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <Link href="/" className="inline-flex items-center gap-2 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-sm">
-            <Leaf className="w-6 h-6" />
-          </div>
-          <span className="text-2xl font-bold tracking-tight text-slate-900">
-            NÔNG SẢN <span className="text-emerald-600">B2B</span>
-          </span>
-        </Link>
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+        <div className="mb-4 inline-flex justify-center">
+          <BrandLogo size="lg" href="/" subtitleText="Phân phối sỉ trái cây chuẩn vườn" />
+        </div>
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900 font-heading">
           Đăng ký tài khoản Đối tác sỉ
         </h2>
         <p className="mt-2 text-sm text-slate-600">

@@ -2,11 +2,14 @@ import { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getServerAuthSession } from '@/lib/auth'
+import { computePayableAmount } from '@/lib/domain/settlement'
+import { processExpiredOrders } from '@/lib/services/order-expiration'
 import { StorefrontHeader } from '@/components/shop/storefront-header'
+import { StorefrontFooter } from '@/components/shop/storefront-footer'
 import { PaymentView } from './payment-view'
 
 export const metadata: Metadata = {
-  title: 'Thanh Toán Đơn Hàng | Nông Sản B2B',
+  title: 'Thanh Toán Đơn Hàng | E Vibe',
   description: 'Mã QR thanh toán chuyển khoản VietQR cho đơn hàng nông sản B2B.',
 }
 
@@ -24,10 +27,14 @@ export default async function OrderPaymentPage({
     redirect(`/dang-nhap?callbackUrl=/thanh-toan/${code}`)
   }
 
+  // Tự động kiểm tra và hủy đơn quá hạn 10 phút theo giờ Server (EV-IMP-01C)
+  await processExpiredOrders(new Date()).catch(() => undefined)
+
   const order = await db.order.findUnique({
     where: { code },
     include: {
       items: true,
+      transactions: true,
     },
   })
 
@@ -44,10 +51,14 @@ export default async function OrderPaymentPage({
   const accountNo = process.env.VIETQR_ACCOUNT_NO || '0901234567'
   const accountName = process.env.VIETQR_ACCOUNT_NAME || 'CONG TY CP NONG SAN B2B'
 
-  const amountToPay =
-    order.paymentOption === 'DEPOSIT_30' ? order.depositAmount : order.total
+  // Tính số tiền thực tế cần thanh toán sau khi trừ các giao dịch PAYMENT DONE
+  const payable = computePayableAmount(order, order.transactions)
+  const amountToPay = payable.amountToPay
 
-  const vietQrUrl = `https://img.vietqr.io/image/${bankBin}-${accountNo}-compact2.png?amount=${amountToPay}&addInfo=${order.code}&accountName=${encodeURIComponent(accountName)}`
+  const vietQrUrl =
+    payable.isPayable && amountToPay > 0
+      ? `https://img.vietqr.io/image/${bankBin}-${accountNo}-compact2.png?amount=${amountToPay}&addInfo=${order.code}&accountName=${encodeURIComponent(accountName)}`
+      : ''
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50/50">
@@ -58,14 +69,11 @@ export default async function OrderPaymentPage({
           order={order}
           vietQrUrl={vietQrUrl}
           bankInfo={{ bankBin, accountNo, accountName }}
+          payable={payable}
         />
       </main>
 
-      <footer className="bg-white border-t border-slate-200 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-500">
-          <p>© 2026 Nông Sản B2B - Đồ án môn Thương mại Điện tử</p>
-        </div>
-      </footer>
+      <StorefrontFooter />
     </div>
   )
 }

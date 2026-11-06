@@ -1,10 +1,13 @@
 import { db } from '@/lib/db'
 import { derivePaymentStatus } from '@/lib/domain/settlement'
+import { processExpiredOrders } from '@/lib/services/order-expiration'
 import { OrderListClient, AdminOrderListItem } from './order-list-client'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminOrdersPage() {
+  await processExpiredOrders(new Date()).catch(() => undefined)
+
   const orders = await db.order.findMany({
     orderBy: { createdAt: 'desc' },
     include: {

@@ -1,42 +1,31 @@
 import Link from 'next/link'
-import { Leaf, User, Shield } from 'lucide-react'
+import { User, Shield } from 'lucide-react'
 import { getServerAuthSession } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { CartButton } from '@/components/shop/cart-button'
+import { BrandLogo } from '@/components/ui/brand-logo'
 
 export async function StorefrontHeader() {
   const session = await getServerAuthSession()
   const user = session?.user
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-slate-200">
+    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-emerald-100/70 shadow-xs transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-sm">
-            <Leaf className="w-6 h-6" />
-          </div>
-          <div>
-            <span className="text-xl font-bold tracking-tight text-slate-900">
-              NÔNG SẢN <span className="text-emerald-600">B2B</span>
-            </span>
-            <span className="block text-[11px] font-medium text-slate-500 uppercase tracking-wider">
-              Phân phối sỉ trái cây chuẩn vườn
-            </span>
-          </div>
-        </Link>
+        <BrandLogo href="/" size="md" />
 
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
           <Link href="/" className="hover:text-emerald-700 transition-colors">
             Trang chủ
           </Link>
-          <Link href="/san-pham" className="hover:text-slate-900 transition-colors">
+          <Link href="/san-pham" className="hover:text-emerald-700 transition-colors">
             Sản phẩm vụ mùa
           </Link>
-          <Link href="/nha-vuon" className="hover:text-slate-900 transition-colors">
+          <Link href="/nha-vuon" className="hover:text-emerald-700 transition-colors">
             Hồ sơ nhà vườn
           </Link>
-          <Link href="/truy-xuat" className="hover:text-slate-900 transition-colors">
+          <Link href="/truy-xuat" className="hover:text-emerald-700 transition-colors">
             Truy xuất QR lô
           </Link>
         </nav>
@@ -69,12 +58,12 @@ export async function StorefrontHeader() {
           ) : (
             <div className="flex items-center gap-2">
               <Link href="/dang-nhap">
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" className="border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/50">
                   Đăng nhập
                 </Button>
               </Link>
               <Link href="/dang-ky">
-                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs rounded-full px-4">
                   Đăng ký sỉ
                 </Button>
               </Link>

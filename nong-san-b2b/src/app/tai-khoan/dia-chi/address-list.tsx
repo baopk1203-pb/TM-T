@@ -224,6 +224,8 @@ export function AddressList({ initialAddresses }: { initialAddresses: AddressIte
                       variant="ghost"
                       size="sm"
                       onClick={() => handleOpenEdit(addr)}
+                      aria-label={`Chỉnh sửa địa chỉ ${addr.label}`}
+                      title={`Chỉnh sửa địa chỉ ${addr.label}`}
                     >
                       <Edit3 className="w-3.5 h-3.5" />
                     </Button>
@@ -232,6 +234,8 @@ export function AddressList({ initialAddresses }: { initialAddresses: AddressIte
                       size="sm"
                       className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
                       onClick={() => handleDelete(addr.id)}
+                      aria-label={`Xóa địa chỉ ${addr.label}`}
+                      title={`Xóa địa chỉ ${addr.label}`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>

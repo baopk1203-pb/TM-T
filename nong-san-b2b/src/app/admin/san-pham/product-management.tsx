@@ -91,10 +91,10 @@ export function ProductManagement({
 
   // Packagings State
   const [packagings, setPackagings] = useState<
-    { name: string; weightKg: number; isSample: boolean; samplePrice: number }[]
+    { id?: string; name: string; weightKg: number; isSample: boolean; samplePrice: number; isActive: boolean }[]
   >([
-    { name: 'Thùng carton 10kg', weightKg: 10, isSample: false, samplePrice: 0 },
-    { name: 'Rổ nhựa 20kg', weightKg: 20, isSample: false, samplePrice: 0 },
+    { name: 'Thùng carton 10kg', weightKg: 10, isSample: false, samplePrice: 0, isActive: true },
+    { name: 'Rổ nhựa 20kg', weightKg: 20, isSample: false, samplePrice: 0, isActive: true },
   ])
 
   // Price Tiers State
@@ -138,8 +138,8 @@ export function ProductManagement({
     setHarvestFrom('')
     setHarvestTo('')
     setPackagings([
-      { name: 'Thùng carton 10kg', weightKg: 10, isSample: false, samplePrice: 0 },
-      { name: 'Rổ nhựa 20kg', weightKg: 20, isSample: false, samplePrice: 0 },
+      { name: 'Thùng carton 10kg', weightKg: 10, isSample: false, samplePrice: 0, isActive: true },
+      { name: 'Rổ nhựa 20kg', weightKg: 20, isSample: false, samplePrice: 0, isActive: true },
     ])
     setTiers([
       { minKg: 50, pricePerKg: 80000 },
@@ -171,12 +171,24 @@ export function ProductManagement({
       p.expectedHarvestTo ? new Date(p.expectedHarvestTo).toISOString().split('T')[0] : ''
     )
     setPackagings(
-      p.packagings.map((pkg) => ({
-        name: pkg.name,
-        weightKg: gramsToKg(pkg.weightGrams),
-        isSample: pkg.isSample,
-        samplePrice: pkg.samplePrice || 0,
-      }))
+      p.packagings.length > 0
+        ? p.packagings.map((pkg) => ({
+            id: pkg.id,
+            name: pkg.name,
+            weightKg: gramsToKg(pkg.weightGrams),
+            isSample: pkg.isSample,
+            samplePrice: pkg.samplePrice || 0,
+            isActive: pkg.isActive,
+          }))
+        : [
+            {
+              name: 'Thùng carton 10kg',
+              weightKg: 10,
+              isSample: false,
+              samplePrice: 0,
+              isActive: true,
+            },
+          ]
     )
     setTiers(
       p.priceTiers.map((t) => ({
@@ -191,7 +203,7 @@ export function ProductManagement({
   const addPackagingRow = () => {
     setPackagings((prev) => [
       ...prev,
-      { name: `Quy cách mới`, weightKg: 10, isSample: false, samplePrice: 0 },
+      { name: `Quy cách mới`, weightKg: 10, isSample: false, samplePrice: 0, isActive: true },
     ])
   }
 
@@ -261,10 +273,12 @@ export function ProductManagement({
       expectedHarvestFrom: preorderOpen && harvestFrom ? new Date(harvestFrom) : null,
       expectedHarvestTo: preorderOpen && harvestTo ? new Date(harvestTo) : null,
       packagings: packagings.map((pkg) => ({
+        id: pkg.id,
         name: pkg.name.trim(),
         weightGrams: kgToGrams(pkg.weightKg),
         isSample: pkg.isSample,
         samplePrice: pkg.isSample ? pkg.samplePrice : null,
+        isActive: pkg.isActive,
       })),
       priceTiers: tiers.map((t) => ({
         minGrams: kgToGrams(t.minKg),
@@ -345,33 +359,35 @@ export function ProductManagement({
   })
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Sản Phẩm & Bảng Giá Bậc
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-card">
+        <div className="space-y-1">
+          <h1 className="font-heading text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
+            <Apple className="w-6 h-6 text-emerald-600" />
+            Sản Phẩm &amp; Bảng Giá Bậc
           </h1>
-          <p className="text-sm text-slate-600">
-            Quản lý danh mục trái cây sỉ, quy cách đóng gói (thùng/rổ/mẫu) và bảng giá giảm theo bậc sản lượng
+          <p className="text-xs sm:text-sm text-slate-500">
+            Quản lý danh mục trái cây sỉ, quy cách đóng gói (thùng/rổ/mẫu) và bảng giá giảm theo bậc sản lượng.
           </p>
         </div>
-        <Button onClick={openCreateModal} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-          <Plus className="w-4 h-4 mr-2" /> Thêm Sản Phẩm Mới
+        <Button onClick={openCreateModal} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full font-bold text-xs h-10 px-5 gap-2 shadow-btn-glow hover:-translate-y-0.5 transition-all">
+          <Plus className="w-4 h-4" /> Thêm Sản Phẩm Mới
         </Button>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/90 shadow-card flex flex-col sm:flex-row gap-3 items-center justify-between">
         <Input
           placeholder="Tìm kiếm theo tên sản phẩm, slug, nhà vườn..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="max-w-md bg-white"
+          className="w-full sm:max-w-md bg-white rounded-2xl border-slate-200/90 text-xs h-10 pl-4"
         />
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500 font-medium">Mùa vụ:</span>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Mùa vụ:</span>
           <Select value={filterSeason} onValueChange={(val) => { if (val) setFilterSeason(val) }}>
-            <SelectTrigger className="w-44 bg-white text-xs">
+            <SelectTrigger className="w-full sm:w-44 bg-white text-xs rounded-2xl border-slate-200/90 h-10">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -388,8 +404,8 @@ export function ProductManagement({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredProducts.map((p) => {
           return (
-            <Card key={p.id} className="overflow-hidden border-slate-200 hover:shadow-md transition-shadow">
-              <div className="h-44 w-full bg-slate-100 relative overflow-hidden">
+            <Card key={p.id} className="rounded-3xl border border-slate-200/90 shadow-card hover:shadow-md transition-shadow overflow-hidden bg-white flex flex-col justify-between">
+              <div className="h-48 w-full bg-slate-100 relative overflow-hidden">
                 {p.images[0] ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover" />
@@ -474,11 +490,16 @@ export function ProductManagement({
                         key={idx}
                         variant="outline"
                         className={`text-[11px] ${
-                          pkg.isSample ? 'border-amber-300 bg-amber-50 text-amber-800' : ''
+                          !pkg.isActive
+                            ? 'border-slate-200 bg-slate-100 text-slate-400 line-through'
+                            : pkg.isSample
+                            ? 'border-amber-300 bg-amber-50 text-amber-800'
+                            : ''
                         }`}
                       >
                         {pkg.name} ({gramsToKg(pkg.weightGrams)}kg)
                         {pkg.isSample && ` • Mẫu ${formatVND(pkg.samplePrice || 0)}`}
+                        {!pkg.isActive && ' (Đã ngừng)'}
                       </Badge>
                     ))}
                   </div>
@@ -520,21 +541,21 @@ export function ProductManagement({
 
       {/* DIALOG THÊM / SỬA SẢN PHẨM */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
+        <DialogContent className="w-[95vw] sm:max-w-4xl lg:max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="border-b pb-3">
+            <DialogTitle className="text-lg font-bold text-slate-900 font-heading">
               {editingProduct ? 'Chỉnh Sửa Thông Tin Sản Phẩm' : 'Thêm Sản Phẩm Sỉ Mới'}
             </DialogTitle>
           </DialogHeader>
 
           <form onSubmit={handleSaveProduct} className="space-y-6 pt-2">
             {/* 1. THÔNG TIN CƠ BẢN */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 border-b pb-1">
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 border-b pb-1.5">
                 <Apple className="w-4 h-4 text-emerald-600" /> 1. Thông Tin Cơ Bản
               </h4>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label>Tên sản phẩm *</Label>
                   <Input
@@ -555,7 +576,7 @@ export function ProductManagement({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <Label>Nhà vườn cung cấp *</Label>
                   <Select value={farmId} onValueChange={(val) => { if (val) setFarmId(val) }}>
@@ -624,7 +645,7 @@ export function ProductManagement({
                 />
               </div>
 
-              <div className="flex items-center gap-6 pt-1">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-8 pt-1">
                 <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700">
                   <input
                     type="checkbox"
@@ -648,9 +669,9 @@ export function ProductManagement({
             </div>
 
             {/* 2. MỨC ĐẶT TỐI THIỂU (MOQ) & BẬC GIÁ SỈ */}
-            <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
-              <div className="flex items-center justify-between border-b pb-1.5">
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <div className="space-y-3 p-4 sm:p-5 bg-slate-50/80 rounded-2xl border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                   <Scale className="w-4 h-4 text-emerald-600" /> 2. MOQ & Bảng Giá Bậc Theo Kg
                 </h4>
                 <Button
@@ -658,36 +679,46 @@ export function ProductManagement({
                   variant="outline"
                   size="sm"
                   onClick={addTierRow}
-                  className="h-7 text-xs bg-white"
+                  className="h-8 text-xs bg-white font-semibold rounded-lg shadow-xs"
                 >
                   <Plus className="w-3.5 h-3.5 mr-1" /> Thêm Bậc Giá
                 </Button>
               </div>
 
-              <div className="max-w-xs space-y-1">
-                <Label className="text-xs">Mức đặt tối thiểu (MOQ) tính bằng Kg *</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  required
-                  className="bg-white font-semibold"
-                  value={moqKg}
-                  onChange={(e) => setMoqKg(parseFloat(e.target.value) || 0)}
-                />
-                <span className="text-[11px] text-slate-500 block">
-                  Bậc giá thấp nhất bắt buộc phải bắt đầu đúng từ mức {moqKg} kg này.
-                </span>
+              {/* Mở rộng khu vực nhập MOQ */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center bg-white p-3.5 rounded-xl border border-slate-200">
+                <div className="sm:col-span-5 space-y-1">
+                  <Label className="text-xs font-semibold text-slate-700">Mức đặt tối thiểu (MOQ) tính bằng Kg *</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={1}
+                      required
+                      className="bg-white font-bold text-slate-900 max-w-[180px]"
+                      value={moqKg}
+                      onChange={(e) => setMoqKg(parseFloat(e.target.value) || 0)}
+                    />
+                    <span className="text-xs font-semibold text-slate-600">kg</span>
+                  </div>
+                </div>
+                <div className="sm:col-span-7 text-xs text-slate-500 bg-emerald-50/60 p-2.5 rounded-lg border border-emerald-100/80 leading-relaxed">
+                  💡 Bậc giá thấp nhất bắt buộc phải bắt đầu đúng từ mức <strong className="text-emerald-950 font-bold">{moqKg} kg</strong> này. Khách hàng chỉ có thể thêm vào giỏ và đặt hàng khi số lượng đạt hoặc vượt ngưỡng MOQ.
+                </div>
               </div>
 
               {/* Danh sách bậc giá */}
-              <div className="space-y-2 pt-2">
+              <div className="space-y-2.5 pt-1">
                 {tiers.map((tier, idx) => (
-                  <div key={idx} className="flex items-center gap-3">
-                    <div className="w-8 text-xs font-semibold text-slate-500">
+                  <div
+                    key={idx}
+                    className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 shadow-xs"
+                  >
+                    <div className="w-8 text-xs font-bold text-slate-500 shrink-0">
                       #{idx + 1}
                     </div>
+
                     <div className="flex-1 flex items-center gap-2">
-                      <span className="text-xs text-slate-600 shrink-0">Từ</span>
+                      <span className="text-xs text-slate-500 shrink-0 min-w-[50px]">Từ mức:</span>
                       <Input
                         type="number"
                         min={1}
@@ -701,15 +732,16 @@ export function ProductManagement({
                           )
                         }}
                       />
-                      <span className="text-xs text-slate-600 shrink-0">kg trở lên :</span>
+                      <span className="text-xs font-medium text-slate-600 shrink-0">kg trở lên</span>
                     </div>
 
                     <div className="flex-1 flex items-center gap-2">
+                      <span className="text-xs text-slate-500 shrink-0 min-w-[50px]">Đơn giá:</span>
                       <Input
                         type="number"
                         min={1000}
                         step={1000}
-                        className="bg-white font-semibold"
+                        className="bg-white font-semibold text-emerald-700"
                         placeholder="Đơn giá đ/kg"
                         value={tier.pricePerKg}
                         onChange={(e) => {
@@ -719,18 +751,20 @@ export function ProductManagement({
                           )
                         }}
                       />
-                      <span className="text-xs text-slate-600 shrink-0">đ/kg</span>
+                      <span className="text-xs font-medium text-slate-600 shrink-0">đ / kg</span>
                     </div>
 
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeTierRow(idx)}
-                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 h-9 w-9 p-0"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    <div className="flex justify-end sm:justify-center shrink-0">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeTierRow(idx)}
+                        className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 h-9 w-9 p-0 rounded-lg"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -751,9 +785,9 @@ export function ProductManagement({
             </div>
 
             {/* 3. QUY CÁCH ĐÓNG GÓI */}
-            <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
-              <div className="flex items-center justify-between border-b pb-1.5">
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <div className="space-y-3 p-4 sm:p-5 bg-slate-50/80 rounded-2xl border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                   <Layers className="w-4 h-4 text-emerald-600" /> 3. Quy Cách Đóng Gói (Thùng/Rổ/Gói Mẫu)
                 </h4>
                 <Button
@@ -761,7 +795,7 @@ export function ProductManagement({
                   variant="outline"
                   size="sm"
                   onClick={addPackagingRow}
-                  className="h-7 text-xs bg-white"
+                  className="h-8 text-xs bg-white font-semibold rounded-lg shadow-xs"
                 >
                   <Plus className="w-3.5 h-3.5 mr-1" /> Thêm Quy Cách
                 </Button>
@@ -771,11 +805,11 @@ export function ProductManagement({
                 {packagings.map((pkg, idx) => (
                   <div
                     key={idx}
-                    className="p-3 bg-white rounded-lg border border-slate-200 space-y-2 text-xs"
+                    className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-2.5 text-xs shadow-xs"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1">
-                        <Label className="text-[11px]">Tên quy cách</Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                      <div className="sm:col-span-7 space-y-1">
+                        <Label className="text-[11px] font-semibold text-slate-600">Tên quy cách</Label>
                         <Input
                           placeholder="Thùng carton 10kg..."
                           value={pkg.name}
@@ -788,8 +822,8 @@ export function ProductManagement({
                         />
                       </div>
 
-                      <div className="w-32">
-                        <Label className="text-[11px]">Khối lượng (Kg)</Label>
+                      <div className="sm:col-span-4 space-y-1">
+                        <Label className="text-[11px] font-semibold text-slate-600">Khối lượng (Kg)</Label>
                         <Input
                           type="number"
                           step="any"
@@ -804,20 +838,43 @@ export function ProductManagement({
                         />
                       </div>
 
-                      <div className="pt-4">
+                      <div className="sm:col-span-1 flex justify-end">
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
                           onClick={() => removePackagingRow(idx)}
-                          className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 h-8 w-8 p-0"
+                          className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 h-9 w-9 p-0 rounded-lg"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4 pt-1">
+                    <div className="flex flex-wrap items-center gap-5 pt-1 border-t border-slate-100">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={pkg.isActive}
+                          onChange={(e) => {
+                            const checked = e.target.checked
+                            setPackagings((prev) =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, isActive: checked } : item
+                              )
+                            )
+                          }}
+                          className="rounded border-slate-300 text-emerald-600 w-3.5 h-3.5"
+                        />
+                        <span
+                          className={`font-medium ${
+                            pkg.isActive ? 'text-emerald-700' : 'text-slate-500 line-through'
+                          }`}
+                        >
+                          {pkg.isActive ? 'Đang mở bán' : 'Ngừng bán (Inactive)'}
+                        </span>
+                      </label>
+
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input
                           type="checkbox"
@@ -864,8 +921,8 @@ export function ProductManagement({
             </div>
 
             {/* 4. CẤU HÌNH ĐẶT TRƯỚC VỤ MÙA (PRE-ORDER) */}
-            <div className="space-y-3 p-4 bg-purple-50/50 rounded-xl border border-purple-200">
-              <div className="flex items-center justify-between border-b border-purple-200 pb-1.5">
+            <div className="space-y-3 p-4 sm:p-5 bg-purple-50/50 rounded-2xl border border-purple-200">
+              <div className="flex items-center justify-between border-b border-purple-200 pb-2">
                 <h4 className="text-xs font-bold text-purple-900 uppercase tracking-wider flex items-center gap-1.5">
                   <Sparkles className="w-4 h-4 text-purple-600" /> 4. Cấu Hình Đặt Trước Vụ Mùa (Pre-order)
                 </h4>
@@ -882,7 +939,7 @@ export function ProductManagement({
 
               {preorderOpen && (
                 <div className="space-y-3 pt-2 text-xs">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <Label className="text-xs">Giá dự kiến chốt trước (đ/kg) *</Label>
                       <Input
@@ -908,7 +965,7 @@ export function ProductManagement({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <Label className="text-xs">Dự kiến thu hoạch từ ngày</Label>
                       <Input
@@ -932,14 +989,14 @@ export function ProductManagement({
               )}
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+            <div className="flex items-center justify-end gap-3 pt-4 border-t sticky bottom-0 bg-white/95 backdrop-blur-xs py-2">
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="rounded-xl">
                 Hủy
               </Button>
               <Button
                 type="submit"
                 disabled={loading || !tierValidationResult.valid}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-btn-glow px-6"
               >
                 {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 {editingProduct ? 'Lưu Thay Đổi Sản Phẩm' : 'Tạo Sản Phẩm Mới'}

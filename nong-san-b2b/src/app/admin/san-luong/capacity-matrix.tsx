@@ -103,26 +103,28 @@ export function CapacityMatrix({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-            <CalendarRange className="w-6 h-6 text-emerald-600" /> Năng Lực Sản Lượng Theo Tuần
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-card">
+        <div className="space-y-1">
+          <h1 className="font-heading text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
+            <CalendarRange className="w-6 h-6 text-emerald-600" />
+            Năng Lực Sản Lượng Theo Tuần
           </h1>
-          <p className="text-sm text-slate-600">
-            Kiểm soát tổng sản lượng nông sản tươi nhận đặt trong 4 tuần tới (nhập 0 để mở Không giới hạn)
+          <p className="text-xs sm:text-sm text-slate-500">
+            Kiểm soát tổng sản lượng nông sản tươi nhận đặt trong 4 tuần tới (nhập 0 để mở Không giới hạn).
           </p>
         </div>
       </div>
 
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 flex items-start gap-3">
+      <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 flex items-start gap-3">
         <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-        <div>
+        <div className="leading-relaxed">
           <strong>Cơ chế nông sản B2B:</strong> Nông sản tươi cắt theo lứa thu hoạch nên hệ thống dùng <strong>Weekly Capacity</strong> thay cho tồn kho tĩnh. Khi khách đặt hàng, hệ thống cộng dồn tổng kg của các đơn cùng tuần giao; nếu vượt quá mức tối đa này, hệ thống sẽ chặn nhận thêm đơn mới.
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+      <div className="bg-white rounded-3xl border border-slate-200/90 overflow-hidden shadow-card">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader className="bg-slate-50">

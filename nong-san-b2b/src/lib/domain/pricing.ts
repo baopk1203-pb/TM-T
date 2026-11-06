@@ -1,7 +1,14 @@
 /**
  * Domain Logic: Quản lý và kiểm tra bậc giá sỉ (Pricing Tiers)
  * Tuân thủ quy tắc nghiệp vụ B2B Nông sản (Mục 3.2 & Test P8)
+ * Tích hợp chính sách hạng thành viên F04 (PAR-10, PAR-12)
  */
+
+import {
+  MembershipTier,
+  MEMBERSHIP_TIER_CONFIG,
+  MAX_COMBINED_PRODUCT_DISCOUNT_PERCENT,
+} from './membership'
 
 export interface PriceTierInput {
   minGrams: number
@@ -82,7 +89,7 @@ export function validatePriceTiers(
 }
 
 /**
- * Tính đơn giá theo kg sau chiết khấu nhóm khách hàng
+ * Tính đơn giá theo kg sau chiết khấu nhóm khách hàng / chiết khấu kết hợp
  * Công thức: round(basePricePerKg * (100 - discountPercent) / 100)
  */
 export function calculateCustomerUnitPrice(
@@ -188,6 +195,8 @@ export interface PriceCartInput {
   lines: CartLineItemInput[]
   products: ProductPricingData[]
   groupDiscountPercent: number
+  membershipDiscountPercent?: number
+  membershipTier?: MembershipTier | null
 }
 
 export interface PriceCartResult {
@@ -197,14 +206,18 @@ export interface PriceCartResult {
   subtotal: number
   errors: string[]
   isValid: boolean
+  groupDiscountPercent?: number
+  membershipDiscountPercent?: number
+  combinedDiscountPercent?: number
 }
 
 /**
  * Tính toán toàn bộ giỏ hàng B2B theo công thức chuẩn:
  * - Nhóm các dòng theo sản phẩm
- * - Tách riêng hàng mẫu (isSample = true): không áp MOQ, không cộng dồn kg, không chiết khấu nhóm
+ * - Tách riêng hàng mẫu (isSample = true): không áp MOQ, không cộng dồn kg, không chiết khấu nhóm/hạng
  * - Các quy cách thường: cộng dồn tổng gram để xác định bậc giá
- * - Áp chiết khấu nhóm khách hàng lên đơn giá bậc: round(basePricePerKg * (100 - discount) / 100)
+ * - Áp chiết khấu cộng dồn (PAR-10): combinedDiscountPercent = min(10, groupDiscount + membershipDiscount)
+ * - Đơn giá bậc: round(basePricePerKg * (100 - combinedDiscountPercent) / 100)
  * - Tính lineTotal cho từng dòng: round(unitPricePerKg * itemGrams / 1000)
  * - Xác định bậc tiếp theo (nextTier) để gợi ý mua thêm
  */
@@ -212,7 +225,28 @@ export function priceCart({
   lines,
   products,
   groupDiscountPercent,
+  membershipDiscountPercent: explicitMembershipDiscount,
+  membershipTier,
 }: PriceCartInput): PriceCartResult {
+  // Xác định chiết khấu hạng thành viên và chiết khấu cộng dồn (PAR-10, PAR-12)
+  let membershipDiscountPercent = explicitMembershipDiscount ?? 0
+  if (membershipTier && explicitMembershipDiscount === undefined) {
+    const tierBenefits = MEMBERSHIP_TIER_CONFIG[membershipTier]
+    if (tierBenefits) {
+      membershipDiscountPercent = tierBenefits.productDiscountPercent
+    }
+  }
+
+  // PAR-10: Tổng chiết khấu sản phẩm cộng dồn tối đa 10%
+  // appliedDiscountPercent = min(10, groupDiscountPercent + membershipDiscountPercent)
+  // Nếu CustomerGroup có mức chiết khấu trên 10%: khống chế trần 10% tại phép tính Checkout
+  const safeGroupDiscount = Math.max(0, groupDiscountPercent || 0)
+  const safeTierDiscount = Math.max(0, membershipDiscountPercent || 0)
+  const combinedDiscountPercent = Math.min(
+    MAX_COMBINED_PRODUCT_DISCOUNT_PERCENT,
+    safeGroupDiscount + safeTierDiscount
+  )
+
   const errors: string[] = []
   const productSummaries: ProductSummary[] = []
   const pricedLines: PricedLineItem[] = []
@@ -308,7 +342,7 @@ export function priceCart({
       const basePricePerKg = effectiveTier?.pricePerKg || 0
       const unitPricePerKg = calculateCustomerUnitPrice(
         basePricePerKg,
-        groupDiscountPercent
+        combinedDiscountPercent
       )
 
       // Tìm bậc tiếp theo cao hơn totalGrams
@@ -365,6 +399,8 @@ export function priceCart({
     subtotal,
     errors,
     isValid,
+    groupDiscountPercent: safeGroupDiscount,
+    membershipDiscountPercent: safeTierDiscount,
+    combinedDiscountPercent,
   }
 }
-

@@ -3,13 +3,15 @@
 import { useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { signIn } from 'next-auth/react'
-import { Leaf, ArrowRight, Loader2, Sparkles } from 'lucide-react'
+import { signIn, getSession } from 'next-auth/react'
+import { ArrowRight, Loader2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
+import { BrandLogo } from '@/components/ui/brand-logo'
 import { toast } from 'sonner'
+import { resolveLoginRedirectUrl } from '@/lib/auth-redirect'
 
 function LoginForm() {
   const router = useRouter()
@@ -35,7 +37,15 @@ function LoginForm() {
         toast.error(res.error || 'Email hoặc mật khẩu không chính xác')
       } else {
         toast.success('Đăng nhập thành công!')
-        router.push(callbackUrl)
+        let session = await getSession()
+        if (!session?.user) {
+          // Chờ một khoảng ngắn nếu cookie phiên làm việc cần đồng bộ
+          await new Promise((resolve) => setTimeout(resolve, 80))
+          session = await getSession()
+        }
+        const origin = typeof window !== 'undefined' ? window.location.origin : undefined
+        const targetUrl = resolveLoginRedirectUrl(session?.user?.role, callbackUrl, origin)
+        router.push(targetUrl)
         router.refresh()
       }
     } catch {
@@ -54,16 +64,11 @@ function LoginForm() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50/50 via-white to-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <Link href="/" className="inline-flex items-center gap-2 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-sm">
-            <Leaf className="w-6 h-6" />
-          </div>
-          <span className="text-2xl font-bold tracking-tight text-slate-900">
-            NÔNG SẢN <span className="text-emerald-600">B2B</span>
-          </span>
-        </Link>
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-          Đăng nhập hệ thống B2B
+        <div className="mb-4 inline-flex justify-center">
+          <BrandLogo size="lg" href="/" subtitleText="Phân phối sỉ trái cây chuẩn vườn" />
+        </div>
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900 font-heading">
+          Đăng nhập hệ thống E Vibe
         </h2>
         <p className="mt-2 text-sm text-slate-600">
           Truy cập hệ thống đặt hàng sỉ và quản lý đơn thu mua nông sản
@@ -126,10 +131,13 @@ function LoginForm() {
 
             {/* Quick Demo Login Helper Box */}
             <div className="mt-8 pt-6 border-t border-slate-200">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
                 <Sparkles className="w-4 h-4 text-amber-500" />
-                Tài khoản trải nghiệm đồ án (1-Click)
+                Điền nhanh tài khoản trải nghiệm
               </div>
+              <p className="text-[11px] text-slate-500 mb-3">
+                Bấm vào một tài khoản mẫu để tự động điền thông tin, sau đó bấm nút Đăng nhập.
+              </p>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <Button
                   type="button"

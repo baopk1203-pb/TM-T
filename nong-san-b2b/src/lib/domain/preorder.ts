@@ -1,0 +1,219 @@
+import { OrderStatus, OrderType } from '@prisma/client'
+import { computeDepositAmount } from './settlement'
+
+export interface PriceBandResult {
+  inBand: boolean
+  diffPercent: number
+  minAllowed: number
+  maxAllowed: number
+}
+
+/**
+ * Kiểm tra xem đơn giá chốt vụ thực tế có nằm trong biên độ thỏa thuận hay không (Mục 3.10)
+ * - Mặc định biên độ là ±10%
+ * - R1: 70.000 -> 76.000 (10%): chênh lệch 8.57% -> Trong biên độ (inBand: true)
+ * - R2: 70.000 -> 78.000 (10%): chênh lệch 11.43% -> Ngoài biên độ (inBand: false)
+ * - Biên: 70.000 -> 77.000 (10%): chênh lệch 10.0% -> Trong biên độ (inBand: true)
+ */
+export function checkPriceBand(
+  preorderPricePerKg: number,
+  finalPricePerKg: number,
+  bandPercent: number = 10
+): PriceBandResult {
+  if (preorderPricePerKg <= 0) {
+    throw new Error('Đơn giá đặt trước phải lớn hơn 0')
+  }
+
+  const minAllowed = Math.round(preorderPricePerKg * (1 - bandPercent / 100))
+  const maxAllowed = Math.round(preorderPricePerKg * (1 + bandPercent / 100))
+
+  const rawDiff = ((finalPricePerKg - preorderPricePerKg) / preorderPricePerKg) * 100
+  const diffPercent = Math.round(Math.abs(rawDiff) * 100) / 100
+
+  const inBand = finalPricePerKg >= minAllowed && finalPricePerKg <= maxAllowed
+
+  return {
+    inBand,
+    diffPercent,
+    minAllowed,
+    maxAllowed,
+  }
+}
+
+export interface ShortfallRefundInput {
+  depositAmount: number
+  orderedGrams: number
+  fulfilledGrams: number
+}
+
+/**
+ * Tính số tiền cọc hoàn trả do sản lượng thu hoạch thiếu hụt (Mục 3.10)
+ * - R3: cọc 3.000.000 đ, đặt 100kg (100.000g), giao 60kg (60.000g) -> hoàn 1.200.000 đ (40% cọc)
+ * - Mất mùa 100% (giao 0g) -> hoàn 100% tiền cọc (3.000.000 đ)
+ * - Thu hoạch đủ hoặc dư (giao >= đặt) -> không hoàn cọc (0 đ)
+ */
+export function computePreorderShortfallRefund({
+  depositAmount,
+  orderedGrams,
+  fulfilledGrams,
+}: ShortfallRefundInput): number {
+  if (depositAmount <= 0 || orderedGrams <= 0) {
+    return 0
+  }
+
+  if (fulfilledGrams >= orderedGrams) {
+    return 0
+  }
+
+  if (fulfilledGrams <= 0) {
+    return depositAmount
+  }
+
+  const shortfallGrams = orderedGrams - fulfilledGrams
+  const refund = Math.round(depositAmount * (shortfallGrams / orderedGrams))
+
+  return refund
+}
+
+export interface PreorderPricingInput {
+  preorderPricePerKg: number
+  groupDiscountPercent?: number
+  packagingWeightGrams: number
+  quantity: number
+}
+
+export interface PreorderPricingResult {
+  discountedPricePerKg: number
+  totalGrams: number
+  lineTotal: number
+  subtotal: number
+  total: number
+  depositAmount: number
+}
+
+/**
+ * Tính toán đơn giá và tiền cọc đặt trước
+ * - Áp dụng chiết khấu nhóm đối tác vào đơn giá đặt trước
+ * - Tiền cọc bắt buộc là 30% tổng tiền (computeDepositAmount)
+ */
+export function calculatePreorderPricing({
+  preorderPricePerKg,
+  groupDiscountPercent = 0,
+  packagingWeightGrams,
+  quantity,
+}: PreorderPricingInput): PreorderPricingResult {
+  if (preorderPricePerKg <= 0) {
+    throw new Error('Đơn giá đặt trước phải lớn hơn 0')
+  }
+  if (packagingWeightGrams <= 0 || quantity <= 0) {
+    throw new Error('Quy cách đóng gói và số lượng phải lớn hơn 0')
+  }
+
+  const validDiscount = Math.max(0, Math.min(100, groupDiscountPercent))
+  const discountedPricePerKg = Math.round(preorderPricePerKg * (1 - validDiscount / 100))
+  const totalGrams = packagingWeightGrams * quantity
+  const lineTotal = Math.round((discountedPricePerKg * totalGrams) / 1000)
+  const subtotal = lineTotal
+  const total = subtotal
+  const depositAmount = computeDepositAmount(total)
+
+  return {
+    discountedPricePerKg,
+    totalGrams,
+    lineTotal,
+    subtotal,
+    total,
+    depositAmount,
+  }
+}
+
+export interface OutOfBandCancellationRefundInput {
+  paidAmount: number
+  shortfallRefundAmount?: number
+}
+
+/**
+ * Tính tiền hoàn trả còn lại khi khách hàng từ chối giá chốt ngoài biên độ
+ * - Khách được hoàn 100% số tiền đã đóng
+ * - Tránh hoàn trùng (double refund) nếu trước đó đã tạo lệnh hoàn thiếu hụt sản lượng
+ */
+export function computeOutOfBandCancellationRefund({
+  paidAmount,
+  shortfallRefundAmount = 0,
+}: OutOfBandCancellationRefundInput): number {
+  if (paidAmount <= 0) {
+    return 0
+  }
+  const remainingRefund = Math.max(0, paidAmount - shortfallRefundAmount)
+  return remainingRefund
+}
+
+export interface PreorderDecisionCheckInput {
+  type?: OrderType | string | null
+  status: OrderStatus
+  preorderFinalPricePerKg?: number | null
+  preorderCustomerDecision?: string | null
+}
+
+/**
+ * Kiểm tra xem đơn hàng Pre-order có đang chờ khách hàng phản hồi về giá chốt vụ hay không (Mục 3.10)
+ * - Đơn phải là loại PREORDER
+ * - Trạng thái phải là PREORDER_WAITING
+ * - preorderFinalPricePerKg > 0 (nhà vườn/admin đã công bố đơn giá thu hoạch thực tế)
+ * - preorderCustomerDecision chưa hoàn tất ('PENDING' hoặc null/undefined)
+ * - Nếu preorderCustomerDecision là 'ACCEPT' hoặc 'CANCEL' -> Đã quyết định xong, trả về false
+ */
+export function isPreorderAwaitingCustomerDecision(
+  order: PreorderDecisionCheckInput
+): boolean {
+  const isPreorderType =
+    order.type === OrderType.PREORDER || order.type === 'PREORDER'
+  if (!isPreorderType) return false
+  if (order.status !== OrderStatus.PREORDER_WAITING) return false
+  if (!order.preorderFinalPricePerKg || order.preorderFinalPricePerKg <= 0) return false
+
+  // Nếu khách hàng đã chấp nhận hoặc từ chối đơn hàng thì không còn ở trạng thái chờ quyết định
+  if (
+    order.preorderCustomerDecision === 'ACCEPT' ||
+    order.preorderCustomerDecision === 'CANCEL'
+  ) {
+    return false
+  }
+
+  // Cả 'PENDING' lẫn null / undefined đều thể hiện đang chờ khách quyết định
+  return true
+}
+
+export interface PackagingLabelInput {
+  name: string
+  weightGrams: number
+}
+
+/**
+ * Định dạng nhãn hiển thị cho quy cách đóng gói (QW04-01)
+ * Ví dụ: "Rổ nhựa 20kg (20 kg/thùng)"
+ */
+export function formatPackagingLabel(pkg?: PackagingLabelInput | null): string {
+  if (!pkg) return ''
+  return `${pkg.name} (${pkg.weightGrams / 1000} kg/thùng)`
+}
+
+export interface AddressLabelInput {
+  label?: string | null
+  recipient: string
+  phone: string
+  line: string
+  ward: string
+  district: string
+  province: string
+}
+
+/**
+ * Định dạng nhãn hiển thị cho địa chỉ nhận hàng (QW04-01)
+ * Ví dụ: "[Kho Thủ Đức] Nguyễn Văn A (0901234567) - 123 Đường A, Phường B, Quận C, TPHCM"
+ */
+export function formatAddressLabel(addr?: AddressLabelInput | null): string {
+  if (!addr) return ''
+  const prefix = addr.label ? `[${addr.label}] ` : ''
+  return `${prefix}${addr.recipient} (${addr.phone}) - ${addr.line}, ${addr.ward}, ${addr.district}, ${addr.province}`
+}

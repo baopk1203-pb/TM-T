@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none">
+  <defs>
+    <linearGradient id="evibe-grad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#059669" />
+      <stop offset="0.5" stop-color="#00855D" />
+      <stop offset="1" stop-color="#10B981" />
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="9" fill="url(#evibe-grad)" />
+  <path d="M8.5 16.5C8.5 12.08 12.08 8.5 16.5 8.5C19.8 8.5 22.8 10.3 23.5 13.5C24 16.5 21.2 20.8 16.5 20.8C13.2 20.8 11.2 19.3 10.5 17.8" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" />
+  <path d="M10.8 16.5H21.2" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" />
+  <circle cx="22" cy="10" r="2.2" fill="#84CC16" stroke="#FFFFFF" stroke-width="1" />
+</svg>

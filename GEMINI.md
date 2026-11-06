@@ -37,6 +37,12 @@ Tất cả các quyết định nghiệp vụ, kiến trúc dữ liệu và lộ
    - Thư mục mã nguồn chính được đặt tại: `nong-san-b2b/`.
    - Ngôn ngữ: Giao diện hiển thị tiếng Việt; code, tên biến, tên cột DB và commit message dùng tiếng Anh.
 
+5. **QUY TẮC NHÁNH GIT (BETA VÀ MAIN WORKFLOW):**
+   - Mọi tác vụ fix lỗi (bugfix/hotfix), phát triển tính năng/phase mới, tối ưu hay refactor **BẮT BUỘC thực hiện, kiểm tra và commit trên nhánh `beta` trước**.
+   - Sau khi hoàn tất trên `beta`, phải chạy nghiệm thu đạt chuẩn 4 lệnh (`npm run lint`, `npm run typecheck`, `npm test`, `npm run build`), báo cáo kết quả và **xin xác nhận của người dùng**.
+   - **Tuyệt đối KHÔNG tự ý merge hay push trực tiếp lên nhánh `main` khi chưa có sự đồng ý của người dùng**.
+   - Khi người dùng phê duyệt: Agent tự động checkout sang `main`, merge từ `beta`, push lên `origin/main`, rồi checkout quay lại nhánh `beta` để tiếp tục làm việc.
+
 ---
 
 ## 2. DANH SÁCH TÀI LIỆU CẦN ĐỌC
